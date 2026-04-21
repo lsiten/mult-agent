@@ -1,0 +1,87 @@
+{
+  "appId": "com.nousresearch.hermes",
+  "productName": "Hermes Agent",
+  "copyright": "Copyright © 2026 Nous Research",
+
+  "directories": {
+    "output": "release",
+    "buildResources": "assets"
+  },
+
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "!dist/**/*.map"
+  ],
+
+  "extraResources": [
+    {
+      "from": "resources",
+      "to": "resources",
+      "filter": ["**/*"]
+    }
+  ],
+
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64", "x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["arm64", "x64"]
+      }
+    ],
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "assets/entitlements.mac.plist",
+    "entitlementsInherit": "assets/entitlements.mac.plist",
+    "icon": "assets/icon.icns"
+  },
+
+  "dmg": {
+    "title": "Hermes Agent ${version}",
+    "icon": "assets/icon.icns",
+    "background": "assets/dmg-background.png",
+    "window": {
+      "width": 540,
+      "height": 380
+    },
+    "contents": [
+      {
+        "x": 144,
+        "y": 190
+      },
+      {
+        "x": 396,
+        "y": 190,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  },
+
+  "win": {
+    "target": ["nsis", "portable"],
+    "icon": "assets/icon.ico"
+  },
+
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false,
+    "deleteAppDataOnUninstall": false
+  },
+
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Development",
+    "icon": "assets/icon.png"
+  },
+
+  "compression": "maximum",
+  "asar": true,
+  "asarUnpack": []
+}

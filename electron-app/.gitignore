@@ -1,0 +1,18 @@
+# Node modules
+node_modules/
+
+# Build output
+dist/
+
+# Python bundled files
+app/python/
+app/scripts/
+app/config/
+
+# Test results
+test-results/
+playwright-report/
+quick-check-debug.png
+
+# Playwright cache
+.cache/

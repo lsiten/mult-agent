@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome 远程调试配置向导</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+            color: #1a202c;
+        }
+
+        .subtitle {
+            color: #718096;
+            margin-bottom: 32px;
+            font-size: 16px;
+        }
+
+        .status {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .status.info {
+            background: #ebf8ff;
+            border: 1px solid #90cdf4;
+            color: #2c5282;
+        }
+
+        .status.success {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            color: #22543d;
+        }
+
+        .status.error {
+            background: #fff5f5;
+            border: 1px solid #fc8181;
+            color: #742a2a;
+        }
+
+        .status.warning {
+            background: #fffaf0;
+            border: 1px solid #fbd38d;
+            color: #744210;
+        }
+
+        .steps {
+            background: #f7fafc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+            margin-right: 12px;
+        }
+
+        .step-content {
+            flex: 1;
+            padding-top: 4px;
+        }
+
+        .step-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #2d3748;
+        }
+
+        .step-desc {
+            color: #4a5568;
+            font-size: 14px;
+        }
+
+        .code {
+            background: #2d3748;
+            color: #68d391;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: "Monaco", "Courier New", monospace;
+            font-size: 13px;
+            margin: 12px 0;
+            overflow-x: auto;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .link:hover {
+            text-decoration: underline;
+        }
+
+        .success-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        input[type="number"] {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-secondary {
+            background: #4a5568;
+            padding: 10px 20px;
+        }
+
+        .btn-secondary:hover {
+            background: #2d3748;
+        }
+
+        .copy-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #2d3748;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 8px 0;
+        }
+
+        .copy-box-text {
+            flex: 1;
+            color: #68d391;
+            font-family: "Monaco", "Courier New", monospace;
+            font-size: 14px;
+            user-select: all;
+        }
+
+        .copy-btn {
+            background: #4a5568;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            background: #2d3748;
+        }
+
+        .copy-btn.copied {
+            background: #48bb78;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Chrome 远程调试配置</h1>
+        <p class="subtitle">让我们快速配置您的 Chrome 浏览器远程调试功能</p>
+
+        <div id="status" class="status info">
+            <div class="spinner"></div>
+            正在检测您的 Chrome 配置...
+        </div>
+
+        <div id="content"></div>
+
+        <button id="action-btn" onclick="checkCDP()" style="display: none;">
+            重新检测
+        </button>
+    </div>
+
+    <script>
+        const STATUS_CHECKING = 'checking';
+        const STATUS_ENABLED = 'enabled';
+        const STATUS_DISABLED = 'disabled';
+        const STATUS_ERROR = 'error';
+
+        let currentStatus = STATUS_CHECKING;
+        let cdpUrl = null;
+
+        function updateUI(status, message, content) {
+            const statusEl = document.getElementById('status');
+            const contentEl = document.getElementById('content');
+            const actionBtn = document.getElementById('action-btn');
+
+            // Update status message
+            statusEl.className = 'status ' + (
+                status === STATUS_ENABLED ? 'success' :
+                status === STATUS_DISABLED ? 'warning' :
+                status === STATUS_ERROR ? 'error' :
+                'info'
+            );
+            statusEl.innerHTML = message;
+
+            // Update content
+            contentEl.innerHTML = content || '';
+
+            // Update button
+            if (status === STATUS_ENABLED) {
+                actionBtn.style.display = 'block';
+                actionBtn.textContent = '✓ 配置完成，关闭此页面';
+                actionBtn.disabled = false;
+                actionBtn.onclick = () => window.close();
+            } else if (status === STATUS_DISABLED) {
+                actionBtn.style.display = 'block';
+                actionBtn.innerHTML = '<span class="spinner"></span>重新检测';
+                actionBtn.disabled = false;
+                actionBtn.onclick = checkCDP;
+            } else if (status === STATUS_CHECKING) {
+                actionBtn.style.display = 'block';
+                actionBtn.innerHTML = '<span class="spinner"></span>检测中...';
+                actionBtn.disabled = true;
+            }
+
+            currentStatus = status;
+        }
+
+        async function checkCDP(customPort) {
+            updateUI(STATUS_CHECKING, '<span class="spinner"></span>正在检测您的 Chrome 配置...', '');
+
+            // Try common CDP ports or custom port
+            const ports = customPort ? [customPort] : [9222, 9223, 9224, 9225, 19825, 19826];
+
+            for (const port of ports) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+                    const response = await fetch(`http://localhost:${port}/json/version`, {
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        cdpUrl = data.webSocketDebuggerUrl;
+
+                        // Send CDP URL back to Electron
+                        await notifyElectron(cdpUrl, port);
+
+                        updateUI(
+                            STATUS_ENABLED,
+                            `<div class="success-icon">✓</div><strong>远程调试已启用！</strong><br/>已检测到端口 ${port} 上的 Chrome DevTools Protocol`,
+                            `
+                            <div class="steps">
+                                <div style="color: #22543d; font-weight: 600; margin-bottom: 12px;">
+                                    ✓ 配置信息已自动发送到 Hermes Agent
+                                </div>
+                                <div style="color: #4a5568; font-size: 14px;">
+                                    端口: ${port}<br/>
+                                    版本: ${data.Browser || 'Unknown'}<br/>
+                                    您现在可以关闭此页面，返回 Hermes Agent 继续配置。
+                                </div>
+                            </div>
+                            `
+                        );
+                        return;
+                    }
+                } catch (error) {
+                    // Continue to next port
+                    continue;
+                }
+            }
+
+            // No CDP found
+            showEnableInstructions();
+        }
+
+        function showEnableInstructions() {
+            updateUI(
+                STATUS_DISABLED,
+                '⚠️ 未检测到 Chrome 远程调试（常规端口）',
+                `
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <div class="step-title">打开 Chrome 远程调试页面</div>
+                            <div class="step-desc">
+                                复制下方地址到 Chrome 地址栏并打开：
+                                <div class="copy-box">
+                                    <span class="copy-box-text" id="chrome-url">chrome://inspect/#remote-debugging</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('chrome-url', this)">复制</button>
+                                </div>
+                                <strong>如果看到 "Server running at: 127.0.0.1:XXXXX"</strong><br/>
+                                记下端口号（XXXXX），在下方输入并点击测试：
+                                <div class="input-group">
+                                    <input type="number" id="custom-port" placeholder="例如: 19825" min="1" max="65535" />
+                                    <button class="btn-secondary" onclick="testCustomPort()">测试此端口</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <div class="step-title">确认远程调试已启用</div>
+                            <div class="step-desc">
+                                在打开的页面中，应该能看到 <strong>"Remote Target"</strong> 区域<br/>
+                                如果看到当前浏览器实例，说明远程调试已启用
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <div class="step-title">如果未看到远程调试选项</div>
+                            <div class="step-desc">
+                                需要重启 Chrome 并启用远程调试：<br/>
+                                关闭所有 Chrome 窗口后运行：
+                                <div class="code">chrome --remote-debugging-port=9222</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <div class="step-title">启动带远程调试的 Chrome</div>
+                            <div class="step-desc">
+                                <strong>Mac 用户：</strong>
+                                <div class="copy-box">
+                                    <span class="copy-box-text" id="mac-cmd">/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 &</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('mac-cmd', this)">复制</button>
+                                </div>
+                                <strong>Windows 用户：</strong>
+                                <div class="copy-box">
+                                    <span class="copy-box-text" id="win-cmd">chrome.exe --remote-debugging-port=9222</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('win-cmd', this)">复制</button>
+                                </div>
+                                <strong>Linux 用户：</strong>
+                                <div class="copy-box">
+                                    <span class="copy-box-text" id="linux-cmd">google-chrome --remote-debugging-port=9222 &</span>
+                                    <button class="copy-btn" onclick="copyToClipboard('linux-cmd', this)">复制</button>
+                                </div>
+                                <p style="margin-top: 12px; color: #718096;">
+                                    💡 复制命令后在终端运行，然后点击下方"重新检测"按钮
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p style="color: #718096; font-size: 14px; margin-top: 16px;">
+                    💡 提示：完成上述步骤后，点击下方"重新检测"按钮
+                </p>
+                `
+            );
+        }
+
+        async function notifyElectron(wsUrl, port) {
+            try {
+                // Try to notify Electron via API
+                await fetch('http://localhost:8642/api/browser/cdp-detected', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wsUrl: wsUrl,
+                        port: port,
+                        host: 'localhost'
+                    })
+                });
+            } catch (error) {
+                console.error('Failed to notify Electron:', error);
+            }
+        }
+
+        function testCustomPort() {
+            const input = document.getElementById('custom-port');
+            const port = parseInt(input.value);
+
+            if (!port || port < 1 || port > 65535) {
+                alert('请输入有效的端口号（1-65535）');
+                return;
+            }
+
+            checkCDP(port);
+        }
+
+        function copyToClipboard(elementId, button) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+
+            // Use modern clipboard API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    button.textContent = '✓ 已复制';
+                    button.classList.add('copied');
+                    setTimeout(() => {
+                        button.textContent = '复制';
+                        button.classList.remove('copied');
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    fallbackCopy(text, button);
+                });
+            } else {
+                fallbackCopy(text, button);
+            }
+        }
+
+        function fallbackCopy(text, button) {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                button.textContent = '✓ 已复制';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = '复制';
+                    button.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Fallback copy failed:', err);
+                alert('复制失败，请手动选择文本复制');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // Auto-start detection
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(checkCDP, 500);
+        });
+    </script>
+</body>
+</html>

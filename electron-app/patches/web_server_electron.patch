@@ -1,0 +1,22 @@
+--- a/hermes_cli/web_server.py
++++ b/hermes_cli/web_server.py
+@@ -114,6 +114,12 @@ def _require_token(request: Request) -> None:
+         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
++def _is_electron_mode() -> bool:
++    """Check if running in Electron environment."""
++    import os
++    return os.getenv("HERMES_ELECTRON_MODE") == "true"
++
++
+ @app.middleware("http")
+ async def auth_middleware(request: Request, call_next):
+     """Require the session token on all /api/ routes except the public list."""
++    # Disable auth in Electron mode (single-user desktop app)
++    if _is_electron_mode():
++        return await call_next(request)
++
+     path = request.url.path
+     if path.startswith("/api/") and path not in _PUBLIC_API_PATHS and not path.startswith("/api/plugins/"):
+         auth = request.headers.get("authorization", "")

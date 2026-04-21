@@ -1,0 +1,119 @@
+name: Electron E2E Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'electron-app/**'
+      - 'web/**'
+      - '.github/workflows/electron-test.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'electron-app/**'
+      - 'web/**'
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd electron-app
+          npm ci
+
+      - name: Install Playwright
+        run: |
+          cd electron-app
+          npx playwright install --with-deps
+
+      - name: Build TypeScript
+        run: |
+          cd electron-app
+          npm run build
+
+      - name: Run tests (Linux with xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          cd electron-app
+          xvfb-run --auto-servernum npm test
+
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd electron-app
+          npm test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: electron-app/test-results/
+          retention-days: 7
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: |
+            electron-app/test-results/**/*.png
+            electron-app/*.png
+          retention-days: 7
+
+  quick-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd electron-app
+          npm ci
+
+      - name: Install Playwright
+        run: |
+          cd electron-app
+          npx playwright install --with-deps
+
+      - name: Build
+        run: |
+          cd electron-app
+          npm run build
+
+      - name: Run quick check
+        run: |
+          cd electron-app
+          xvfb-run --auto-servernum node tests/quick-check.js
+
+      - name: Upload debug screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-check-debug
+          path: electron-app/quick-check-debug.png
+          retention-days: 3

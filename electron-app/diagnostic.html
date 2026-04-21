@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hermes Agent - Startup Diagnostics</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 800px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #1a202c;
+      font-size: 32px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .icon {
+      font-size: 40px;
+    }
+
+    .subtitle {
+      color: #718096;
+      font-size: 16px;
+      margin-bottom: 32px;
+    }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section h2 {
+      color: #2d3748;
+      font-size: 20px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .dependency-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .dependency-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      background: #f7fafc;
+      border-radius: 8px;
+      border-left: 4px solid #cbd5e0;
+    }
+
+    .dependency-item.success {
+      background: #f0fdf4;
+      border-left-color: #22c55e;
+    }
+
+    .dependency-item.error {
+      background: #fef2f2;
+      border-left-color: #ef4444;
+    }
+
+    .dependency-name {
+      font-weight: 600;
+      color: #1a202c;
+      min-width: 100px;
+    }
+
+    .dependency-status {
+      flex: 1;
+      color: #4a5568;
+    }
+
+    .success-icon {
+      color: #22c55e;
+      margin-right: 8px;
+      font-size: 20px;
+    }
+
+    .error-icon {
+      color: #ef4444;
+      margin-right: 8px;
+      font-size: 20px;
+    }
+
+    .logs-container {
+      background: #1a202c;
+      border-radius: 8px;
+      padding: 20px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #e2e8f0;
+    }
+
+    .logs-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .logs-container::-webkit-scrollbar-track {
+      background: #2d3748;
+      border-radius: 4px;
+    }
+
+    .logs-container::-webkit-scrollbar-thumb {
+      background: #4a5568;
+      border-radius: 4px;
+    }
+
+    .logs-container::-webkit-scrollbar-thumb:hover {
+      background: #718096;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    button {
+      flex: 1;
+      padding: 14px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #2d3748;
+    }
+
+    .btn-secondary:hover {
+      background: #cbd5e0;
+    }
+
+    .loading {
+      text-align: center;
+      color: #718096;
+      padding: 20px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #e2e8f0;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #718096;
+      padding: 40px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <span class="icon">⚠️</span>
+      Startup Failed
+    </h1>
+    <p class="subtitle">
+      Hermes Agent failed to start. Check the diagnostics below to identify the issue.
+    </p>
+
+    <div class="section">
+      <h2>Dependencies</h2>
+      <div id="dependencies" class="loading">
+        <div class="spinner"></div>
+        <p>Checking dependencies...</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recent Logs</h2>
+      <div class="logs-container" id="logs">
+        <div class="loading">Loading logs...</div>
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button class="btn-secondary" onclick="viewFullLogs()">
+        View Full Logs
+      </button>
+      <button class="btn-primary" onclick="retry()">
+        Retry Startup
+      </button>
+    </div>
+  </div>
+
+  <script>
+    async function loadDiagnostics() {
+      try {
+        // 加载依赖检查结果
+        const deps = await window.electronAPI.getDependencies();
+        renderDependencies(deps);
+
+        // 加载日志
+        const logs = await window.electronAPI.getLogs();
+        renderLogs(logs);
+      } catch (error) {
+        console.error('Failed to load diagnostics:', error);
+        document.getElementById('dependencies').innerHTML =
+          '<div class="empty-state">Failed to load diagnostics</div>';
+        document.getElementById('logs').innerHTML =
+          '<div class="empty-state">Failed to load logs</div>';
+      }
+    }
+
+    function renderDependencies(deps) {
+      const container = document.getElementById('dependencies');
+      const items = [];
+
+      // 遍历依赖项
+      for (const [name, item] of Object.entries(deps)) {
+        if (name === 'allOk') continue;
+
+        const isOk = item.ok;
+        const statusClass = isOk ? 'success' : 'error';
+        const icon = isOk ? '✓' : '✗';
+        const iconClass = isOk ? 'success-icon' : 'error-icon';
+
+        let statusText = '';
+        if (isOk) {
+          statusText = item.version || 'OK';
+          if (item.path) {
+            statusText += ` <span style="color: #a0aec0; font-size: 12px;">${item.path}</span>`;
+          }
+        } else {
+          statusText = item.error || 'Unknown error';
+          if (item.path) {
+            statusText += `<br><span style="color: #a0aec0; font-size: 12px;">Path: ${item.path}</span>`;
+          }
+        }
+
+        items.push(`
+          <div class="dependency-item ${statusClass}">
+            <span class="${iconClass}">${icon}</span>
+            <span class="dependency-name">${name}</span>
+            <span class="dependency-status">${statusText}</span>
+          </div>
+        `);
+      }
+
+      container.innerHTML = items.length > 0
+        ? `<div class="dependency-list">${items.join('')}</div>`
+        : '<div class="empty-state">No dependency information available</div>';
+    }
+
+    function renderLogs(logs) {
+      const container = document.getElementById('logs');
+      if (!logs || logs.trim().length === 0) {
+        container.innerHTML = '<div class="empty-state">No logs available</div>';
+        return;
+      }
+
+      // 只显示最后 50 行
+      const lines = logs.split('\n').slice(-50);
+      container.textContent = lines.join('\n');
+
+      // 滚动到底部
+      container.scrollTop = container.scrollHeight;
+    }
+
+    let isRetrying = false;
+
+    async function retry() {
+      if (isRetrying) return;
+
+      isRetrying = true;
+      const button = document.querySelector('.btn-primary');
+      const originalText = button.textContent;
+      button.textContent = 'Restarting...';
+      button.disabled = true;
+
+      try {
+        const result = await window.electronAPI.retryStartup();
+        if (!result.ok) {
+          alert(result.error || 'Failed to retry startup');
+          button.textContent = originalText;
+          button.disabled = false;
+          isRetrying = false;
+        }
+        // 如果成功，页面会重新加载，不需要恢复按钮
+      } catch (error) {
+        console.error('Failed to retry startup:', error);
+        alert('Failed to retry startup: ' + error.message);
+        button.textContent = originalText;
+        button.disabled = false;
+        isRetrying = false;
+      }
+    }
+
+    async function viewFullLogs() {
+      try {
+        const logsPath = await window.electronAPI.getLogsPath();
+        // 修复：正确编码文件路径
+        const encodedPath = encodeURI(logsPath).replace(/#/g, '%23');
+        await window.electronAPI.openExternal('file://' + encodedPath);
+      } catch (error) {
+        console.error('Failed to open logs:', error);
+        alert('Failed to open logs: ' + error.message);
+      }
+    }
+
+    // 自动加载诊断信息
+    loadDiagnostics();
+  </script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hermes Agent</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 600px;
+    }
+    h1 {
+      margin: 0 0 20px;
+      font-size: 48px;
+      font-weight: 700;
+    }
+    p {
+      margin: 10px 0;
+      font-size: 18px;
+      opacity: 0.9;
+    }
+    #api-test {
+      margin-top: 30px;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      font-size: 16px;
+      font-family: 'Courier New', monospace;
+    }
+    .status {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4ade80;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Hello Electron</h1>
+    <p>Electron 基础框架启动成功</p>
+    <div id="api-test">
+      <span class="status"></span>
+      正在检查 electronAPI...
+    </div>
+  </div>
+
+  <script>
+    // 测试 window.electronAPI 是否注入
+    setTimeout(() => {
+      const apiTestElement = document.getElementById('api-test');
+      if (window.electronAPI) {
+        apiTestElement.innerHTML = '<span class="status"></span>✅ electronAPI 已注入';
+
+        // 测试获取 app 路径
+        if (window.electronAPI.getAppPath) {
+          window.electronAPI.getAppPath().then(path => {
+            console.log('App Path:', path);
+          }).catch(err => {
+            console.error('Failed to get app path:', err);
+          });
+        }
+      } else {
+        apiTestElement.innerHTML = '<span style="background: #ef4444;" class="status"></span>electronAPI 未注入';
+      }
+    }, 100);
+  </script>
+</body>
+</html>

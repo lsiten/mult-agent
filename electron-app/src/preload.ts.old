@@ -1,0 +1,52 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+// 定义 electronAPI 接口
+export interface ElectronAPI {
+  invokePythonCommand: (cmd: string) => Promise<string>;
+  sendMessage: (message: string) => Promise<string>;
+  onPythonLog: (callback: (log: string) => void) => void;
+  getAppPath: () => Promise<string>;
+  getOnboardingStatus: () => Promise<{ needsOnboarding: boolean }>;
+  markOnboardingComplete: () => Promise<{ ok: boolean }>;
+  resetOnboarding: () => Promise<{ ok: boolean }>;
+  onOnboardingStatus: (callback: (status: { needsOnboarding: boolean }) => void) => void;
+  openExternal: (url: string) => Promise<void>;
+}
+
+// 暴露安全的 API 到渲染进程
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 执行 Python 命令（通过 python-manager）
+  invokePythonCommand: (cmd: string) =>
+    ipcRenderer.invoke('python:execute', cmd),
+
+  // 发送聊天消息
+  sendMessage: (message: string) =>
+    ipcRenderer.invoke('chat:sendMessage', message),
+
+  // 监听 Python 日志
+  onPythonLog: (callback: (log: string) => void) => {
+    ipcRenderer.on('python:log', (_event, log: string) => callback(log));
+  },
+
+  // 获取 app 路径
+  getAppPath: () => ipcRenderer.invoke('app:getPath'),
+
+  // 获取 onboarding 状态
+  getOnboardingStatus: () => ipcRenderer.invoke('onboarding:getStatus'),
+
+  // 标记 onboarding 完成
+  markOnboardingComplete: () => ipcRenderer.invoke('onboarding:markComplete'),
+
+  // 重置 onboarding（重新打开向导）
+  resetOnboarding: () => ipcRenderer.invoke('onboarding:reset'),
+
+  // 监听 onboarding 状态
+  onOnboardingStatus: (callback: (status: { needsOnboarding: boolean }) => void) => {
+    ipcRenderer.on('onboarding:status', (_event, status) => callback(status));
+  },
+
+  // 在系统默认浏览器中打开 URL
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
+} as ElectronAPI);
+
+console.log('[Preload] electronAPI injected successfully');

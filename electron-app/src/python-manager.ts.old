@@ -1,0 +1,208 @@
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app } from 'electron';
+
+export class PythonManager {
+  private gatewayProcess: ChildProcessWithoutNullStreams | null = null;
+  private logCallback?: (log: string) => void;
+
+  constructor() {
+    console.log('[PythonManager] Initialized');
+  }
+
+  public setLogCallback(callback: (log: string) => void): void {
+    this.logCallback = callback;
+  }
+
+  private log(message: string): void {
+    const logMessage = `[PythonManager] ${message}`;
+    console.log(logMessage);
+    if (this.logCallback) {
+      this.logCallback(logMessage);
+    }
+  }
+
+  private async execute(command: string, args: string[] = []): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.log(`Executing: ${command} ${args.join(' ')}`);
+
+      const proc = spawn(command, args);
+      let output = '';
+      let errorOutput = '';
+
+      proc.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        output += text;
+      });
+
+      proc.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        errorOutput += text;
+      });
+
+      proc.on('close', (code: number | null) => {
+        if (code === 0) {
+          resolve(output.trim());
+        } else {
+          reject(new Error(`Process failed with code ${code}: ${errorOutput}`));
+        }
+      });
+
+      proc.on('error', (error: Error) => {
+        this.log(`Process error: ${error.message}`);
+        reject(error);
+      });
+    });
+  }
+
+  public async start(): Promise<void> {
+    try {
+      this.log('Starting Python process manager...');
+
+      // Get Hermes home directory (userData path)
+      const hermesHome = app.getPath('userData');
+      if (!fs.existsSync(hermesHome)) {
+        fs.mkdirSync(hermesHome, { recursive: true });
+        this.log(`Created Hermes home directory: ${hermesHome}`);
+      } else {
+        this.log(`Hermes home directory exists: ${hermesHome}`);
+      }
+
+      // Determine app resources path
+      const appPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'app')
+        : path.join(__dirname, '../app');
+
+      const pythonDir = path.join(appPath, 'python');
+
+      if (!fs.existsSync(pythonDir)) {
+        throw new Error(`Python directory not found: ${pythonDir}`);
+      }
+
+      this.log(`Python directory: ${pythonDir}`);
+
+      // Use embedded venv Python instead of system Python
+      const venvPython = path.join(appPath, 'python-runtime', 'bin', 'python3');
+      const pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python3';
+
+      this.log(`Using Python: ${pythonCmd}`);
+
+      // Test Python availability
+      const version = await this.execute(pythonCmd, ['--version']);
+      this.log(`Python version detected: ${version}`);
+
+      // Start Hermes Gateway as a background process
+      const gatewayScript = path.join(pythonDir, 'gateway', 'run.py');
+
+      if (!fs.existsSync(gatewayScript)) {
+        throw new Error(`Gateway script not found: ${gatewayScript}`);
+      }
+
+      this.log(`Starting Gateway: ${gatewayScript}`);
+      this.log(`HERMES_HOME will be set to: ${hermesHome}`);
+
+      // Set PYTHONPATH to include bundled Python code
+      // Note: We must create a clean env object because process.env can cause
+      // issues with paths containing spaces when passed to spawn
+      const env: Record<string, string> = {};
+
+      // Copy safe environment variables
+      const safeEnvVars = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TMPDIR'];
+      for (const key of safeEnvVars) {
+        if (process.env[key]) {
+          env[key] = process.env[key]!;
+        }
+      }
+
+      // Add our custom environment variables
+      env.PYTHONPATH = pythonDir;
+      env.HERMES_ELECTRON_MODE = 'true';
+      env.HERMES_HOME = hermesHome;
+      env.GATEWAY_ALLOW_ALL_USERS = 'true';
+      env.GATEWAY_ENABLE_DASHBOARD = 'true';
+      env.GATEWAY_PORT = '8642';
+
+      // Load API keys from .env file and pass them explicitly
+      // This works around issues with .env loading when HERMES_HOME path has spaces
+      const envFile = path.join(hermesHome, '.env');
+      if (fs.existsSync(envFile)) {
+        const envContent = fs.readFileSync(envFile, 'utf-8');
+        const lines = envContent.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+            const [key, ...valueParts] = trimmed.split('=');
+            const value = valueParts.join('=');
+            if (key && value) {
+              env[key.trim()] = value.trim();
+            }
+          }
+        }
+        this.log('Loaded environment variables from .env file');
+      }
+
+      this.log(`Environment HERMES_HOME: ${env.HERMES_HOME}`);
+
+      // Gateway config file path - use user config in HERMES_HOME
+      const userConfig = path.join(hermesHome, 'config.yaml');
+      const fallbackConfig = path.join(appPath, 'config', 'gateway.yaml');
+
+      // Prefer user config, fall back to bundled minimal config
+      const gatewayConfig = fs.existsSync(userConfig) ? userConfig : fallbackConfig;
+
+      this.log(`Using Gateway config: ${gatewayConfig}`);
+
+      const gatewayArgs = [gatewayScript, '--config', gatewayConfig];
+
+      this.gatewayProcess = spawn(pythonCmd, gatewayArgs, {
+        env,
+        cwd: pythonDir
+      });
+
+      this.gatewayProcess.stdout.on('data', (data: Buffer) => {
+        const text = data.toString().trim();
+        this.log(`Gateway stdout: ${text}`);
+      });
+
+      this.gatewayProcess.stderr.on('data', (data: Buffer) => {
+        const text = data.toString().trim();
+        this.log(`Gateway stderr: ${text}`);
+      });
+
+      this.gatewayProcess.on('close', (code: number | null) => {
+        this.log(`Gateway process exited with code ${code}`);
+        this.gatewayProcess = null;
+      });
+
+      this.gatewayProcess.on('error', (error: Error) => {
+        this.log(`Gateway process error: ${error.message}`);
+        this.gatewayProcess = null;
+      });
+
+      // Give Gateway time to start (now serves both API and Dashboard)
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      this.log('Gateway started successfully (with dashboard)');
+    } catch (error) {
+      this.log(`Failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  public async stop(): Promise<void> {
+    this.log('Stopping Python process manager...');
+
+    if (this.gatewayProcess) {
+      this.gatewayProcess.kill();
+      this.gatewayProcess = null;
+      this.log('Gateway process killed');
+    }
+
+    this.log('Python process manager stopped');
+  }
+
+  public isRunning(): boolean {
+    return this.gatewayProcess !== null && !this.gatewayProcess.killed;
+  }
+}
