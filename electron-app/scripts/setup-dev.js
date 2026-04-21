@@ -6,6 +6,45 @@ const path = require('path');
 const PROJECT_ROOT = path.join(__dirname, '../..');
 const RESOURCES_DIR = path.join(__dirname, '../resources');
 
+function detectPackageManager() {
+  const userAgent = process.env.npm_config_user_agent || '';
+  if (userAgent.startsWith('pnpm/')) return 'pnpm';
+  if (userAgent.startsWith('yarn/')) return 'yarn';
+  return 'npm';
+}
+
+function pathExistsIncludingBrokenSymlink(targetPath) {
+  try {
+    fs.lstatSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removePathIfPresent(targetPath) {
+  if (!pathExistsIncludingBrokenSymlink(targetPath)) {
+    return;
+  }
+
+  const stats = fs.lstatSync(targetPath);
+  if (stats.isSymbolicLink()) {
+    fs.unlinkSync(targetPath);
+    return;
+  }
+
+  fs.rmSync(targetPath, { recursive: true, force: true });
+}
+
+function toRelativeSymlinkTarget(fromPath, targetPath) {
+  const fromDir = path.dirname(fromPath);
+  return path.relative(fromDir, targetPath);
+}
+
+const packageManager = detectPackageManager();
+const runCommand = packageManager === 'yarn' ? 'yarn' : `${packageManager} run`;
+const devCommand = packageManager === 'yarn' ? 'yarn dev' : `${packageManager} dev`;
+
 console.log('🔧 Setting up development environment...\n');
 
 // 1. 创建 resources 目录
@@ -18,7 +57,7 @@ if (!fs.existsSync(RESOURCES_DIR)) {
 
 // 2. 清理旧的符号链接或目录
 const pythonLink = path.join(RESOURCES_DIR, 'python');
-if (fs.existsSync(pythonLink)) {
+if (pathExistsIncludingBrokenSymlink(pythonLink)) {
   const stats = fs.lstatSync(pythonLink);
   if (stats.isSymbolicLink()) {
     fs.unlinkSync(pythonLink);
@@ -64,11 +103,9 @@ pythonPackages.forEach(pkg => {
   const dest = path.join(pythonLink, pkg);
 
   if (fs.existsSync(src)) {
-    if (fs.existsSync(dest)) {
-      fs.unlinkSync(dest);
-    }
+    removePathIfPresent(dest);
     try {
-      fs.symlinkSync(src, dest, 'dir');
+      fs.symlinkSync(toRelativeSymlinkTarget(dest, src), dest, 'dir');
       console.log(`  ✓ Linked ${pkg}/`);
     } catch (error) {
       console.error(`  ✗ Failed to link ${pkg}/: ${error.message}`);
@@ -84,11 +121,9 @@ pythonFiles.forEach(file => {
   const dest = path.join(pythonLink, file);
 
   if (fs.existsSync(src)) {
-    if (fs.existsSync(dest)) {
-      fs.unlinkSync(dest);
-    }
+    removePathIfPresent(dest);
     try {
-      fs.symlinkSync(src, dest, 'file');
+      fs.symlinkSync(toRelativeSymlinkTarget(dest, src), dest, 'file');
       console.log(`  ✓ Linked ${file}`);
     } catch (error) {
       console.error(`  ✗ Failed to link ${file}: ${error.message}`);
@@ -104,14 +139,9 @@ const pythonRuntimeSrc = path.join(PROJECT_ROOT, 'app/python-runtime');
 const pythonRuntimeDest = path.join(RESOURCES_DIR, 'python-runtime');
 
 if (fs.existsSync(pythonRuntimeSrc)) {
-  if (fs.existsSync(pythonRuntimeDest)) {
-    const stats = fs.lstatSync(pythonRuntimeDest);
-    if (stats.isSymbolicLink() || stats.isDirectory()) {
-      fs.rmSync(pythonRuntimeDest, { recursive: true, force: true });
-    }
-  }
+  removePathIfPresent(pythonRuntimeDest);
   try {
-    fs.symlinkSync(pythonRuntimeSrc, pythonRuntimeDest, 'dir');
+    fs.symlinkSync(toRelativeSymlinkTarget(pythonRuntimeDest, pythonRuntimeSrc), pythonRuntimeDest, 'dir');
     console.log('  ✓ Linked python-runtime/');
   } catch (error) {
     console.error(`  ✗ Failed to link python-runtime: ${error.message}`);
@@ -126,7 +156,7 @@ if (fs.existsSync(pythonRuntimeSrc)) {
 // 6. Web 前端不需要符号链接（开发时使用 dev server）
 console.log('\n🌐 Web frontend setup');
 console.log('  ℹ  Web will use Vite dev server: http://localhost:5173');
-console.log('  ℹ  Run: cd ../web && npm run dev');
+console.log(`  ℹ  Run: cd ../web && ${devCommand}`);
 
 // 7. 验证符号链接
 console.log('\n✅ Verifying setup...');
@@ -158,8 +188,8 @@ if (allGood) {
 }
 
 console.log('\n📝 Next steps:');
-console.log('  1. Start Vite dev server:  cd ../web && npm run dev');
-console.log('  2. Start Electron:         npm run dev:electron');
+console.log(`  1. Start Vite dev server:  cd ../web && ${devCommand}`);
+console.log(`  2. Start Electron:         ${runCommand} dev:electron`);
 console.log('\n💡 Tips:');
 console.log('  • Python changes take effect on Electron restart (Cmd+R)');
 console.log('  • React changes take effect immediately (HMR)');

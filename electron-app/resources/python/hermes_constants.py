@@ -1,1 +1,1 @@
-/Users/shicheng_lei/code/hermes-agent-v2/hermes_constants.py
+../../../hermes_constants.py

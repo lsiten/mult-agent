@@ -5,12 +5,14 @@ import { app } from 'electron';
 export class ConfigManager {
   private configDir: string;
   private appPath: string;
+  private projectRoot: string;
 
   constructor() {
     this.configDir = path.join(app.getPath('userData'), 'config');
     this.appPath = app.isPackaged
       ? path.join(process.resourcesPath, 'app')
       : path.join(__dirname, '../app');
+    this.projectRoot = path.join(__dirname, '../..');
   }
 
   private log(message: string): void {
@@ -48,11 +50,11 @@ export class ConfigManager {
   }
 
   private async copyConfigTemplates(): Promise<void> {
-    const configSourceDir = path.join(this.appPath, 'config');
     const hermesHome = app.getPath('userData');
+    const envSrc = this.resolveTemplatePath('.env.example');
+    const configSrc = this.resolveTemplatePath('cli-config.yaml.example');
 
     // .env goes to HERMES_HOME root (not config/)
-    const envSrc = path.join(configSourceDir, '.env.example');
     const envDest = path.join(hermesHome, '.env');
     if (fs.existsSync(envSrc) && !fs.existsSync(envDest)) {
       try {
@@ -64,7 +66,6 @@ export class ConfigManager {
     }
 
     // config.yaml goes to HERMES_HOME root as well
-    const configSrc = path.join(configSourceDir, 'cli-config.yaml.example');
     const configDest = path.join(hermesHome, 'config.yaml');
     if (fs.existsSync(configSrc) && !fs.existsSync(configDest)) {
       try {
@@ -74,6 +75,22 @@ export class ConfigManager {
         this.log(`Warning: Failed to copy config.yaml: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+  }
+
+  private resolveTemplatePath(filename: string): string {
+    const candidates = [
+      path.join(this.appPath, 'config', filename),
+      path.join(this.appPath, filename),
+      path.join(this.projectRoot, filename),
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return candidates[0];
   }
 
   private createSubdirectories(): void {
@@ -142,7 +159,7 @@ export class ConfigManager {
   }
 
   private createDefaultSoul(): void {
-    const soulPath = path.join(this.configDir, 'SOUL.md');
+    const soulPath = path.join(app.getPath('userData'), 'SOUL.md');
 
     if (fs.existsSync(soulPath)) {
       return;

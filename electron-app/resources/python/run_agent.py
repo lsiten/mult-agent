@@ -1,1 +1,1 @@
-/Users/shicheng_lei/code/hermes-agent-v2/run_agent.py
+../../../run_agent.py

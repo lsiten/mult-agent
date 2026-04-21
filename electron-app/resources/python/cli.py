@@ -1,1 +1,1 @@
-/Users/shicheng_lei/code/hermes-agent-v2/cli.py
+../../../cli.py

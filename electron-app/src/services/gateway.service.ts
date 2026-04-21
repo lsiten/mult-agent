@@ -370,6 +370,9 @@ export class GatewayService implements Service {
     env.HERMES_DEV_MODE = isDev ? 'true' : 'false';
 
     // CORS 配置 - 允许 Vite dev server 访问
+    env.API_SERVER_ENABLED = 'true';
+    env.API_SERVER_HOST = '127.0.0.1';
+    env.API_SERVER_PORT = '8642';
     env.API_SERVER_CORS_ORIGINS = 'http://localhost:5173';
 
     // 认证 token (仅生产环境)

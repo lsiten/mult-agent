@@ -8,21 +8,21 @@
     "setup:dev": "node scripts/setup-dev.js",
     "build:main": "tsc",
     "build:main:watch": "tsc --watch",
-    "dev:electron": "npm run setup:dev && npm run build:main && electron .",
-    "dev:watch": "concurrently -n 'TS,ELECTRON' -c 'blue,green' 'npm run build:main:watch' 'nodemon --watch dist --delay 1 --exec electron .'",
+    "dev:electron": "node scripts/setup-dev.js && tsc && electron .",
+    "dev:watch": "concurrently -n 'TS,ELECTRON' -c 'blue,green' 'tsc --watch' 'nodemon --watch dist --delay 1 --exec electron .'",
     "dev": "npm run dev:watch",
     "// ──────── 生产打包 ────────": "",
     "setup:prod": "node scripts/setup-prod.js",
     "setup:prod:optimized": "node scripts/setup-prod-optimized.js",
-    "build:all": "npm run build:main && npm run setup:prod",
-    "build:all:optimized": "npm run build:main && npm run setup:prod:optimized",
-    "package": "npm run build:all && electron-builder",
-    "package:optimized": "npm run build:all:optimized && electron-builder",
-    "package:mac": "npm run build:all && electron-builder --mac",
-    "package:mac:optimized": "npm run build:all:optimized && electron-builder --mac",
-    "package:win": "npm run build:all && electron-builder --win",
-    "package:linux": "npm run build:all && electron-builder --linux",
-    "package:dir": "npm run build:all && electron-builder --dir",
+    "build:all": "tsc && node scripts/setup-prod.js",
+    "build:all:optimized": "tsc && node scripts/setup-prod-optimized.js",
+    "package": "tsc && node scripts/setup-prod.js && electron-builder",
+    "package:optimized": "tsc && node scripts/setup-prod-optimized.js && electron-builder",
+    "package:mac": "tsc && node scripts/setup-prod.js && electron-builder --mac",
+    "package:mac:optimized": "tsc && node scripts/setup-prod-optimized.js && electron-builder --mac",
+    "package:win": "tsc && node scripts/setup-prod.js && electron-builder --win",
+    "package:linux": "tsc && node scripts/setup-prod.js && electron-builder --linux",
+    "package:dir": "tsc && node scripts/setup-prod.js && electron-builder --dir",
     "// ──────── 测试 ────────": "",
     "test:unit": "vitest run",
     "test:integration": "vitest run tests/integration",
@@ -32,10 +32,10 @@
     "test:architecture": "bash scripts/test-new-architecture.sh",
     "// ──────── 清理 ────────": "",
     "clean": "node scripts/clean.js",
-    "clean:all": "npm run clean && cd ../web && rm -rf dist",
+    "clean:all": "node scripts/clean.js && cd ../web && rm -rf dist",
     "// ──────── 启动 ────────": "",
     "check:web-deps": "node scripts/check-web-deps.js",
-    "start": "npm run check:web-deps && npm run setup:dev && npm run build:main && electron .",
+    "start": "node scripts/check-web-deps.js && node scripts/setup-dev.js && tsc && electron .",
     "start:prod": "NODE_ENV=production electron ."
   },
   "keywords": [
@@ -64,5 +64,11 @@
   },
   "dependencies": {
     "zod": "^3.24.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   }
 }

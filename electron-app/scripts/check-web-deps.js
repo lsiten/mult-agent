@@ -11,15 +11,23 @@ const { execSync } = require('child_process');
 const webPath = path.join(__dirname, '..', '..', 'web');
 const nodeModulesPath = path.join(webPath, 'node_modules');
 
+function detectPackageManager() {
+  const userAgent = process.env.npm_config_user_agent || '';
+  if (userAgent.startsWith('pnpm/')) return 'pnpm';
+  if (userAgent.startsWith('yarn/')) return 'yarn';
+  return 'npm';
+}
+
 console.log('[check-web-deps] Checking web dependencies...');
 
 // Check if node_modules exists
 if (!fs.existsSync(nodeModulesPath)) {
-  console.log('[check-web-deps] node_modules not found, running npm install...');
+  const packageManager = detectPackageManager();
+  const installCommand = packageManager === 'yarn' ? 'yarn install' : `${packageManager} install`;
+  console.log(`[check-web-deps] node_modules not found, running ${installCommand}...`);
 
   try {
-    // Run npm install in web directory
-    execSync('npm install', {
+    execSync(installCommand, {
       cwd: webPath,
       stdio: 'inherit'
     });
