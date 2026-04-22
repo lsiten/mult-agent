@@ -210,6 +210,13 @@ pre {
   outline-offset: 2px;
 }
 
+/* Exception: No outline for textarea inside custom focus containers */
+textarea.flex-w-full:focus-visible,
+textarea.flex-1:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
 /* ---- Reduced Motion ---- */
 @media (prefers-reduced-motion: reduce) {
   *,
