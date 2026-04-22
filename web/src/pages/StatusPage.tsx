@@ -181,7 +181,7 @@ export default function StatusPage() {
               >
                 <div className="flex flex-col gap-1 min-w-0 w-full">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{s.title ?? t.common.untitled}</span>
+                    <span className="font-medium text-sm truncate">{s.title || s.preview || t.common.untitled}</span>
 
                     <Badge variant="success" className="text-[10px] shrink-0">
                       <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
@@ -190,14 +190,8 @@ export default function StatusPage() {
                   </div>
 
                   <span className="text-xs text-muted-foreground truncate">
-                    <span className="font-mono-ui">{(s.model ?? t.common.unknown).split("/").pop()}</span> · {s.message_count} {t.common.msgs} · {timeAgo(s.last_active)}
+                    {timeAgo(s.last_active)} · {s.message_count} {t.common.messages}
                   </span>
-
-                  {s.preview && (
-                    <span className="text-xs text-muted-foreground/70 truncate">
-                      {s.preview}
-                    </span>
-                  )}
                 </div>
               </div>
             ))}
@@ -221,17 +215,11 @@ export default function StatusPage() {
                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-border p-3 w-full"
               >
                 <div className="flex flex-col gap-1 min-w-0 w-full">
-                  <span className="font-medium text-sm truncate">{s.title ?? t.common.untitled}</span>
+                  <span className="font-medium text-sm truncate">{s.title || s.preview || t.common.untitled}</span>
 
                   <span className="text-xs text-muted-foreground truncate">
-                    <span className="font-mono-ui">{(s.model ?? t.common.unknown).split("/").pop()}</span> · {s.message_count} {t.common.msgs} · {timeAgo(s.last_active)}
+                    {timeAgo(s.last_active)} · {s.message_count} {t.common.messages}
                   </span>
-
-                  {s.preview && (
-                    <span className="text-xs text-muted-foreground/70 truncate">
-                      {s.preview}
-                    </span>
-                  )}
                 </div>
 
                 <Badge variant="outline" className="text-[10px] shrink-0 self-start sm:self-center">
