@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { SkillInstallModal } from "@/components/skills/SkillInstallModal";
 // import { InstallationProgressList } from "@/components/skills/InstallationProgress";
-import { useSkillInstallStore, type TaskState } from "@/stores/useSkillInstallStore";
+import { useSkillInstallStore, type TaskState, type TaskStatus } from "@/stores/useSkillInstallStore";
 
 /* ------------------------------------------------------------------ */
 /*  Types & helpers                                                    */
@@ -146,14 +146,37 @@ export default function SkillsPage() {
       // Start polling for each active task
       const pollTask = async () => {
         try {
-          const response = await fetch(`/api/skills/install/${task.task_id}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
-            },
+          const data = await fetchJSON<{
+            status: TaskStatus;
+            progress: number;
+            current_step: string;
+            error_message: string | null;
+            error_details: Record<string, unknown> | null;
+            completed_at: number | null;
+          }>(`/api/skills/install/${task.task_id}`);
+
+          failureCount = 0; // Reset on success
+          const { updateTask } = useSkillInstallStore.getState();
+          updateTask(task.task_id, {
+            status: data.status,
+            progress: data.progress,
+            current_step: data.current_step,
+            error_message: data.error_message,
+            error_details: data.error_details,
+            completed_at: data.completed_at,
           });
 
-          if (response.status === 404) {
-            // Task not found - stop polling
+          // Stop polling if task reached terminal state
+          if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+            const interval = intervalMap.get(task.task_id);
+            if (interval) {
+              clearInterval(interval);
+              intervalMap.delete(task.task_id);
+            }
+          }
+        } catch (error) {
+          // Handle 404 (task not found) or other errors
+          if (error instanceof Error && error.message.includes('404')) {
             console.warn(`[SkillsPage] Task ${task.task_id} not found (404), stopping poll`);
             const interval = intervalMap.get(task.task_id);
             if (interval) {
@@ -166,42 +189,9 @@ export default function SkillsPage() {
             return;
           }
 
-          if (response.ok) {
-            failureCount = 0; // Reset on success
-            const data = await response.json();
-            const { updateTask } = useSkillInstallStore.getState();
-            updateTask(task.task_id, {
-              status: data.status,
-              progress: data.progress,
-              current_step: data.current_step,
-              error_message: data.error_message,
-              error_details: data.error_details,
-              completed_at: data.completed_at,
-            });
-
-            // Stop polling if task reached terminal state
-            if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
-              const interval = intervalMap.get(task.task_id);
-              if (interval) {
-                clearInterval(interval);
-                intervalMap.delete(task.task_id);
-              }
-            }
-          } else {
-            failureCount++;
-            if (failureCount >= MAX_FAILURES) {
-              console.error(`[SkillsPage] Too many failures for task ${task.task_id}, stopping poll`);
-              const interval = intervalMap.get(task.task_id);
-              if (interval) {
-                clearInterval(interval);
-                intervalMap.delete(task.task_id);
-              }
-            }
-          }
-        } catch (err) {
           failureCount++;
-          console.error(`Failed to poll task ${task.task_id}:`, err);
           if (failureCount >= MAX_FAILURES) {
+            console.error(`[SkillsPage] Too many failures for task ${task.task_id}, stopping poll`);
             const interval = intervalMap.get(task.task_id);
             if (interval) {
               clearInterval(interval);
@@ -341,25 +331,16 @@ export default function SkillsPage() {
     if (newDescription === null) return; // User cancelled
 
     try {
-      const baseUrl = window.location.hostname === 'localhost' && window.location.port === '5173'
-        ? 'http://localhost:8642'
-        : '';
-
-      const response = await fetch(`${baseUrl}/api/skills/update-description`, {
+      await fetchJSON('/api/skills/update-description', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify({
           skill_name: skillName,
           description: newDescription,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update description');
-      }
 
       // Update local state
       setSkills((prev) =>
