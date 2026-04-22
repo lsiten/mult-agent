@@ -212,7 +212,7 @@ export function InputArea({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={placeholder}
-            className="resize-none min-h-[60px] max-h-[200px] flex-1"
+            className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-background/40 border-border/50 focus:border-foreground/25"
             disabled={disabled}
           />
 
@@ -220,6 +220,8 @@ export function InputArea({
             onClick={isStreaming ? onStopTask : handleSend}
             disabled={!isStreaming && !canSend}
             variant={isStreaming ? "destructive" : "default"}
+            size="icon"
+            className="h-12 w-12 shrink-0"
             title={
               isStreaming
                 ? t.chat.stopTask || "停止任务"
