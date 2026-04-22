@@ -19,22 +19,50 @@ import { useI18n } from "@/i18n";
 export default function StatusPage() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { t } = useI18n();
 
   useEffect(() => {
     const load = () => {
-      api.getStatus().then(setStatus).catch(() => {});
-      api.getSessions(50).then((resp) => setSessions(resp.sessions)).catch(() => {});
+      api.getStatus()
+        .then(setStatus)
+        .catch((error) => {
+          console.error('[StatusPage] Failed to load status:', error);
+        })
+        .finally(() => setIsLoading(false));
+
+      api.getSessions(50)
+        .then((resp) => setSessions(resp.sessions))
+        .catch((error) => {
+          console.error('[StatusPage] Failed to load sessions:', error);
+        });
     };
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  if (!status) {
+  if (isLoading && !status) {
     return (
       <div className="flex items-center justify-center py-24">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  // If loading finished but no status, show error message
+  if (!status) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center">
+          <p className="text-muted-foreground">{t.status.failedToLoad || 'Failed to load status'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 text-sm text-primary hover:underline"
+          >
+            {t.common.retry || 'Retry'}
+          </button>
+        </div>
       </div>
     );
   }
