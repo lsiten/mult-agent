@@ -244,12 +244,21 @@ _CORS_HEADERS = {
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def cors_middleware(request, handler):
-        """Add CORS headers for explicitly allowed origins; handle OPTIONS preflight."""
+        """Add CORS headers for explicitly allowed origins; handle OPTIONS preflight.
+
+        v2.1.1: Electron-only 模式下，由于前面的 electron_auth_middleware 已验证
+        Token + User-Agent，CORS 只负责添加响应头，不再拦截请求。
+        """
         adapter = request.app.get("api_server_adapter")
         origin = request.headers.get("Origin", "")
+
+        # v2.1.1: 检测是否为 Electron 模式（HERMES_ELECTRON_MODE=1）
+        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE") == "1"
+
         cors_headers = None
         if adapter is not None:
-            if not adapter._origin_allowed(origin):
+            # Electron 模式：允许所有 origin（Token 已验证），非 Electron 模式：严格检查
+            if not is_electron_mode and not adapter._origin_allowed(origin):
                 return web.Response(status=403)
             cors_headers = adapter._cors_headers_for_origin(origin)
 
@@ -310,6 +319,90 @@ if AIOHTTP_AVAILABLE:
         return response
 else:
     security_headers_middleware = None  # type: ignore[assignment]
+
+
+# ============================================================================
+# Electron Token 验证中间件（v2.1）
+# ============================================================================
+if AIOHTTP_AVAILABLE:
+    @web.middleware
+    async def electron_auth_middleware(request, handler):
+        """
+        验证所有请求必须携带有效的 Electron Token
+
+        防护措施：
+        1. Token 验证（Bearer 格式）
+        2. User-Agent 验证（v2.1 新增，防止浏览器绕过）
+        3. 健康检查端点豁免
+
+        v2.1.1: 错误响应也添加 CORS 头，确保前端能收到错误信息
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # v2.1.1: 辅助函数 - 创建带 CORS 头的错误响应
+        def _error_response_with_cors(status: int, text: str) -> "web.Response":
+            """创建带 CORS 头的错误响应（Electron 模式下添加 CORS 头）"""
+            headers = {}
+            origin = request.headers.get("Origin", "")
+            # Electron 模式下，对所有 origin 添加 CORS 头
+            if os.getenv("HERMES_ELECTRON_MODE") == "1":
+                if origin and origin not in ("null", ""):
+                    headers["Access-Control-Allow-Origin"] = origin
+                else:
+                    headers["Access-Control-Allow-Origin"] = "*"
+                headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+                headers["Access-Control-Allow-Credentials"] = "true"
+
+            return web.Response(
+                status=status,
+                text=text,
+                content_type="text/plain",
+                headers=headers
+            )
+
+        # ====================================================================
+        # 健康检查端点豁免（用于启动检测）
+        # ====================================================================
+        if request.path in ['/health', '/health/detailed', '/v1/health']:
+            if request.method in ['GET', 'HEAD']:
+                return await handler(request)
+
+        # ====================================================================
+        # Token 验证
+        # ====================================================================
+        expected_token = os.environ.get("HERMES_GATEWAY_TOKEN", "").strip()
+        if not expected_token:
+            logger.error("HERMES_GATEWAY_TOKEN not set in environment")
+            return _error_response_with_cors(500, "Gateway not in Electron mode")
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            logger.warning(f"Missing Authorization header from {request.remote}")
+            return _error_response_with_cors(401, "Missing Authorization header")
+
+        token = auth_header[7:].strip()  # "Bearer " 后 7 个字符
+        if token != expected_token:
+            logger.warning(f"Invalid token from {request.remote}")
+            return _error_response_with_cors(403, "Invalid token")
+
+        # ====================================================================
+        # User-Agent 验证（v2.1 新增，防止浏览器 DevTools 绕过）
+        # v2.1.1: 使用正则匹配 Electron 官方格式，带词边界防伪造
+        # ====================================================================
+        user_agent = request.headers.get("User-Agent", "")
+        electron_ua_pattern = r'\bElectron/\d+\.\d+\.\d+'
+        if not re.search(electron_ua_pattern, user_agent):
+            logger.warning(
+                f"Non-Electron User-Agent from {request.remote}: {user_agent}"
+            )
+            return _error_response_with_cors(403, "Access denied: Electron only")
+
+        # Token 验证通过，继续处理请求
+        return await handler(request)
+else:
+    electron_auth_middleware = None  # type: ignore[assignment]
 
 
 class _IdempotencyCache:
@@ -437,7 +530,25 @@ class APIServerAdapter(BasePlatformAdapter):
         return "hermes-agent"
 
     def _cors_headers_for_origin(self, origin: str) -> Optional[Dict[str, str]]:
-        """Return CORS headers for an allowed browser origin."""
+        """Return CORS headers for an allowed browser origin.
+
+        v2.1.1: Electron-only 模式下，对所有 origin 返回 CORS 头
+        （包括 file://, null, localhost）因为 Token 已验证安全性。
+        """
+        # v2.1.1: Electron 模式 - 对所有 origin 返回 CORS 头
+        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE") == "1"
+        if is_electron_mode:
+            headers = dict(_CORS_HEADERS)
+            # file:// 协议无法使用具体 origin，使用 wildcard 或 null
+            if origin and origin not in ("null", ""):
+                headers["Access-Control-Allow-Origin"] = origin
+            else:
+                # file:// 协议时 origin 为 null 或空，返回 * 允许所有
+                headers["Access-Control-Allow-Origin"] = "*"
+            headers["Access-Control-Max-Age"] = "600"
+            return headers
+
+        # 非 Electron 模式：原有逻辑
         if not origin or not self._cors_origins:
             return None
 
@@ -2604,14 +2715,22 @@ class APIServerAdapter(BasePlatformAdapter):
             return False
 
         try:
-            # Electron 模式：完全禁用身份验证中间件
+            # v2.1: Electron-only 模式强制使用 Token 验证中间件
             import os
-            middlewares_to_use = (auth_middleware, cors_middleware, body_limit_middleware, security_headers_middleware)
-            if os.environ.get('GATEWAY_ELECTRON_MODE') == 'true':
-                logger.info("[%s] Electron mode detected, disabling auth_middleware", self.name)
-                middlewares_to_use = (cors_middleware, body_limit_middleware, security_headers_middleware)
 
-            mws = [mw for mw in middlewares_to_use if mw is not None]
+            # 保留现有中间件（CORS、body_limit、security_headers）
+            base_middlewares = [cors_middleware, body_limit_middleware, security_headers_middleware]
+
+            # v2.1: 添加 Electron Token 验证中间件（必须在最前面，优先验证）
+            if electron_auth_middleware:
+                base_middlewares.insert(0, electron_auth_middleware)
+                logger.info("[%s] Electron-only mode: electron_auth_middleware enabled", self.name)
+            else:
+                logger.warning("[%s] electron_auth_middleware not available (aiohttp not installed?)", self.name)
+
+            # 过滤掉 None
+            mws = [mw for mw in base_middlewares if mw is not None]
+
             self._app = web.Application(middlewares=mws)
             self._app["api_server_adapter"] = self
             self._app.router.add_get("/health", self._handle_health)
