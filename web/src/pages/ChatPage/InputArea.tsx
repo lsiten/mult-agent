@@ -76,6 +76,7 @@ export function InputArea({
         // Shift+Enter: manually insert newline without losing focus
         e.preventDefault();
         e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
 
         const target = e.currentTarget;
         const start = target.selectionStart;
@@ -85,19 +86,24 @@ export function InputArea({
         // Insert newline at cursor position
         const newValue = value.substring(0, start) + '\n' + value.substring(end);
 
-        // Update textarea value directly to avoid re-render
-        target.value = newValue;
-        target.selectionStart = target.selectionEnd = start + 1;
-
-        // Sync state with new value
+        // Update state
         setInput(newValue);
 
-        return;
+        // Restore cursor position after React updates
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
+            textareaRef.current.focus();
+          }
+        });
+
+        return false;
       }
 
       // Enter without Shift: send message (but not during IME composition)
       if (!isComposing) {
         e.preventDefault();
+        e.stopPropagation();
         handleSend();
       }
     }
