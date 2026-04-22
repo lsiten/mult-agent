@@ -16,16 +16,16 @@ interface SessionItemProps {
 
 export const SessionItem = memo(function SessionItem({ session, isActive, isFocused = false, onSelect, onDelete }: SessionItemProps) {
   const [isHovered, setIsHovered] = useState(false);
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("确定要删除此会话吗？")) {
+    if (confirm(t.chat.deleteConfirm)) {
       onDelete();
     }
   };
 
-  const displayTitle = session.title || session.preview || "未命名会话";
+  const displayTitle = session.title || session.preview || t.chat.newChat;
   const truncatedTitle = displayTitle.length > 30
     ? displayTitle.slice(0, 30) + "..."
     : displayTitle;
@@ -49,7 +49,7 @@ export const SessionItem = memo(function SessionItem({ session, isActive, isFocu
         <div className="text-sm truncate">{truncatedTitle}</div>
         <div className="text-xs text-muted-foreground">
           {relativeTime}
-          {session.message_count > 0 && ` · ${session.message_count} 条消息`}
+          {session.message_count > 0 && ` · ${session.message_count} ${t.common.messages}`}
         </div>
       </div>
 

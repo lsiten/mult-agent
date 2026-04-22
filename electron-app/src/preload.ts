@@ -58,10 +58,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartPython: () => ipcRenderer.invoke('python:restart'),
 
   // Gateway Auth Token
-  getGatewayAuthToken: () => ipcRenderer.invoke('gateway:getAuthToken'),
+  getGatewayAuthToken: () => ipcRenderer.invoke('gateway:getAuthToken', {}),
 
   // 获取 app 路径
-  getAppPath: () => ipcRenderer.invoke('app:getPath'),
+  getAppPath: () => ipcRenderer.invoke('app:getPath', {}),
 
   // Onboarding 状态
   getOnboardingStatus: () => ipcRenderer.invoke('onboarding:getStatus', {}),

@@ -341,7 +341,7 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
         <div
           className={cn(
             "relative w-full max-w-3xl max-h-[90vh] overflow-y-auto pointer-events-auto",
-            "bg-card border border-border rounded-lg shadow-lg"
+            "bg-card border-2 border-[var(--color-border-prominent)] rounded-lg"
           )}
           onClick={(e) => e.stopPropagation()}
         >

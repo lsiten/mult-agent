@@ -6,6 +6,8 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { Service } from '../core/service.interface';
 import { ProcessManager } from '../process/process-manager';
 import { HealthMonitor } from '../health/health-monitor';
@@ -34,6 +36,8 @@ export class GatewayService implements Service {
   private circuitBreaker: CircuitBreaker;
   private logCallback?: (log: string) => void;
   private errorCallback?: (error: Error) => void;
+  private authToken?: string; // v2.1: Gateway Token (持久化)
+  private auditToken?: string; // v2.1: 审计令牌（防止 bash 绕过）
 
   constructor(config: GatewayServiceConfig) {
     this.config = config;
@@ -348,10 +352,80 @@ export class GatewayService implements Service {
   }
 
   /**
+   * 获取 Gateway 认证 Token（用于前端 IPC）
+   */
+  getAuthToken(): string {
+    if (!this.authToken) {
+      throw new Error('Gateway token not initialized. Call start() first.');
+    }
+    return this.authToken;
+  }
+
+  /**
    * 构建环境变量
    */
   private buildEnvironment(): NodeJS.ProcessEnv {
     const env = { ...process.env };
+
+    // ====================================================================
+    // v2.1: 生成审计令牌并写入文件（防止 bash 绕过）
+    // ====================================================================
+    if (!this.auditToken) {
+      this.auditToken = crypto.randomBytes(32).toString('hex');
+    }
+    // v2.1.1: 统一使用 Electron 数据目录，不再使用 .hermes
+    const tokenPath = path.join(this.config.hermesHome, '.runtime_token');
+    const tokenDir = path.dirname(tokenPath);
+
+    // 确保目录存在
+    if (!fs.existsSync(tokenDir)) {
+      fs.mkdirSync(tokenDir, { recursive: true, mode: 0o700 });
+    }
+
+    // 写入审计令牌文件（600 权限）
+    fs.writeFileSync(tokenPath, this.auditToken, { mode: 0o600 });
+    env.HERMES_AUDIT_TOKEN = this.auditToken;
+    console.log(`[GatewayService] Audit token generated and saved to ${tokenPath}`);
+
+    // ====================================================================
+    // v2.1: Gateway Token 持久化（避免重启导致前端缓存失效）
+    // ====================================================================
+    if (!this.authToken) {
+      const gatewayTokenPath = path.join(this.config.hermesHome, '.gateway-token');
+      const gatewayTokenDir = path.dirname(gatewayTokenPath);
+
+      // 确保目录存在
+      if (!fs.existsSync(gatewayTokenDir)) {
+        fs.mkdirSync(gatewayTokenDir, { recursive: true, mode: 0o700 });
+      }
+
+      // 尝试从文件读取已有 Token
+      if (fs.existsSync(gatewayTokenPath)) {
+        try {
+          this.authToken = fs.readFileSync(gatewayTokenPath, 'utf-8').trim();
+          console.log('[GatewayService] Gateway token loaded from disk');
+        } catch (error) {
+          console.warn('[GatewayService] Failed to read gateway token, generating new one:', error);
+        }
+      }
+
+      // 如果没有读取到或读取失败，生成新 Token
+      if (!this.authToken) {
+        this.authToken = crypto.randomBytes(32).toString('hex');
+        fs.writeFileSync(gatewayTokenPath, this.authToken, { mode: 0o600 });
+        console.log(`[GatewayService] Gateway token generated and saved to ${gatewayTokenPath}`);
+      }
+    }
+
+    // ====================================================================
+    // v2.1: 统一环境变量命名为 HERMES_GATEWAY_TOKEN
+    // ====================================================================
+    env.HERMES_GATEWAY_TOKEN = this.authToken;
+    console.log('[GatewayService] HERMES_GATEWAY_TOKEN configured');
+
+    // 清理旧的环境变量名（v2.0 遗留）
+    delete env.GATEWAY_AUTH_TOKEN;
+    delete env.GATEWAY_ELECTRON_MODE;
 
     // 设置 HERMES_HOME
     env.HERMES_HOME = this.config.hermesHome;
@@ -363,28 +437,22 @@ export class GatewayService implements Service {
     env.GATEWAY_PORT = '8642';
     env.GATEWAY_HOST = '127.0.0.1'; // 强制使用 IPv4
 
+    // v2.1: 强制启用 Electron 模式（触发三层验证）
+    env.HERMES_ELECTRON_MODE = '1';
+
     // 开发/生产模式特定配置
     const isDev = this.config.environment === AppEnvironment.DEVELOPMENT;
     env.GATEWAY_ALLOW_ALL_USERS = isDev ? 'true' : 'false';
     env.GATEWAY_ENABLE_DASHBOARD = isDev ? 'true' : 'false';
     env.HERMES_DEV_MODE = isDev ? 'true' : 'false';
 
-    // CORS 配置 - 允许 Vite dev server 访问
+    // CORS 配置 - Electron-only 架构
+    // 开发: * (允许任意 origin，便于 Vite 端口变化)
+    // 生产: file:// (Electron loadFile)
     env.API_SERVER_ENABLED = 'true';
     env.API_SERVER_HOST = '127.0.0.1';
     env.API_SERVER_PORT = '8642';
-    env.API_SERVER_CORS_ORIGINS = 'http://localhost:5173';
-
-    // 认证 token (仅生产环境)
-    if (!isDev && this.config.authToken) {
-      env.GATEWAY_AUTH_TOKEN = this.config.authToken;
-      console.log('[GatewayService] Auth token configured for production mode');
-    } else {
-      // 开发环境：禁用认证
-      env.HERMES_ELECTRON_MODE = 'true';
-      env.GATEWAY_ELECTRON_MODE = 'true';
-      delete env.GATEWAY_AUTH_TOKEN;
-    }
+    env.API_SERVER_CORS_ORIGINS = isDev ? '*' : 'file://';
 
     // 禁用 Python 字节码缓存，确保代码修改立即生效
     env.PYTHONDONTWRITEBYTECODE = '1';

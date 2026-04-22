@@ -41,7 +41,7 @@ export function useStreamingResponse() {
     setCurrentTool(null);
     setError(null);
 
-    const url = api.getStreamUrl(sessionId, message, attachments, selectedSkills);
+    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills);
     console.log("[SSE] Starting stream from:", url, isRetry ? `(retry ${retryCountRef.current}/${maxRetries})` : "");
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;

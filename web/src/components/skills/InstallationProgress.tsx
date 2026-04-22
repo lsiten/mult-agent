@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSkillInstallStore } from '@/stores/useSkillInstallStore';
-import type { TaskState } from '@/stores/useSkillInstallStore';
+// import type { TaskState } from '@/stores/useSkillInstallStore';
 import { useInstallProgress } from '@/hooks/useInstallProgress';
 
 interface InstallationProgressProps {
@@ -61,7 +61,7 @@ export function InstallationProgress({
       await fetch(`/api/skills/install/${taskId}/cancel`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
+          // Authorization auto-added by fetchJSON
         },
       });
     } catch (err) {
@@ -202,14 +202,10 @@ export function InstallationProgressList({ onClose }: { onClose?: () => void }) 
       task.status === 'completed'
   );
 
-  console.log('[InstallationProgressList] Active tasks:', activeTasks.length, activeTasks);
-
   if (activeTasks.length === 0) {
-    console.log('[InstallationProgressList] No active tasks, hiding');
     return null;
   }
 
-  console.log('[InstallationProgressList] Rendering progress list');
   return (
     <div className="fixed bottom-4 right-4 w-96 max-w-[calc(100vw-2rem)] z-[9999] space-y-2 pointer-events-none">
       <div className="pointer-events-auto space-y-2">

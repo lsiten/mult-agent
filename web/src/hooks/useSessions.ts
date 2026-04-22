@@ -33,17 +33,20 @@ export function useSessions(source: string = "electron-chat") {
     setIsLoading(true);
     setError(null);
     try {
+      // Generate default title if not provided
+      const defaultTitle = title || `新对话 ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+
       const response = await api.createSession({
         source,
         user_id: "local-user",
-        title,
+        title: defaultTitle,
       });
 
       const newSession: SessionInfo = {
         id: response.session_id,
         source,
         model: null,
-        title: response.title,
+        title: response.title || defaultTitle,
         started_at: response.created_at,
         ended_at: null,
         last_active: response.created_at,

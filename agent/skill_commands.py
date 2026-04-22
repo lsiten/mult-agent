@@ -41,7 +41,14 @@ def build_plan_path(
         slug = "-".join(part for part in slug.split("-")[:8] if part)[:48].strip("-")
     slug = slug or "conversation-plan"
     timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
-    return Path(".hermes") / "plans" / f"{timestamp}-{slug}.md"
+    # Use get_hermes_home() to respect Electron data directory
+    try:
+        from hermes_constants import get_hermes_home
+        hermes_home = get_hermes_home()
+    except ImportError:
+        import os
+        hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return hermes_home / "plans" / f"{timestamp}-{slug}.md"
 
 
 def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tuple[dict[str, Any], Path | None, str] | None:

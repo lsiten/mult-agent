@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useSkillInstallStore } from '@/stores/useSkillInstallStore';
 import { CategorySelector } from './CategorySelector';
-import { api } from '@/lib/api';
+import { fetchJSON, api } from '@/lib/api';
 
 interface OnlineSkill {
   id: string;
@@ -52,17 +52,14 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
     const fetchCategories = async () => {
       try {
         const skills = await api.getSkills();
-        console.log('[OnlineSearchTab] Fetched skills:', skills);
         const categories = new Set<string>();
-        skills.forEach((skill) => {
+        skills.forEach((skill: any) => {
           if (skill.name.includes('/')) {
             const category = skill.name.split('/')[0];
-            console.log('[OnlineSearchTab] Found category:', category, 'from skill:', skill.name);
             categories.add(category);
           }
         });
         const categoriesArray = Array.from(categories).sort();
-        console.log('[OnlineSearchTab] Available categories:', categoriesArray);
         setExistingCategories(categoriesArray);
       } catch (err) {
         console.error('[OnlineSearchTab] Failed to fetch categories:', err);
@@ -100,16 +97,13 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
 
   const fetchSources = async () => {
     try {
-      const response = await fetch('/api/skills/sources', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSources(data.sources || []);
-      }
+      const data = await fetchJSON<{ sources: Array<{ name: string; url: string }> }>('/api/skills/sources');
+      const sourcesWithId = (data.sources || []).map((s, idx) => ({
+        id: `source-${idx}`,
+        name: s.name,
+        repo: s.url
+      }));
+      setSources(sourcesWithId);
     } catch (err) {
       console.error('Failed to fetch sources:', err);
     }
@@ -120,28 +114,11 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/skills/search?q=${encodeURIComponent(searchQuery)}&source=${encodeURIComponent(selectedSource)}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
-          },
-        }
+      const data = await fetchJSON<{ skills?: any[]; offline_mode?: boolean }>(
+        `/api/skills/search?q=${encodeURIComponent(searchQuery)}&source=${encodeURIComponent(selectedSource)}`
       );
-
-      if (!response.ok) {
-        if (response.status === 503) {
-          const data = await response.json();
-          setOfflineMode(data.offline_mode || false);
-          setSkills(data.skills || []);
-        } else {
-          throw new Error(`HTTP ${response.status}`);
-        }
-      } else {
-        const data = await response.json();
-        setSkills(data.skills || []);
-        setOfflineMode(data.offline_mode || false);
-      }
+      setSkills(data.skills || []);
+      setOfflineMode(data.offline_mode || false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to search skills');
       setSkills([]);
@@ -353,10 +330,7 @@ function InstallButton({ skillId, skillName, installed, offlineMode, onInstall }
   return (
     <Button
       size="sm"
-      onClick={() => {
-        console.log('[OnlineSearchTab] Install button clicked:', { id: skillId, name: skillName });
-        onInstall(skillId, skillName);
-      }}
+      onClick={() => onInstall(skillId, skillName)}
       disabled={installed || offlineMode}
       className="shrink-0 gap-1"
     >

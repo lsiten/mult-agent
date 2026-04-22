@@ -85,7 +85,7 @@ export function AutoField({
         <Label className="text-sm">{label}</Label>
         <FieldHint schema={schema} schemaKey={schemaKey} />
         <textarea
-          className="flex min-h-[80px] w-full border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex min-h-[80px] w-full border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           value={String(value ?? "")}
           onChange={(e) => onChange(e.target.value)}
         />

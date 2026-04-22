@@ -32,20 +32,39 @@ class ChatAPIHandlers:
         self._session_token = session_token
         self._active_streams = {}  # session_id -> asyncio.Task mapping for cancellation
 
-    def _check_auth(self, request: web.Request) -> None:
-        """Validate session token. Raises 401 on failure.
-
-        In Electron mode (HERMES_ELECTRON_MODE=true), auth is bypassed
-        since it's a single-user desktop app.
-        """
+        # In Electron mode, use HERMES_GATEWAY_TOKEN if available
         import os
-        if os.getenv("HERMES_ELECTRON_MODE") == "true":
+        if os.getenv("HERMES_ELECTRON_MODE") == "1":
+            gateway_token = os.getenv("HERMES_GATEWAY_TOKEN")
+            if gateway_token:
+                self._expected_token = gateway_token
+            else:
+                self._expected_token = session_token
+        else:
+            self._expected_token = session_token
+
+    def _check_auth(self, request: web.Request) -> None:
+        """Validate token. Raises 401 on failure.
+
+        For EventSource/SSE endpoints that cannot send custom headers,
+        the token can be passed as a URL parameter 'token'.
+
+        In Electron mode, validates against HERMES_GATEWAY_TOKEN.
+        In web mode, validates against session_token.
+        """
+        # Check Authorization header first
+        auth = request.headers.get("Authorization", "")
+        expected = f"Bearer {self._expected_token}"
+        if auth == expected:
             return
 
-        auth = request.headers.get("Authorization", "")
-        expected = f"Bearer {self._session_token}"
-        if auth != expected:
-            raise web.HTTPUnauthorized(text="Unauthorized")
+        # Fallback: check URL parameter (for EventSource/SSE)
+        url_token = request.query.get("token", "")
+        if url_token == self._expected_token:
+            return
+
+        # Neither header nor URL param matched
+        raise web.HTTPUnauthorized(text="Unauthorized")
 
     async def handle_create_session(self, request: web.Request) -> web.Response:
         """POST /api/chat/sessions/create

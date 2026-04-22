@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useSkillSelectionStore, type Skill } from '@/stores/useSkillSelectionStore';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
+import { fetchJSON } from '@/lib/api';
 
 interface SkillSelectorProps {
   onApply?: () => void;
@@ -51,9 +52,7 @@ export function SkillSelector({ onApply }: SkillSelectorProps) {
   useEffect(() => {
     const loadSkills = async () => {
       try {
-        const response = await fetch('/api/skills');
-        if (!response.ok) throw new Error('Failed to load skills');
-        const data = await response.json();
+        const data = await fetchJSON<Skill[]>('/api/skills');
         setSkills(data);
       } catch (error) {
         console.error('Failed to load skills:', error);

@@ -19,7 +19,7 @@ class AnalyticsAPIHandlers:
 
     def _check_auth(self, request: web.Request) -> bool:
         """Check session token (bypassed in Electron mode)."""
-        if os.getenv("HERMES_ELECTRON_MODE") == "true":
+        if os.getenv("HERMES_ELECTRON_MODE") == "1":
             return True
 
         auth = request.headers.get("Authorization", "")

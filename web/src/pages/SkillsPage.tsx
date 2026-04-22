@@ -22,7 +22,7 @@ import {
   FolderOpen,
   Edit,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, fetchJSON } from "@/lib/api";
 import type { SkillInfo, ToolsetInfo } from "@/lib/api";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
@@ -33,8 +33,8 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { SkillInstallModal } from "@/components/skills/SkillInstallModal";
-import { InstallationProgressList } from "@/components/skills/InstallationProgress";
-import { useSkillInstallStore, type TaskState } from "@/stores/useSkillInstallStore";
+// import { InstallationProgressList } from "@/components/skills/InstallationProgress";
+import { useSkillInstallStore, type TaskState, type TaskStatus } from "@/stores/useSkillInstallStore";
 
 /* ------------------------------------------------------------------ */
 /*  Types & helpers                                                    */
@@ -98,7 +98,7 @@ export default function SkillsPage() {
   const [view, setView] = useState<"skills" | "toolsets">("skills");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
-  const [skillsPath, setSkillsPath] = useState<string>("~/.hermes/skills/"); // Dynamic path
+  const [skillsPath, setSkillsPath] = useState<string>("$HERMES_HOME/skills/"); // Dynamic path from HERMES_HOME
   const [installModalOpen, setInstallModalOpen] = useState(false);
   const { toast, showToast } = useToast();
   const { t } = useI18n();
@@ -137,7 +137,7 @@ export default function SkillsPage() {
       (task) => task.status === 'pending' || task.status === 'queued' || task.status === 'in_progress'
     );
 
-    const intervalMap = new Map<string, NodeJS.Timeout>();
+    const intervalMap = new Map<string, ReturnType<typeof setInterval>>();
 
     activeTasks.forEach((task) => {
       let failureCount = 0;
@@ -146,14 +146,37 @@ export default function SkillsPage() {
       // Start polling for each active task
       const pollTask = async () => {
         try {
-          const response = await fetch(`/api/skills/install/${task.task_id}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
-            },
+          const data = await fetchJSON<{
+            status: TaskStatus;
+            progress: number;
+            current_step: string;
+            error_message: string | null;
+            error_details: Record<string, unknown> | null;
+            completed_at: number | null;
+          }>(`/api/skills/install/${task.task_id}`);
+
+          failureCount = 0; // Reset on success
+          const { updateTask } = useSkillInstallStore.getState();
+          updateTask(task.task_id, {
+            status: data.status,
+            progress: data.progress,
+            current_step: data.current_step,
+            error_message: data.error_message,
+            error_details: data.error_details,
+            completed_at: data.completed_at,
           });
 
-          if (response.status === 404) {
-            // Task not found - stop polling
+          // Stop polling if task reached terminal state
+          if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+            const interval = intervalMap.get(task.task_id);
+            if (interval) {
+              clearInterval(interval);
+              intervalMap.delete(task.task_id);
+            }
+          }
+        } catch (error) {
+          // Handle 404 (task not found) or other errors
+          if (error instanceof Error && error.message.includes('404')) {
             console.warn(`[SkillsPage] Task ${task.task_id} not found (404), stopping poll`);
             const interval = intervalMap.get(task.task_id);
             if (interval) {
@@ -166,42 +189,9 @@ export default function SkillsPage() {
             return;
           }
 
-          if (response.ok) {
-            failureCount = 0; // Reset on success
-            const data = await response.json();
-            const { updateTask } = useSkillInstallStore.getState();
-            updateTask(task.task_id, {
-              status: data.status,
-              progress: data.progress,
-              current_step: data.current_step,
-              error_message: data.error_message,
-              error_details: data.error_details,
-              completed_at: data.completed_at,
-            });
-
-            // Stop polling if task reached terminal state
-            if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
-              const interval = intervalMap.get(task.task_id);
-              if (interval) {
-                clearInterval(interval);
-                intervalMap.delete(task.task_id);
-              }
-            }
-          } else {
-            failureCount++;
-            if (failureCount >= MAX_FAILURES) {
-              console.error(`[SkillsPage] Too many failures for task ${task.task_id}, stopping poll`);
-              const interval = intervalMap.get(task.task_id);
-              if (interval) {
-                clearInterval(interval);
-                intervalMap.delete(task.task_id);
-              }
-            }
-          }
-        } catch (err) {
           failureCount++;
-          console.error(`Failed to poll task ${task.task_id}:`, err);
           if (failureCount >= MAX_FAILURES) {
+            console.error(`[SkillsPage] Too many failures for task ${task.task_id}, stopping poll`);
             const interval = intervalMap.get(task.task_id);
             if (interval) {
               clearInterval(interval);
@@ -280,23 +270,13 @@ export default function SkillsPage() {
 
   const handleOpenSkillDirectory = async (skillPath: string) => {
     try {
-      // Use absolute URL for Electron compatibility
-      const baseUrl = window.location.hostname === 'localhost' && window.location.port === '5173'
-        ? 'http://localhost:8642'
-        : '';
-
-      const response = await fetch(`${baseUrl}/api/skills/open-directory`, {
+      await fetchJSON('/api/skills/open-directory', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify({ path: skillPath }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to open directory');
-      }
       showToast(t.common.success || 'Directory opened', 'success');
     } catch (err) {
       showToast(t.common.failedToReveal, 'error');
@@ -351,25 +331,16 @@ export default function SkillsPage() {
     if (newDescription === null) return; // User cancelled
 
     try {
-      const baseUrl = window.location.hostname === 'localhost' && window.location.port === '5173'
-        ? 'http://localhost:8642'
-        : '';
-
-      const response = await fetch(`${baseUrl}/api/skills/update-description`, {
+      await fetchJSON('/api/skills/update-description', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify({
           skill_name: skillName,
           description: newDescription,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update description');
-      }
 
       // Update local state
       setSkills((prev) =>
@@ -461,9 +432,9 @@ export default function SkillsPage() {
   }, [toolsets, search, lowerSearch]);
 
   // Check for failed tasks in store (using tasks from line 130)
-  const failedTasks = useMemo(() => {
-    return Object.values(tasks).filter((t) => t.status === 'failed');
-  }, [tasks]);
+  // const failedTasks = useMemo(() => {
+  //   return Object.values(tasks).filter((t) => t.status === 'failed');
+  // }, [tasks]);
 
   /* ---- Loading ---- */
   if (loading) {
@@ -615,7 +586,7 @@ export default function SkillsPage() {
                         toggling={togglingSkills.has(skill.name)}
                         onToggle={() => handleToggleSkill(skill)}
                         onDelete={() => handleDeleteSkill(skill.name)}
-                        onOpenDirectory={() => handleOpenSkillDirectory(skill.path)}
+                        onOpenDirectory={() => skill.path && handleOpenSkillDirectory(skill.path)}
                         onEditDescription={() => handleEditDescription(skill.name, skill.description || '')}
                         noDescriptionLabel={t.skills.noDescription}
                       />
@@ -644,7 +615,7 @@ export default function SkillsPage() {
                 {activeSkills.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     {skills.length === 0
-                      ? `未找到技能。技能从 ${skillsPath} 加载`
+                      ? t.skills.noSkills.replace('$HERMES_HOME/skills/', skillsPath)
                       : t.skills.noSkillsMatch}
                   </p>
                 ) : (
@@ -656,7 +627,7 @@ export default function SkillsPage() {
                         toggling={togglingSkills.has(skill.name)}
                         onToggle={() => handleToggleSkill(skill)}
                         onDelete={() => handleDeleteSkill(skill.name)}
-                        onOpenDirectory={() => handleOpenSkillDirectory(skill.path)}
+                        onOpenDirectory={() => skill.path && handleOpenSkillDirectory(skill.path)}
                         onEditDescription={() => handleEditDescription(skill.name, skill.description || '')}
                         noDescriptionLabel={t.skills.noDescription}
                       />

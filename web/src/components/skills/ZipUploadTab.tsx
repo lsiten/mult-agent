@@ -29,17 +29,14 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
     const fetchCategories = async () => {
       try {
         const skills = await api.getSkills();
-        console.log('[ZipUpload] Fetched skills:', skills);
         const categories = new Set<string>();
         skills.forEach((skill) => {
           if (skill.name.includes('/')) {
             const category = skill.name.split('/')[0];
-            console.log('[ZipUpload] Found category:', category, 'from skill:', skill.name);
             categories.add(category);
           }
         });
         const categoriesArray = Array.from(categories).sort();
-        console.log('[ZipUpload] Available categories:', categoriesArray);
         setExistingCategories(categoriesArray);
       } catch (err) {
         console.error('[ZipUpload] Failed to fetch categories:', err);
@@ -51,7 +48,6 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('[ZipUpload] Drag event:', e.type);
     if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
     } else if (e.type === 'dragleave') {
@@ -63,10 +59,8 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    console.log('[ZipUpload] Drop event:', e.dataTransfer.files);
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      console.log('[ZipUpload] File dropped:', e.dataTransfer.files[0].name);
       handleFile(e.dataTransfer.files[0]);
     }
   };
@@ -78,12 +72,10 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
   };
 
   const handleFile = async (file: File) => {
-    console.log('[ZipUpload] Processing file:', { name: file.name, size: file.size, type: file.type });
     setError(null);
 
     // Validate file type
     if (!file.name.endsWith('.zip')) {
-      console.error('[ZipUpload] Invalid file type:', file.name);
       setError(t.skills.install.uploadZip.invalidFile);
       return;
     }
@@ -91,13 +83,11 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
     // Validate file size (50MB)
     const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
-      console.error('[ZipUpload] File too large:', file.size);
       setError(t.skills.install.uploadZip.fileTooLarge);
       return;
     }
 
     // Upload file
-    console.log('[ZipUpload] Starting upload...');
     setUploading(true);
 
     try {
@@ -105,20 +95,15 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
       formData.append('file', file);
       if (selectedCategory) {
         formData.append('category', selectedCategory);
-        console.log('[ZipUpload] Uploading with category:', selectedCategory);
-      } else {
-        console.log('[ZipUpload] Uploading without category (root)');
       }
 
       const response = await fetch('/api/skills/upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
+          // Authorization auto-added by api.fetchJSON
         },
         body: formData,
       });
-
-      console.log('[ZipUpload] Upload response status:', response.status);
 
       if (!response.ok) {
         const data = await response.json();
@@ -126,7 +111,6 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
       }
 
       const data = await response.json();
-      console.log('[ZipUpload] Upload complete:', data);
 
       // Validation phase
       setUploading(false);
@@ -134,7 +118,6 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
 
       // Notify parent of upload completion
       onUploadComplete(data.task_id, data.skill_name);
-      console.log('[ZipUpload] Upload complete callback triggered');
     } catch (err) {
       console.error('[ZipUpload] Upload failed:', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -182,7 +165,7 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
                       : t.skills.install.uploadZip.validating}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {t.common.pleaseWait}
+                    {t.common.loading}
                   </p>
                 </div>
               </>

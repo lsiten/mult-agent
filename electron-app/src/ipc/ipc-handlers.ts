@@ -49,8 +49,7 @@ async function checkHealthCached(
  * 创建所有 IPC 处理器
  */
 export function createIpcHandlers(
-  application: Application,
-  gatewayAuthToken: string
+  application: Application
 ): IpcHandlerConfig[] {
   return [
     // ============================================================
@@ -123,7 +122,20 @@ export function createIpcHandlers(
       channel: 'gateway:getAuthToken',
       schema: schemas.GatewayGetAuthTokenSchema,
       handler: () => {
-        return { token: gatewayAuthToken || null };
+        // v2.1.1: 动态从 Gateway Service 读取 token（不使用闭包变量）
+        const gatewayService = application.get<GatewayService>('gateway');
+        if (!gatewayService) {
+          console.warn('[IPC] gateway:getAuthToken: Gateway service not found');
+          return { token: null };
+        }
+        try {
+          const token = gatewayService.getAuthToken();
+          console.log('[IPC] gateway:getAuthToken: returning token', token ? `${token.substring(0, 16)}...` : '(none)');
+          return { token };
+        } catch (error) {
+          console.error('[IPC] gateway:getAuthToken: Failed to get token:', error);
+          return { token: null };
+        }
       },
     },
 

@@ -61,7 +61,7 @@ interface SkillInstallStore {
   setWsConnected: (connected: boolean) => void;
 }
 
-export const useSkillInstallStore = create<SkillInstallStore>((set, get) => ({
+export const useSkillInstallStore = create<SkillInstallStore>((set, _get) => ({
   tasks: {},
   conflicts: {},
   wsConnected: false,

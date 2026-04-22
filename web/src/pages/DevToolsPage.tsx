@@ -340,7 +340,7 @@ export default function DevToolsPage() {
                       </CardTitle>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
-                          <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} id="auto-refresh" />
+                          <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
                           <Label htmlFor="auto-refresh" className="text-xs">{t.logs.autoRefresh}</Label>
                         </div>
                         <Button variant="outline" size="sm" onClick={fetchLogs} className="h-7">

@@ -48,6 +48,7 @@ export const zh: Translations = {
     general: "通用",
     messaging: "消息平台",
     optional: "可选",
+    messages: "条消息",
   },
 
   settings: {
@@ -181,7 +182,7 @@ export const zh: Translations = {
     searchPlaceholder: "搜索技能和工具集...",
     enabledOf: "已启用 {enabled}/{total}",
     all: "全部",
-    noSkills: "未找到技能。技能从 ~/.hermes/skills/ 加载",
+    noSkills: "未找到技能。技能从 $HERMES_HOME/skills/ 加载",
     noSkillsMatch: "没有匹配的技能。",
     skillCount: "{count} 个技能",
     resultCount: "{count} 个结果",
@@ -364,6 +365,8 @@ export const zh: Translations = {
     deleteConfirm: "确定要删除此会话吗？",
     collapseSidebar: "折叠侧边栏",
     expandSidebar: "展开侧边栏",
+    loadMore: "加载更早的消息",
+    loadingMore: "加载中...",
     attachFile: "附加文件",
     attachImage: "附加图片",
     voiceInput: "语音输入",

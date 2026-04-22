@@ -17,24 +17,34 @@ let _gatewayAuthToken: string | null = null;
 async function getGatewayAuthToken(): Promise<string | null> {
   // 缓存 token 避免重复 IPC 调用
   if (_gatewayAuthToken !== null) {
+    console.log('[API] Using cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
     return _gatewayAuthToken;
   }
 
   // 仅在 Electron 环境中获取 Gateway auth token
   if (typeof window !== 'undefined' && (window as any).electronAPI?.getGatewayAuthToken) {
     try {
+      console.log('[API] Fetching Gateway token from Electron IPC...');
       const result = await (window as any).electronAPI.getGatewayAuthToken();
-      _gatewayAuthToken = result.token || '';
-      return _gatewayAuthToken;
+      console.log('[API] IPC result:', result);
+
+      if (result.ok && result.data?.token) {
+        _gatewayAuthToken = result.data.token;
+        console.log('[API] Cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
+        return _gatewayAuthToken;
+      } else {
+        console.error('[API] IPC returned invalid token:', result);
+        return null;
+      }
     } catch (error) {
-      console.warn('[API] Failed to get Gateway auth token:', error);
-      // 开发模式可能不需要 token，继续执行
-      _gatewayAuthToken = '';
-      return _gatewayAuthToken;
+      console.error('[API] Failed to get Gateway auth token:', error);
+      // IPC 失败不应该缓存空值，应该重试
+      return null;
     }
   }
 
   // 非 Electron 环境，返回空（开发模式）
+  console.log('[API] Not in Electron environment, no Gateway token needed');
   _gatewayAuthToken = '';
   return _gatewayAuthToken;
 }
@@ -45,8 +55,10 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
   // 1. Inject Gateway auth token for all Gateway requests (Electron only)
   if (!headers.has("Authorization") && BASE.includes('8642')) {
     const gatewayToken = await getGatewayAuthToken();
+    console.log('[fetchJSON] Gateway token retrieved:', gatewayToken ? `${gatewayToken.substring(0, 16)}...` : '(none)');
     if (gatewayToken) {
       headers.set("Authorization", `Bearer ${gatewayToken}`);
+      console.log('[fetchJSON] Set Authorization header');
     }
   }
 
@@ -56,6 +68,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     headers.set("Authorization", `Bearer ${token}`);
   }
 
+  console.log('[fetchJSON] Final headers:', Object.fromEntries(headers.entries()));
   const res = await fetch(`${BASE}${url}`, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -203,7 +216,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-  getStreamUrl: (sessionId: string, message: string, attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>, selectedSkills?: string[]) => {
+  getStreamUrl: async (sessionId: string, message: string, attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>, selectedSkills?: string[]) => {
     const params = new URLSearchParams({ message });
     if (attachments && attachments.length > 0) {
       params.append('attachments', JSON.stringify(attachments));
@@ -211,6 +224,13 @@ export const api = {
     if (selectedSkills && selectedSkills.length > 0) {
       params.append('selected_skills', JSON.stringify(selectedSkills));
     }
+
+    // Add Gateway token as URL parameter for EventSource (cannot use headers)
+    const gatewayToken = await getGatewayAuthToken();
+    if (gatewayToken) {
+      params.append('token', gatewayToken);
+    }
+
     return `${BASE}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>
@@ -481,6 +501,7 @@ export interface SkillInfo {
   description: string;
   category: string;
   enabled: boolean;
+  path?: string;
 }
 
 export interface ToolsetInfo {

@@ -49,6 +49,7 @@ export interface Translations {
     general: string;
     messaging: string;
     optional: string;
+    messages: string;
   };
 
   // ── App shell ──
@@ -228,6 +229,12 @@ export interface Translations {
         fileTooLarge: string;
         requirements: string;
         trustedOnly: string;
+        selectCategory: string;
+        categoryDescription: string;
+        rootCategory: string;
+        newCategory: string;
+        enterCategoryName: string;
+        categoryPlaceholder: string;
       };
       progress: {
         pending: string;
@@ -368,6 +375,8 @@ export interface Translations {
     deleteConfirm: string;
     collapseSidebar: string;
     expandSidebar: string;
+    loadMore: string;
+    loadingMore: string;
     attachFile: string;
     attachImage: string;
     voiceInput: string;
@@ -377,6 +386,7 @@ export interface Translations {
     sessionCreated: string;
     sessionDeleted: string;
     waitForUpload: string;
+    stopTask: string;
     noSessions: string;
     stopRecording: string;
     cancelRecording: string;

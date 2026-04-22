@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Sidebar } from "./ChatPage/Sidebar";
 import { ChatArea } from "./ChatPage/ChatArea";
 import { useSessions } from "@/hooks/useSessions";
@@ -50,6 +50,14 @@ export function ChatPage() {
   // Compute grouped sessions
   const groupedSessions = groupSessions(sessions);
 
+  // Compute current session title (same fallback logic as SessionItem)
+  const currentSessionTitle = useMemo(() => {
+    if (!currentSessionId) return null;
+    const session = sessions.find(s => s.id === currentSessionId);
+    // Use title, fallback to preview, then to "新对话"
+    return session?.title || session?.preview || "新对话";
+  }, [sessions, currentSessionId]);
+
   const handleNewChat = useCallback(async () => {
     try {
       const newSessionId = await createSession();
@@ -61,10 +69,13 @@ export function ChatPage() {
     }
   }, [createSession, showToast]);
 
-  const handleSessionSelect = useCallback((sessionId: string) => {
+  const handleSessionSelect = useCallback(async (sessionId: string) => {
+    // Refresh sessions list first to get latest titles
+    await loadSessions();
+    // Then switch to the selected session
     switchSession(sessionId);
     // Messages will be loaded by useEffect when currentSessionId changes
-  }, [switchSession]);
+  }, [switchSession, loadSessions]);
 
   const handleSessionDelete = useCallback(async (sessionId: string) => {
     try {
@@ -181,6 +192,7 @@ export function ChatPage() {
   // Load messages when currentSessionId changes
   useEffect(() => {
     if (currentSessionId) {
+      // Load messages for the selected session
       api.getSessionMessages(currentSessionId)
         .then(data => setMessages(data.messages || []))
         .catch(error => {
@@ -235,7 +247,7 @@ export function ChatPage() {
 
       <ChatArea
         sessionId={currentSessionId}
-        sessionTitle={sessions.find(s => s.id === currentSessionId)?.title || null}
+        sessionTitle={currentSessionTitle}
         messages={messages}
         streamingContent={streamingContent}
         isStreaming={isStreaming}

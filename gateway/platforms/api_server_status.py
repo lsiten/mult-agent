@@ -27,7 +27,7 @@ class StatusAPIHandlers:
 
         In Electron mode, auth is bypassed since it's a single-user desktop app.
         """
-        if os.getenv("HERMES_ELECTRON_MODE") == "true":
+        if os.getenv("HERMES_ELECTRON_MODE") == "1":
             return
 
         auth = request.headers.get("Authorization", "")
@@ -65,7 +65,7 @@ class StatusAPIHandlers:
                 "config_path": str(config_path),
                 "env_path": str(env_path),
                 "version": version,
-                "electron_mode": os.getenv("HERMES_ELECTRON_MODE") == "true",
+                "electron_mode": os.getenv("HERMES_ELECTRON_MODE") == "1",
                 "gateway_enabled": True,
                 "gateway_running": True,
                 "gateway_state": "running",

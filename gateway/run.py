@@ -30,6 +30,79 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, List
 
+
+def _exit_with_error(msg: str) -> None:
+    """Print error message and exit with code 1."""
+    print("=" * 60, file=sys.stderr)
+    print("⚠️  Hermes Agent v2 Gateway 只能通过 Electron 启动", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print(file=sys.stderr)
+    print(f"错误: {msg}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("请运行以下命令:", file=sys.stderr)
+    print("  cd electron-app && npm start", file=sys.stderr)
+    print(file=sys.stderr)
+    print("快速开始指南: docs/新人上手指南.md", file=sys.stderr)
+    print(file=sys.stderr)
+    sys.exit(1)
+
+
+def _check_electron_mode():
+    """
+    P0 安全检查：三层验证机制
+
+    防护措施：
+    1. 检查 HERMES_ELECTRON_MODE 环境变量
+    2. 验证审计令牌（防止 bash 绕过）
+    3. 验证父进程是 Electron（辅助检查）
+    """
+    # ============================================================
+    # 检查 1: 环境变量
+    # ============================================================
+    if not os.environ.get("HERMES_ELECTRON_MODE"):
+        _exit_with_error("HERMES_ELECTRON_MODE not set")
+
+    # ============================================================
+    # 检查 2: 审计令牌验证（v2.1 新增，防止 bash 绕过）
+    # ============================================================
+    audit_token = os.environ.get("HERMES_AUDIT_TOKEN", "")
+    # v2.1.1: 使用 Electron 数据目录，不再使用 .hermes
+    from hermes_constants import get_hermes_home
+    token_file = get_hermes_home() / ".runtime_token"
+
+    try:
+        if token_file.exists():
+            expected_token = token_file.read_text().strip()
+            if audit_token != expected_token:
+                _exit_with_error(f"Invalid audit token (expected from {token_file})")
+        else:
+            _exit_with_error(f"Audit token file not found: {token_file}")
+    except Exception as e:
+        _exit_with_error(f"Error reading audit token: {e}")
+
+    # ============================================================
+    # 检查 3: 父进程验证（辅助检查，需 psutil）
+    # ============================================================
+    try:
+        import psutil
+        parent = psutil.Process(os.getppid())
+        parent_name = parent.name().lower()
+
+        # 记录父进程名称用于调试
+        print(f"[Electron-only Check] Parent process: {parent_name}", file=sys.stderr, flush=True)
+
+        # v2.1: 仅允许 electron，移除 bash/sh/python
+        if 'electron' not in parent_name:
+            _exit_with_error(f"Parent process is not Electron (got: {parent_name})")
+    except ImportError:
+        _exit_with_error("psutil not installed (required for parent process verification)")
+    except Exception as e:
+        _exit_with_error(f"Error checking parent process: {e}")
+
+
+# ⚠️ Electron-only 模式检查（立即执行）
+_check_electron_mode()
+
 # --- Agent cache tuning ---------------------------------------------------
 # Bounds the per-session AIAgent cache to prevent unbounded growth in
 # long-lived gateways (each AIAgent holds LLM clients, tool schemas,
@@ -10585,20 +10658,29 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 def main():
     """CLI entry point for the gateway."""
     import argparse
-    
+
+    # ============================================================
+    # v2.1.1: Gateway Token 长度验证（Phase 0.3 要求）
+    # ============================================================
+    gateway_token = os.environ.get("HERMES_GATEWAY_TOKEN", "")
+    if len(gateway_token) < 32:
+        _exit_with_error(
+            f"HERMES_GATEWAY_TOKEN too short (got {len(gateway_token)} chars, need >=32)"
+        )
+
     parser = argparse.ArgumentParser(description="Hermes Gateway - Multi-platform messaging")
     parser.add_argument("--config", "-c", help="Path to gateway config file")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    
+
     args = parser.parse_args()
-    
+
     config = None
     if args.config:
         import yaml
         with open(args.config, encoding="utf-8") as f:
             data = yaml.safe_load(f)
             config = GatewayConfig.from_dict(data)
-    
+
     # Run the gateway - exit with code 1 if no platforms connected,
     # so systemd Restart=on-failure will retry on transient errors (e.g. DNS)
     success = asyncio.run(start_gateway(config))

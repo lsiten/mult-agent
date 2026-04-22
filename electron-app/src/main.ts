@@ -6,7 +6,6 @@
 
 import { app, dialog } from 'electron';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { Application } from './core/application';
 import { EnvService } from './services/env.service';
 import { ConfigService } from './services/config.service';
@@ -22,7 +21,6 @@ import { createIpcHandlers } from './ipc/ipc-handlers';
 
 // 全局应用实例
 let application: Application | null = null;
-let gatewayAuthToken: string = '';
 let dependencyCheckResult: CheckResult | null = null;
 let ipcRegistry: IpcRegistry | null = null;
 
@@ -37,8 +35,8 @@ function setupIpcHandlers(): void {
   // 创建 IPC Registry
   ipcRegistry = new IpcRegistry();
 
-  // 注册所有处理器
-  const handlers = createIpcHandlers(application, gatewayAuthToken);
+  // 注册所有处理器（v2.1.1: token 由 handler 动态从 Gateway Service 读取）
+  const handlers = createIpcHandlers(application);
   ipcRegistry.registerAll(handlers);
 
   console.log(`[Main] Registered ${handlers.length} IPC handlers`);
@@ -80,12 +78,6 @@ async function initializeApplication(): Promise<void> {
     return;
   }
 
-  // 生成认证 token (生产环境)
-  if (env === AppEnvironment.PRODUCTION) {
-    gatewayAuthToken = crypto.randomBytes(32).toString('hex');
-    console.log('[Main] Generated Gateway auth token');
-  }
-
   // 创建 Application 实例
   application = new Application();
 
@@ -101,7 +93,6 @@ async function initializeApplication(): Promise<void> {
     pythonRuntimePath: EnvironmentDetector.getPythonPath(), // Python 源码目录
     environment: env,
     hermesHome: app.getPath('userData'),
-    authToken: gatewayAuthToken || undefined,
   });
 
   const viteDevService = new ViteDevService({
