@@ -164,7 +164,7 @@ export function OAuthLoginModal({ provider, onClose, onSuccess, onError }: Props
       aria-modal="true"
       aria-labelledby="oauth-modal-title"
     >
-      <div className="relative w-full max-w-md border border-border bg-card shadow-2xl">
+      <div className="relative w-full max-w-md border-2 border-[var(--color-border-prominent)] bg-card">
         <button
           type="button"
           onClick={handleClose}

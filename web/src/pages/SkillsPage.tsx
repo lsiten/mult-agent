@@ -33,7 +33,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { SkillInstallModal } from "@/components/skills/SkillInstallModal";
-import { InstallationProgressList } from "@/components/skills/InstallationProgress";
+// import { InstallationProgressList } from "@/components/skills/InstallationProgress";
 import { useSkillInstallStore, type TaskState } from "@/stores/useSkillInstallStore";
 
 /* ------------------------------------------------------------------ */
@@ -137,7 +137,7 @@ export default function SkillsPage() {
       (task) => task.status === 'pending' || task.status === 'queued' || task.status === 'in_progress'
     );
 
-    const intervalMap = new Map<string, NodeJS.Timeout>();
+    const intervalMap = new Map<string, ReturnType<typeof setInterval>>();
 
     activeTasks.forEach((task) => {
       let failureCount = 0;
@@ -461,9 +461,9 @@ export default function SkillsPage() {
   }, [toolsets, search, lowerSearch]);
 
   // Check for failed tasks in store (using tasks from line 130)
-  const failedTasks = useMemo(() => {
-    return Object.values(tasks).filter((t) => t.status === 'failed');
-  }, [tasks]);
+  // const failedTasks = useMemo(() => {
+  //   return Object.values(tasks).filter((t) => t.status === 'failed');
+  // }, [tasks]);
 
   /* ---- Loading ---- */
   if (loading) {
@@ -615,7 +615,7 @@ export default function SkillsPage() {
                         toggling={togglingSkills.has(skill.name)}
                         onToggle={() => handleToggleSkill(skill)}
                         onDelete={() => handleDeleteSkill(skill.name)}
-                        onOpenDirectory={() => handleOpenSkillDirectory(skill.path)}
+                        onOpenDirectory={() => skill.path && handleOpenSkillDirectory(skill.path)}
                         onEditDescription={() => handleEditDescription(skill.name, skill.description || '')}
                         noDescriptionLabel={t.skills.noDescription}
                       />
@@ -656,7 +656,7 @@ export default function SkillsPage() {
                         toggling={togglingSkills.has(skill.name)}
                         onToggle={() => handleToggleSkill(skill)}
                         onDelete={() => handleDeleteSkill(skill.name)}
-                        onOpenDirectory={() => handleOpenSkillDirectory(skill.path)}
+                        onOpenDirectory={() => skill.path && handleOpenSkillDirectory(skill.path)}
                         onEditDescription={() => handleEditDescription(skill.name, skill.description || '')}
                         noDescriptionLabel={t.skills.noDescription}
                       />

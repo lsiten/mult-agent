@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSkillInstallStore } from '@/stores/useSkillInstallStore';
-import type { TaskState } from '@/stores/useSkillInstallStore';
+// import type { TaskState } from '@/stores/useSkillInstallStore';
 import { useInstallProgress } from '@/hooks/useInstallProgress';
 
 interface InstallationProgressProps {

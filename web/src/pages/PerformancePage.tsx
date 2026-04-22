@@ -38,7 +38,7 @@ export default function PerformancePage() {
   const fetchStatus = async () => {
     try {
       if (window.electronAPI) {
-        const response = await window.electronAPI.getPythonStatus({ includeMetrics: true });
+        const response = await window.electronAPI.getPythonStatus();
         console.log('[PerformancePage] Received response:', response);
 
         // IPC Registry wraps responses in { ok, data }
@@ -195,7 +195,7 @@ export default function PerformancePage() {
             <CardTitle className="text-sm font-medium">{t.performance.status.title}</CardTitle>
           </CardHeader>
           <CardContent>
-            {getStatusBadge(status.running, status.restartInProgress)}
+            {getStatusBadge(status.running ?? false, status.restartInProgress ?? false)}
           </CardContent>
         </Card>
 

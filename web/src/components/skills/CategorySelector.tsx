@@ -3,16 +3,16 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Folder, Plus } from 'lucide-react';
+import { Folder } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
-  SelectContent,
+  // SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
+  // SelectTrigger,
+  // SelectValue,
 } from '@/components/ui/select';
 
 interface CategorySelectorProps {

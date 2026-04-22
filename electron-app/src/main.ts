@@ -21,7 +21,6 @@ import { createIpcHandlers } from './ipc/ipc-handlers';
 
 // 全局应用实例
 let application: Application | null = null;
-let gatewayAuthToken: string = '';
 let dependencyCheckResult: CheckResult | null = null;
 let ipcRegistry: IpcRegistry | null = null;
 
@@ -36,8 +35,8 @@ function setupIpcHandlers(): void {
   // 创建 IPC Registry
   ipcRegistry = new IpcRegistry();
 
-  // 注册所有处理器
-  const handlers = createIpcHandlers(application, gatewayAuthToken);
+  // 注册所有处理器（v2.1.1: token 由 handler 动态从 Gateway Service 读取）
+  const handlers = createIpcHandlers(application);
   ipcRegistry.registerAll(handlers);
 
   console.log(`[Main] Registered ${handlers.length} IPC handlers`);
@@ -148,15 +147,6 @@ async function initializeApplication(): Promise<void> {
   try {
     await application.start();
     console.log('[Main] Application started successfully');
-
-    // v2.1.1: 从 Gateway Service 读取持久化的 Token
-    try {
-      gatewayAuthToken = gatewayService.getAuthToken();
-      console.log('[Main] Retrieved Gateway auth token from GatewayService');
-    } catch (error) {
-      console.error('[Main] Failed to get Gateway auth token:', error);
-      // Token 未初始化不应该阻止应用启动（开发模式可能跳过）
-    }
   } catch (error) {
     console.error('[Main] Failed to start application:', error);
     dialog.showErrorBox(

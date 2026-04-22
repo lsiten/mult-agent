@@ -11,7 +11,7 @@ import type { TaskState } from '@/stores/useSkillInstallStore';
 
 export function useInstallProgress(taskId: string | null) {
   const { updateTask, tasks } = useSkillInstallStore();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!taskId) return;

@@ -8,7 +8,7 @@ import {
   Loader2, AlertTriangle, Gauge,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+// import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { Button } from "@/components/ui/button";
@@ -264,9 +264,8 @@ export default function App() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2 px-2 sm:px-4">
-            <ThemeSwitcher />
             <LanguageSwitcher />
-            <span className="hidden sm:inline font-display text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
+            <span className="hidden sm:inline text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
               {t.app.webUi}
             </span>
           </div>

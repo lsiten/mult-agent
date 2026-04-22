@@ -182,7 +182,7 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
                       : t.skills.install.uploadZip.validating}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {t.common.pleaseWait}
+                    {t.common.loading}
                   </p>
                 </div>
               </>

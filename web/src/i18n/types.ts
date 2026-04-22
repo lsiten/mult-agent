@@ -228,6 +228,12 @@ export interface Translations {
         fileTooLarge: string;
         requirements: string;
         trustedOnly: string;
+        selectCategory: string;
+        categoryDescription: string;
+        rootCategory: string;
+        newCategory: string;
+        enterCategoryName: string;
+        categoryPlaceholder: string;
       };
       progress: {
         pending: string;
@@ -377,6 +383,7 @@ export interface Translations {
     sessionCreated: string;
     sessionDeleted: string;
     waitForUpload: string;
+    stopTask: string;
     noSessions: string;
     stopRecording: string;
     cancelRecording: string;
