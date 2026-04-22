@@ -74,10 +74,12 @@ export function InputArea({
     if (e.key === "Enter") {
       if (e.shiftKey) {
         // Shift+Enter: allow default behavior (new line)
+        console.log('[InputArea] Shift+Enter detected, allowing new line');
         return;
       }
 
       // Enter without Shift: send message (but not during IME composition)
+      console.log('[InputArea] Enter detected, isComposing:', isComposing);
       if (!isComposing) {
         e.preventDefault();
         handleSend();
@@ -216,7 +218,7 @@ export function InputArea({
           </div>
 
           {/* Input + Send button container */}
-          <div className="flex-1 flex items-end gap-0 bg-background/40 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors">
+          <div className="flex-1 flex items-end gap-0 bg-background/40 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors overflow-hidden">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -234,7 +236,7 @@ export function InputArea({
               disabled={!isStreaming && !canSend}
               variant={isStreaming ? "destructive" : "default"}
               size="icon"
-              className="h-12 w-12 shrink-0 rounded-l-none rounded-r-md border-0 self-end"
+              className="h-12 w-12 shrink-0 rounded-none self-end m-0.5"
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
