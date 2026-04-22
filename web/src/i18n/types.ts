@@ -375,6 +375,8 @@ export interface Translations {
     deleteConfirm: string;
     collapseSidebar: string;
     expandSidebar: string;
+    loadMore: string;
+    loadingMore: string;
     attachFile: string;
     attachImage: string;
     voiceInput: string;

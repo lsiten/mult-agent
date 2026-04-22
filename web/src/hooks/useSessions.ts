@@ -19,6 +19,10 @@ export function useSessions(source: string = "electron-chat") {
     setError(null);
     try {
       const response = await api.listSessions({ limit, offset, source });
+      console.log("[useSessions] loadSessions returned", response.sessions.length, "sessions");
+      if (response.sessions.length > 0) {
+        console.log("[useSessions] First session:", response.sessions[0].id, "title:", response.sessions[0].title);
+      }
       setSessions(response.sessions);
 
       // Don't auto-select any session - let user explicitly choose
@@ -33,17 +37,20 @@ export function useSessions(source: string = "electron-chat") {
     setIsLoading(true);
     setError(null);
     try {
+      // Generate default title if not provided
+      const defaultTitle = title || `新对话 ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+
       const response = await api.createSession({
         source,
         user_id: "local-user",
-        title,
+        title: defaultTitle,
       });
 
       const newSession: SessionInfo = {
         id: response.session_id,
         source,
         model: null,
-        title: response.title,
+        title: response.title || defaultTitle,
         started_at: response.created_at,
         ended_at: null,
         last_active: response.created_at,
@@ -68,12 +75,10 @@ export function useSessions(source: string = "electron-chat") {
     }
   }, [source]);
 
-  const switchSession = useCallback(async (sessionId: string) => {
+  const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
     localStorage.setItem("lastSessionId", sessionId);
-    // Refresh sessions to get latest titles and metadata
-    await loadSessions();
-  }, [loadSessions]);
+  }, []);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {

@@ -365,6 +365,8 @@ export const zh: Translations = {
     deleteConfirm: "确定要删除此会话吗？",
     collapseSidebar: "折叠侧边栏",
     expandSidebar: "展开侧边栏",
+    loadMore: "加载更早的消息",
+    loadingMore: "加载中...",
     attachFile: "附加文件",
     attachImage: "附加图片",
     voiceInput: "语音输入",

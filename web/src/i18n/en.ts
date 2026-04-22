@@ -365,6 +365,8 @@ export const en: Translations = {
     deleteConfirm: "Are you sure you want to delete this session?",
     collapseSidebar: "Collapse Sidebar",
     expandSidebar: "Expand Sidebar",
+    loadMore: "Load older messages",
+    loadingMore: "Loading...",
     attachFile: "Attach File",
     attachImage: "Attach Image",
     voiceInput: "Voice Input",
