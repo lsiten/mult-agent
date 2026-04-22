@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Send, X, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { AttachmentButtons } from "./AttachmentButtons";
@@ -39,6 +39,7 @@ export function InputArea({
   const [isDragging, setIsDragging] = useState(false);
   const [toolElapsedTime, setToolElapsedTime] = useState(0);
   const [isComposing, setIsComposing] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Update elapsed time every second when a tool is running
   useEffect(() => {
@@ -72,8 +73,10 @@ export function InputArea({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter") {
       if (e.shiftKey) {
-        // Shift+Enter: manually insert newline
+        // Shift+Enter: manually insert newline without losing focus
         e.preventDefault();
+        e.stopPropagation();
+
         const target = e.currentTarget;
         const start = target.selectionStart;
         const end = target.selectionEnd;
@@ -81,12 +84,13 @@ export function InputArea({
 
         // Insert newline at cursor position
         const newValue = value.substring(0, start) + '\n' + value.substring(end);
-        setInput(newValue);
 
-        // Move cursor after the newline
-        setTimeout(() => {
-          target.selectionStart = target.selectionEnd = start + 1;
-        }, 0);
+        // Update textarea value directly to avoid re-render
+        target.value = newValue;
+        target.selectionStart = target.selectionEnd = start + 1;
+
+        // Sync state with new value
+        setInput(newValue);
 
         return;
       }
@@ -232,6 +236,7 @@ export function InputArea({
           {/* Input + Send button container */}
           <div className="flex-1 flex items-stretch gap-0 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors overflow-hidden">
             <Textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -255,7 +260,7 @@ export function InputArea({
               onMouseDown={(e) => e.preventDefault()}
               disabled={!isStreaming && !canSend}
               type="button"
-              className={`w-12 h-full shrink-0 rounded-none inline-flex items-center justify-center transition-colors ${
+              className={`w-12 h-full shrink-0 rounded-none inline-flex items-center justify-center transition-colors border-0 outline-none focus:outline-none focus-visible:outline-none ${
                 isStreaming
                   ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
                   : 'bg-foreground/90 text-background hover:bg-foreground'
