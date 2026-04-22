@@ -424,8 +424,9 @@ class PluginManager:
         user_dir = get_hermes_home() / "plugins"
         manifests.extend(self._scan_directory(user_dir, source="user"))
 
-        # 2. Project plugins (./.hermes/plugins/)
+        # 2. Project plugins (./.hermes/plugins/ - legacy, not used in Electron mode)
         if _env_enabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+            # Note: In Electron-only mode, this is not used. Kept for backward compatibility.
             project_dir = Path.cwd() / ".hermes" / "plugins"
             manifests.extend(self._scan_directory(project_dir, source="project"))
 

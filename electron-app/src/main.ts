@@ -6,7 +6,6 @@
 
 import { app, dialog } from 'electron';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { Application } from './core/application';
 import { EnvService } from './services/env.service';
 import { ConfigService } from './services/config.service';
@@ -80,12 +79,6 @@ async function initializeApplication(): Promise<void> {
     return;
   }
 
-  // 生成认证 token (生产环境)
-  if (env === AppEnvironment.PRODUCTION) {
-    gatewayAuthToken = crypto.randomBytes(32).toString('hex');
-    console.log('[Main] Generated Gateway auth token');
-  }
-
   // 创建 Application 实例
   application = new Application();
 
@@ -101,7 +94,6 @@ async function initializeApplication(): Promise<void> {
     pythonRuntimePath: EnvironmentDetector.getPythonPath(), // Python 源码目录
     environment: env,
     hermesHome: app.getPath('userData'),
-    authToken: gatewayAuthToken || undefined,
   });
 
   const viteDevService = new ViteDevService({
@@ -156,6 +148,15 @@ async function initializeApplication(): Promise<void> {
   try {
     await application.start();
     console.log('[Main] Application started successfully');
+
+    // v2.1.1: 从 Gateway Service 读取持久化的 Token
+    try {
+      gatewayAuthToken = gatewayService.getAuthToken();
+      console.log('[Main] Retrieved Gateway auth token from GatewayService');
+    } catch (error) {
+      console.error('[Main] Failed to get Gateway auth token:', error);
+      // Token 未初始化不应该阻止应用启动（开发模式可能跳过）
+    }
   } catch (error) {
     console.error('[Main] Failed to start application:', error);
     dialog.showErrorBox(

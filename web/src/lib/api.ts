@@ -17,24 +17,28 @@ let _gatewayAuthToken: string | null = null;
 async function getGatewayAuthToken(): Promise<string | null> {
   // 缓存 token 避免重复 IPC 调用
   if (_gatewayAuthToken !== null) {
+    console.log('[API] Using cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
     return _gatewayAuthToken;
   }
 
   // 仅在 Electron 环境中获取 Gateway auth token
   if (typeof window !== 'undefined' && (window as any).electronAPI?.getGatewayAuthToken) {
     try {
+      console.log('[API] Fetching Gateway token from Electron IPC...');
       const result = await (window as any).electronAPI.getGatewayAuthToken();
+      console.log('[API] IPC result:', result);
       _gatewayAuthToken = result.token || '';
+      console.log('[API] Cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
       return _gatewayAuthToken;
     } catch (error) {
-      console.warn('[API] Failed to get Gateway auth token:', error);
-      // 开发模式可能不需要 token，继续执行
-      _gatewayAuthToken = '';
-      return _gatewayAuthToken;
+      console.error('[API] Failed to get Gateway auth token:', error);
+      // IPC 失败不应该缓存空值，应该重试
+      return null;
     }
   }
 
   // 非 Electron 环境，返回空（开发模式）
+  console.log('[API] Not in Electron environment, no Gateway token needed');
   _gatewayAuthToken = '';
   return _gatewayAuthToken;
 }
@@ -481,6 +485,7 @@ export interface SkillInfo {
   description: string;
   category: string;
   enabled: boolean;
+  path?: string;
 }
 
 export interface ToolsetInfo {

@@ -352,6 +352,16 @@ export class GatewayService implements Service {
   }
 
   /**
+   * 获取 Gateway 认证 Token（用于前端 IPC）
+   */
+  getAuthToken(): string {
+    if (!this.authToken) {
+      throw new Error('Gateway token not initialized. Call start() first.');
+    }
+    return this.authToken;
+  }
+
+  /**
    * 构建环境变量
    */
   private buildEnvironment(): NodeJS.ProcessEnv {
