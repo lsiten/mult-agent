@@ -1,185 +1,376 @@
-<p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
-</p>
+# Hermes Agent v2
 
-# Hermes Agent ☤
+**AI Agent 桌面应用** - Python 核心 + Electron 跨平台桌面界面
 
-<p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
-</p>
-
-**The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
-
-Use any model you want — [Nous Portal](https://portal.nousresearch.com), [OpenRouter](https://openrouter.ai) (200+ models), [NVIDIA NIM](https://build.nvidia.com) (Nemotron), [Xiaomi MiMo](https://platform.xiaomimimo.com), [z.ai/GLM](https://z.ai), [Kimi/Moonshot](https://platform.moonshot.ai), [MiniMax](https://www.minimax.io), [Hugging Face](https://huggingface.co), OpenAI, or your own endpoint. Switch with `hermes model` — no code changes, no lock-in.
-
-<table>
-<tr><td><b>A real terminal interface</b></td><td>Full TUI with multiline editing, slash-command autocomplete, conversation history, interrupt-and-redirect, and streaming tool output.</td></tr>
-<tr><td><b>Lives where you do</b></td><td>Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process. Voice memo transcription, cross-platform conversation continuity.</td></tr>
-<tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
-<tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
-<tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
-<tr><td><b>Runs anywhere, not just your laptop</b></td><td>Six terminal backends — local, Docker, SSH, Daytona, Singularity, and Modal. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
-<tr><td><b>Research-ready</b></td><td>Batch trajectory generation, Atropos RL environments, trajectory compression for training the next generation of tool-calling models.</td></tr>
-</table>
+一个现代化的 AI Agent 平台，提供完整的桌面应用体验：实时对话、技能安装、会话管理、系统监控。
 
 ---
 
-## Quick Install
+## ✨ 核心特性
+
+- **🖥️ 原生桌面应用** - Electron + React 构建的跨平台桌面应用
+- **⚡ 实时流式对话** - 支持 SSE (Server-Sent Events) 的流式输出体验
+- **🔧 技能生态系统** - 在线搜索、一键安装、实时进度追踪
+- **💬 会话管理** - 持久化会话历史、全文搜索、分组展示
+- **📊 系统监控** - Gateway 状态、日志查看、性能分析
+- **🌍 国际化** - 中英文双语支持，一键切换
+- **🔒 安全认证** - Gateway Token 三层防护（环境变量 + Token 验证 + 父进程验证）
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- **Node.js** ≥ 18.0
+- **Python** ≥ 3.11
+- **pnpm** (推荐) 或 npm
+
+### 一键启动（推荐）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+cd electron-app && npm start
 ```
 
-Works on Linux, macOS, WSL2, and Android via Termux. The installer handles the platform-specific setup for you.
+**一条命令完成所有准备**：
+1. ✅ 检查并安装前端依赖（如果 `web/node_modules` 不存在）
+2. ✅ 设置开发环境（复制 Python 运行时）
+3. ✅ 编译 TypeScript Main Process
+4. ✅ 启动 Gateway（Python，端口 8642）
+5. ✅ 启动 Vite（前端，端口 5173）
+6. ✅ 启动 DevWatcher（Python 热重载，1秒防抖）
+7. ✅ 打开 Electron 窗口
 
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://hermes-agent.nousresearch.com/docs/getting-started/termux). On Termux, Hermes installs a curated `.[termux]` extra because the full `.[all]` extra currently pulls Android-incompatible voice dependencies.
->
-> **Windows:** Native Windows is not supported. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run the command above.
+**启动时间**: ~2.25s
 
-After installation:
+---
+
+### 首次安装依赖（可选）
+
+如果想手动控制依赖安装：
 
 ```bash
-source ~/.bashrc    # reload shell (or: source ~/.zshrc)
-hermes              # start chatting!
+# 1. 安装 Electron 依赖
+cd electron-app
+npm install  # 或 pnpm install
+
+# 2. 安装前端依赖
+cd ../web
+npm install  # 或 pnpm install
+
+# 3. 安装 Python 依赖（如果需要独立运行 Gateway）
+cd ../
+pip install -r requirements.txt  # 建议使用 venv
+```
+
+> **注意**: `npm start` 会自动处理前端依赖，无需手动安装。Python 依赖内置在 `electron-app/resources/python-runtime/` 中。
+
+---
+
+## 📂 项目结构
+
+```
+hermes-agent-v2/
+├── electron-app/           # Electron 主进程 + 桌面应用
+│   ├── src/
+│   │   ├── main.ts        # Electron 主入口
+│   │   ├── preload.ts     # IPC 桥接层
+│   │   └── services/      # Gateway、Vite、DevWatcher 服务
+│   ├── resources/         # Python 运行时 + 静态资源
+│   └── package.json
+│
+├── web/                   # React 前端（Vite + TypeScript）
+│   ├── src/
+│   │   ├── pages/         # 页面组件（Status、Chat、Skills 等）
+│   │   ├── components/    # UI 组件
+│   │   ├── hooks/         # React Hooks
+│   │   ├── stores/        # Zustand 状态管理
+│   │   ├── i18n/          # 国际化配置
+│   │   └── lib/           # 工具函数 + API 客户端
+│   └── package.json
+│
+├── gateway/               # Python Gateway 服务
+│   ├── run.py            # Gateway 启动入口
+│   ├── platforms/        # API 路由（REST + SSE）
+│   └── delivery.py       # 消息分发
+│
+├── agent/                # Agent 核心逻辑
+│   ├── __init__.py       # Agent 主循环
+│   └── skill_utils.py    # 技能工具
+│
+├── tools/                # 工具函数库
+├── skills/               # 技能目录
+├── hermes_state.py       # SQLite 状态管理
+└── .claude/              # Claude Code 规则配置
 ```
 
 ---
 
-## Getting Started
+## 🔧 架构说明
+
+### Electron 三层架构
+
+```
+┌─────────────────────────────────────────┐
+│  Main Process (Node.js)                 │
+│  - 服务编排（Gateway、Vite、DevWatcher）│
+│  - IPC 通信                             │
+│  - 窗口管理                             │
+└─────────────┬───────────────────────────┘
+              │
+    ┌─────────┴─────────┐
+    │                   │
+┌───▼────────────┐  ┌───▼──────────────┐
+│ Renderer       │  │ Python Gateway   │
+│ (Chromium)     │  │ (子进程:8642)    │
+│ - React 前端   │  │ - REST API       │
+│ - SSE 客户端   │  │ - SSE Stream     │
+└────────────────┘  └──────────────────┘
+```
+
+### 数据流
+
+```
+用户输入 → React 前端 → API 客户端 (fetchJSON)
+    ↓
+Gateway Token 注入 (IPC 获取)
+    ↓
+HTTP 请求 → Gateway (8642) → Agent 核心
+    ↓                              ↓
+SSE Stream ← ← ← ← ← ← ← ← ← ← 工具调用 + LLM
+    ↓
+EventSource → React 状态更新 → UI 渲染
+```
+
+### 认证机制
+
+**三层防护**：
+
+1. **环境变量** - `HERMES_ELECTRON_MODE=1`（标识 Electron 模式）
+2. **Gateway Token** - 32 字节随机 token（存储在 `~/.hermes/.gateway-token`）
+3. **父进程验证** - 确保 Gateway 只能从 Electron 启动
+
+**Token 传递**：
+
+- **普通请求**: `Authorization: Bearer <token>` header
+- **SSE 请求**: `?token=<token>` URL 参数（EventSource 不支持自定义 headers）
+
+---
+
+## 🛠️ 开发指南
+
+### 热重载机制
+
+| 修改内容 | 响应方式 | 需要重启 |
+|---------|---------|---------|
+| **Python 代码** | DevWatcher 自动重启 Gateway（1秒防抖） | ❌ |
+| **TypeScript (Main)** | 需手动重编译 | ✅ `pnpm build:main` |
+| **React 组件** | Vite HMR | ❌ |
+| **config.yaml** | 需重启 Gateway | ✅ |
+
+### 常用命令
 
 ```bash
-hermes              # Interactive CLI — start a conversation
-hermes model        # Choose your LLM provider and model
-hermes tools        # Configure which tools are enabled
-hermes config set   # Set individual config values
-hermes gateway      # Start the messaging gateway (Telegram, Discord, etc.)
-hermes setup        # Run the full setup wizard (configures everything at once)
-hermes claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
-hermes update       # Update to the latest version
-hermes doctor       # Diagnose any issues
+# 🚀 启动开发
+cd electron-app
+npm start                    # 一键启动（推荐）
+npm run dev                  # 启动并监听 TypeScript 变化
+
+# 🔨 构建
+npm run build:main           # 编译 Main Process TypeScript
+npm run setup:dev            # 设置开发环境（复制 Python 运行时）
+
+# 📦 生产打包
+npm run package:mac          # 打包 macOS 应用
+npm run package:mac:optimized # 打包（优化 Python，体积更小）
+npm run package:win          # 打包 Windows
+npm run package:linux        # 打包 Linux
+
+# 🧹 清理
+npm run clean                # 清理构建产物
+npm run clean:all            # 清理所有（包括前端）
+
+# 🧪 测试
+npm run test:unit            # 单元测试
+npm run test:integration     # 集成测试
+npm run test:e2e             # E2E 测试
+
+# 📊 前端独立开发
+cd ../web
+npm run dev                  # 启动 Vite (5173)
+npm run build                # 生产构建
+npm run lint                 # ESLint 检查
+
+# 🐍 Python 独立开发
+python gateway/run.py        # 独立启动 Gateway (8642)
+pytest tests/                # 运行测试
 ```
 
-📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
+> **提示**: 
+> - `npm start` 已包含依赖检查、环境设置、编译、启动全流程
+> - 修改 Python 代码会自动热重载（DevWatcher，1秒防抖）
+> - 修改 TypeScript Main Process 需要运行 `npm run build:main` 并重启
 
-## CLI vs Messaging Quick Reference
+### 数据目录
 
-Hermes has two entry points: start the terminal UI with `hermes`, or run the gateway and talk to it from Telegram, Discord, Slack, WhatsApp, Signal, or Email. Once you're in a conversation, many slash commands are shared across both interfaces.
+| 系统 | 路径 |
+|------|------|
+| **macOS** | `~/Library/Application Support/hermes-agent-electron/` |
+| **Windows** | `%APPDATA%/hermes-agent-electron/` |
+| **Linux** | `~/.config/hermes-agent-electron/` |
 
-| Action | CLI | Messaging platforms |
-|---------|-----|---------------------|
-| Start chatting | `hermes` | Run `hermes gateway setup` + `hermes gateway start`, then send the bot a message |
-| Start fresh conversation | `/new` or `/reset` | `/new` or `/reset` |
-| Change model | `/model [provider:model]` | `/model [provider:model]` |
-| Set a personality | `/personality [name]` | `/personality [name]` |
-| Retry or undo the last turn | `/retry`, `/undo` | `/retry`, `/undo` |
-| Compress context / check usage | `/compress`, `/usage`, `/insights [--days N]` | `/compress`, `/usage`, `/insights [days]` |
-| Browse skills | `/skills` or `/<skill-name>` | `/skills` or `/<skill-name>` |
-| Interrupt current work | `Ctrl+C` or send a new message | `/stop` or send a new message |
-| Platform-specific status | `/platforms` | `/status`, `/sethome` |
+```
+hermes-agent-electron/
+├── config.yaml         # 用户配置
+├── .env               # 环境变量
+├── .gateway-token     # Gateway Token（32字节，自动生成）
+├── .hermes/           # Hermes 数据目录
+│   └── skills/        # 用户安装的技能
+├── state.db           # SQLite 数据库（会话、消息、分析）
+└── logs/              # 日志文件（10MB轮转，保留7个）
+    ├── gateway.log    # Gateway 日志
+    ├── agent.log      # Agent 日志
+    └── electron.log   # Electron 日志
+```
 
-For the full command lists, see the [CLI guide](https://hermes-agent.nousresearch.com/docs/user-guide/cli) and the [Messaging Gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging).
-
----
-
-## Documentation
-
-All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)**:
-
-| Section | What's Covered |
-|---------|---------------|
-| [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart) | Install → setup → first conversation in 2 minutes |
-| [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli) | Commands, keybindings, personalities, sessions |
-| [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration) | Config file, providers, models, all options |
-| [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging) | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security) | Command approval, DM pairing, container isolation |
-| [Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
-| [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
-| [Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
-| [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
-| [Cron Scheduling](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
-| [Context Files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files) | Project context that shapes every conversation |
-| [Architecture](https://hermes-agent.nousresearch.com/docs/developer-guide/architecture) | Project structure, agent loop, key classes |
-| [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) | Development setup, PR process, code style |
-| [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) | All commands and flags |
-| [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference |
+**关键文件说明**：
+- `.gateway-token`: 启动时自动生成，持久化以保持前端缓存有效
+- `state.db`: 包含所有会话历史、消息、技能安装记录
+- `logs/`: 自动轮转，单文件最大 10MB，保留最近 7 个
 
 ---
 
-## Migrating from OpenClaw
+## 📚 技术栈
 
-If you're coming from OpenClaw, Hermes can automatically import your settings, memories, skills, and API keys.
+### 前端
 
-**During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
+- **框架**: React 18 + TypeScript
+- **构建**: Vite 6
+- **路由**: React Router 7
+- **状态管理**: Zustand
+- **UI 组件**: shadcn/ui + Radix UI
+- **样式**: TailwindCSS
+- **国际化**: 自定义 i18n Hook
+- **图标**: Lucide Icons
 
-**Anytime after install:**
+### 后端
+
+- **语言**: Python 3.11+
+- **Web 框架**: aiohttp (异步 HTTP + SSE)
+- **数据库**: SQLite（hermes_state.py 封装）
+- **日志**: Python logging + 轮转
+
+### 桌面
+
+- **框架**: Electron 33
+- **进程通信**: IPC (contextBridge)
+- **服务编排**: 自定义 Service 架构（依赖图 + 并发启动）
+
+---
+
+## 🐛 故障排查
+
+### 窗口空白
 
 ```bash
-hermes claw migrate              # Interactive migration (full preset)
-hermes claw migrate --dry-run    # Preview what would be migrated
-hermes claw migrate --preset user-data   # Migrate without secrets
-hermes claw migrate --overwrite  # Overwrite existing conflicts
+# 检查 Vite 是否运行
+lsof -i:5173
+
+# 检查 Gateway 是否就绪
+curl localhost:8642/health
 ```
 
-What gets imported:
-- **SOUL.md** — persona file
-- **Memories** — MEMORY.md and USER.md entries
-- **Skills** — user-created skills → `~/.hermes/skills/openclaw-imports/`
-- **Command allowlist** — approval patterns
-- **Messaging settings** — platform configs, allowed users, working directory
-- **API keys** — allowlisted secrets (Telegram, OpenRouter, OpenAI, Anthropic, ElevenLabs)
-- **TTS assets** — workspace audio files
-- **Workspace instructions** — AGENTS.md (with `--workspace-target`)
-
-See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
-
----
-
-## Contributing
-
-We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.
-
-Quick start for contributors — clone and go with `setup-hermes.sh`:
+### Gateway 启动失败
 
 ```bash
-git clone https://github.com/NousResearch/hermes-agent.git
-cd hermes-agent
-./setup-hermes.sh     # installs uv, creates venv, installs .[all], symlinks ~/.local/bin/hermes
-./hermes              # auto-detects the venv, no need to `source` first
+# 检查端口占用
+lsof -i:8642
+
+# 查看启动日志
+tail -f ~/Library/Application\ Support/hermes-agent-electron/logs/gateway.log
 ```
 
-Manual path (equivalent to the above):
+### Python 热重载失效
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv venv --python 3.11
-source venv/bin/activate
-uv pip install -e ".[all,dev]"
-python -m pytest tests/ -q
-```
+1. 确认 DevWatcher 在运行（查看启动日志）
+2. 确认修改的是符号链接指向的源文件
+3. 等待 1 秒防抖触发
 
-> **RL Training (optional):** To work on the RL/Tinker-Atropos integration:
-> ```bash
-> git submodule update --init tinker-atropos
-> uv pip install -e "./tinker-atropos"
-> ```
+### 401 认证错误
+
+1. 检查 Gateway Token 是否正确传递（控制台查看 `[API]` 日志）
+2. 检查 `HERMES_ELECTRON_MODE=1` 环境变量
+3. 重启应用刷新 token
 
 ---
 
-## Community
+## 📖 文档
 
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/hermes-agent/issues)
-- 💡 [Discussions](https://github.com/NousResearch/hermes-agent/discussions)
-- 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Community WeChat bridge: Run Hermes Agent and OpenClaw on the same WeChat account.
+详细文档位于 `.claude/` 目录：
+
+| 文件 | 说明 |
+|------|------|
+| [CLAUDE.md](.claude/CLAUDE.md) | 项目总览 + 快速参考 |
+| [architecture-electron.md](.claude/rules/architecture-electron.md) | Electron 架构详解 |
+| [architecture-hermes-core.md](.claude/rules/architecture-hermes-core.md) | Python 核心架构 |
+| [i18n-guidelines.md](.claude/rules/i18n-guidelines.md) | 国际化规范 |
+| [development-workflow.md](.claude/rules/development-workflow.md) | 开发工作流 |
 
 ---
 
-## License
+## 🎯 性能基准 (v1.1.0)
 
-MIT — see [LICENSE](LICENSE).
+| 指标 | v1.0.0 | v1.1.0 | 优化 |
+|------|--------|--------|------|
+| 启动时间 | ~3s | ~2.25s | ⬇️ 25% |
+| CPU 占用 | 持续轮询 | 按需检查 | ⬇️ 20% |
 
-Built by [Nous Research](https://nousresearch.com).
+**关键优化**：
+- 分层并发启动（BFS 算法）
+- 按需健康检查（启动后切换模式）
+- Gateway 认证（Token 生成 + 持久化）
+- IPC 缓存（5s TTL）
+
+---
+
+## 🤝 贡献指南
+
+欢迎贡献！请遵循以下规范：
+
+1. **代码风格**
+   - TypeScript: ESLint + Prettier
+   - Python: Black + isort
+   - 200-400 行/文件（硬限制：800 行）
+
+2. **提交规范**
+   - `feat:` 新功能
+   - `fix:` 修复
+   - `refactor:` 重构
+   - `docs:` 文档
+   - `test:` 测试
+
+3. **测试要求**
+   - 工具函数：单元测试
+   - Gateway API：集成测试
+   - 关键流程：E2E 测试
+
+---
+
+## 📄 许可证
+
+MIT License - 详见 [LICENSE](LICENSE)
+
+---
+
+## 🙏 致谢
+
+- **原项目**: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
+- **UI 组件**: [shadcn/ui](https://ui.shadcn.com)
+- **图标**: [Lucide Icons](https://lucide.dev)
+- **构建工具**: [Vite](https://vite.dev) + [Electron Vite](https://electron-vite.org)
+
+---
+
+**当前版本**: v1.1.0  
+**最后更新**: 2026-04-22  
+**维护者**: 雷诗城
