@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Send, X, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AttachmentButtons } from "./AttachmentButtons";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -244,12 +243,15 @@ export function InputArea({
               disabled={disabled}
             />
 
-            <Button
+            <button
               onClick={isStreaming ? onStopTask : handleSend}
               disabled={!isStreaming && !canSend}
-              variant={isStreaming ? "destructive" : "default"}
-              size="icon"
-              className="w-12 shrink-0 rounded-none border-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+              type="button"
+              className={`w-12 h-full shrink-0 rounded-none inline-flex items-center justify-center transition-colors ${
+                isStreaming
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  : 'bg-foreground/90 text-background hover:bg-foreground'
+              } disabled:opacity-50 disabled:pointer-events-none`}
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
@@ -263,7 +265,7 @@ export function InputArea({
               ) : (
                 <Send className="h-4 w-4" />
               )}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
