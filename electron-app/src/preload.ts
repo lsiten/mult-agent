@@ -7,14 +7,14 @@ export interface ElectronAPI {
   onPythonError: (callback: (error: { message: string; timestamp: string }) => void) => void;
 
   // Python 状态和控制
-  getPythonStatus: () => Promise<{
+  getPythonStatus: (options?: { includeMetrics?: boolean }) => Promise<{
     running: boolean;
     consecutiveFailures: number;
     restartInProgress: boolean;
     circuitState: string;
     metrics: any;
   }>;
-  restartPython: () => Promise<{ ok: boolean }>;
+  restartPython: (reason?: string) => Promise<{ ok: boolean }>;
 
   // Gateway Auth Token
   getGatewayAuthToken: () => Promise<{ token: string | null }>;
@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('python:getStatus', options || {}),
 
   // Python 重启
-  restartPython: () => ipcRenderer.invoke('python:restart'),
+  restartPython: (reason?: string) => ipcRenderer.invoke('python:restart', { reason }),
 
   // Gateway Auth Token
   getGatewayAuthToken: () => ipcRenderer.invoke('gateway:getAuthToken', {}),
