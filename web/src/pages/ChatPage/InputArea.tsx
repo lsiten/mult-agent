@@ -193,7 +193,7 @@ export function InputArea({
           </div>
         )}
 
-        <div className="flex gap-2 flex-shrink-0 items-end">
+        <div className="flex gap-2 flex-shrink-0 items-center">
           <div className="flex gap-1">
             <SkillSelector />
             <AttachmentButtons
@@ -219,7 +219,6 @@ export function InputArea({
           <Button
             onClick={isStreaming ? onStopTask : handleSend}
             disabled={!isStreaming && !canSend}
-            className="self-end"
             variant={isStreaming ? "destructive" : "default"}
             title={
               isStreaming
