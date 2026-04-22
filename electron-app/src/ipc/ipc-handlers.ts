@@ -113,7 +113,17 @@ export function createIpcHandlers(
         if (input.reason) {
           console.log(`[IPC] Restarting Gateway: ${input.reason}`);
         }
-        await gatewayService.restart();
+
+        // Check if Gateway is running - start if stopped, restart if running
+        const metrics = gatewayService.getMetrics();
+        if (!metrics.running) {
+          console.log('[IPC] Gateway is stopped, calling start() instead of restart()');
+          await gatewayService.start();
+        } else {
+          console.log('[IPC] Gateway is running, calling restart()');
+          await gatewayService.restart();
+        }
+
         return { success: true };
       },
     },
