@@ -644,7 +644,7 @@ export default function SkillsPage() {
                 {activeSkills.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     {skills.length === 0
-                      ? `未找到技能。技能从 ${skillsPath} 加载`
+                      ? t.skills.noSkills.replace('$HERMES_HOME', skillsPath.replace('/skills/', ''))
                       : t.skills.noSkillsMatch}
                   </p>
                 ) : (
