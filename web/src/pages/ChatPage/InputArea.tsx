@@ -244,7 +244,15 @@ export function InputArea({
             />
 
             <button
-              onClick={isStreaming ? onStopTask : handleSend}
+              onClick={(e) => {
+                e.preventDefault();
+                if (isStreaming) {
+                  onStopTask();
+                } else {
+                  handleSend();
+                }
+              }}
+              onMouseDown={(e) => e.preventDefault()}
               disabled={!isStreaming && !canSend}
               type="button"
               className={`w-12 h-full shrink-0 rounded-none inline-flex items-center justify-center transition-colors ${
