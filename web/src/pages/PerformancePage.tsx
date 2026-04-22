@@ -38,7 +38,7 @@ export default function PerformancePage() {
   const fetchStatus = async () => {
     try {
       if (window.electronAPI) {
-        const response = await window.electronAPI.getPythonStatus();
+        const response = await window.electronAPI.getPythonStatus({ includeMetrics: true });
         console.log('[PerformancePage] Received response:', response);
 
         // IPC Registry wraps responses in { ok, data }
@@ -84,7 +84,7 @@ export default function PerformancePage() {
         await fetchStatus();
 
         // Get latest status from state
-        const response = await window.electronAPI.getPythonStatus();
+        const response = await window.electronAPI.getPythonStatus({ includeMetrics: true });
         const newStatus = response?.data || response;
 
         // Stop polling if PID changed (restart successful) or max attempts reached
