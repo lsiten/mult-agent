@@ -392,12 +392,22 @@ if AIOHTTP_AVAILABLE:
             logger.error("HERMES_GATEWAY_TOKEN not set in environment")
             return _error_response_with_cors(500, "Gateway not in Electron mode")
 
+        # v2.1.3: 支持 URL 参数传递 token（用于 EventSource/SSE，无法发送自定义 headers）
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            logger.warning(f"Missing Authorization header from {request.remote}: '{auth_header[:50]}'")
-            return _error_response_with_cors(401, "Missing Authorization header")
+        url_token = request.query.get("token", "")
 
-        token = auth_header[7:].strip()  # "Bearer " 后 7 个字符
+        # 尝试从 Authorization header 获取 token
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        # 回退：从 URL 参数获取 token
+        elif url_token:
+            token = url_token
+        else:
+            logger.warning(f"Missing token from {request.remote}: no Authorization header or ?token= parameter")
+            return _error_response_with_cors(401, "Missing token")
+
+        # 验证 token
         if token != expected_token:
             logger.warning(f"Invalid token from {request.remote}: got '{token[:16]}...' expected '{expected_token[:16]}...'")
             return _error_response_with_cors(403, "Invalid token")

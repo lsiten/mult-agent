@@ -3,7 +3,7 @@ import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
 import { MessageBubble } from "./MessageBubble";
 import { type SessionMessage } from "@/lib/api";
-import { Loader2, ChevronUp } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 
 interface MessageListProps {
@@ -18,7 +18,7 @@ type ListItem =
   | { type: "message"; message: SessionMessage; index: number }
   | { type: "streaming"; content: string }
   | { type: "loading" }
-  | { type: "load-more" };
+  | { type: "loading-more" };
 
 const INITIAL_MESSAGE_COUNT = 30;
 const LOAD_MORE_COUNT = 20;
@@ -44,9 +44,9 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
     const hiddenMessageCount = Math.max(0, totalHistoricalMessages - displayedMessageCount);
     const visibleMessages = messages.slice(hiddenMessageCount);
 
-    // Add "Load More" button if there are hidden messages
-    if (hiddenMessageCount > 0) {
-      items.push({ type: "load-more" });
+    // Add loading indicator at top if there are hidden messages and currently loading
+    if (hiddenMessageCount > 0 && isLoadingMore) {
+      items.push({ type: "loading-more" });
     }
 
     // Add visible historical messages
@@ -95,6 +95,12 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
   const handleLoadMore = async () => {
     if (isLoadingMore) return;
 
+    const totalMessages = messages.length;
+    const hiddenCount = Math.max(0, totalMessages - displayedMessageCount);
+
+    // Don't load if no more messages
+    if (hiddenCount === 0) return;
+
     setIsLoadingMore(true);
 
     // Simulate loading delay for UX
@@ -102,6 +108,17 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
 
     setDisplayedMessageCount(prev => prev + LOAD_MORE_COUNT);
     setIsLoadingMore(false);
+  };
+
+  // Handle scroll to top - auto load more messages
+  const handleAtTopStateChange = (atTop: boolean) => {
+    if (atTop && !isLoadingMore) {
+      const totalMessages = messages.length;
+      const hiddenCount = Math.max(0, totalMessages - displayedMessageCount);
+      if (hiddenCount > 0) {
+        handleLoadMore();
+      }
+    }
   };
 
   // Mark when we've done initial mount
@@ -118,29 +135,17 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       totalCount={listItems.length}
       initialTopMostItemIndex={Math.max(0, listItems.length - 1)}
       followOutput="smooth"
+      atTopStateChange={handleAtTopStateChange}
       itemContent={(index) => {
         const item = listItems[index];
 
-        if (item.type === "load-more") {
+        if (item.type === "loading-more") {
           return (
             <div className="py-4 flex justify-center">
-              <button
-                onClick={handleLoadMore}
-                disabled={isLoadingMore}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-              >
-                {isLoadingMore ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t.chat.loadingMore}
-                  </>
-                ) : (
-                  <>
-                    <ChevronUp className="h-4 w-4" />
-                    {t.chat.loadMore}
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t.chat.loadingMore}
+              </div>
             </div>
           );
         }
