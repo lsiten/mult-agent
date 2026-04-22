@@ -79,6 +79,9 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
     return items;
   }, [messages, displayedMessageCount, streamingContent, isStreaming, toolUseMessages, skillUseMessages]);
 
+  // Track if this is the initial render
+  const isInitialMount = useRef(true);
+
   // Auto-scroll to bottom when new messages arrive or streaming updates
   useEffect(() => {
     if (shouldAutoScroll.current && listItems.length > 0) {
@@ -88,19 +91,6 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       });
     }
   }, [listItems.length, streamingContent]);
-
-  // Initial scroll to bottom when messages first load
-  useEffect(() => {
-    if (messages.length > 0 && listItems.length > 0) {
-      // Use setTimeout to ensure Virtuoso has rendered
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({
-          index: listItems.length - 1,
-          behavior: "auto",
-        });
-      }, 100);
-    }
-  }, [messages.length > 0 && listItems.length > 0]); // Only on initial load
 
   const handleLoadMore = async () => {
     if (isLoadingMore) return;
@@ -114,11 +104,19 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
     setIsLoadingMore(false);
   };
 
+  // Mark when we've done initial mount
+  useEffect(() => {
+    if (listItems.length > 0 && isInitialMount.current) {
+      isInitialMount.current = false;
+    }
+  }, [listItems.length]);
+
   return (
     <Virtuoso
       ref={virtuosoRef}
       style={{ height: "100%" }}
       totalCount={listItems.length}
+      initialTopMostItemIndex={Math.max(0, listItems.length - 1)}
       followOutput="smooth"
       itemContent={(index) => {
         const item = listItems[index];

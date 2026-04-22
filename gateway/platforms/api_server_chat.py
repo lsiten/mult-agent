@@ -35,17 +35,29 @@ class ChatAPIHandlers:
     def _check_auth(self, request: web.Request) -> None:
         """Validate session token. Raises 401 on failure.
 
-        In Electron mode (HERMES_ELECTRON_MODE=true), auth is bypassed
+        In Electron mode (HERMES_ELECTRON_MODE=1), auth is bypassed
         since it's a single-user desktop app.
+
+        For EventSource/SSE endpoints that cannot send custom headers,
+        the token can be passed as a URL parameter 'token'.
         """
         import os
         if os.getenv("HERMES_ELECTRON_MODE") == "1":
             return
 
+        # Check Authorization header first
         auth = request.headers.get("Authorization", "")
         expected = f"Bearer {self._session_token}"
-        if auth != expected:
-            raise web.HTTPUnauthorized(text="Unauthorized")
+        if auth == expected:
+            return
+
+        # Fallback: check URL parameter (for EventSource/SSE)
+        url_token = request.query.get("token", "")
+        if url_token == self._session_token:
+            return
+
+        # Neither header nor URL param matched
+        raise web.HTTPUnauthorized(text="Unauthorized")
 
     async def handle_create_session(self, request: web.Request) -> web.Response:
         """POST /api/chat/sessions/create

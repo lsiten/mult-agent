@@ -216,7 +216,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-  getStreamUrl: (sessionId: string, message: string, attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>, selectedSkills?: string[]) => {
+  getStreamUrl: async (sessionId: string, message: string, attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>, selectedSkills?: string[]) => {
     const params = new URLSearchParams({ message });
     if (attachments && attachments.length > 0) {
       params.append('attachments', JSON.stringify(attachments));
@@ -224,6 +224,13 @@ export const api = {
     if (selectedSkills && selectedSkills.length > 0) {
       params.append('selected_skills', JSON.stringify(selectedSkills));
     }
+
+    // Add Gateway token as URL parameter for EventSource (cannot use headers)
+    const gatewayToken = await getGatewayAuthToken();
+    if (gatewayToken) {
+      params.append('token', gatewayToken);
+    }
+
     return `${BASE}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>

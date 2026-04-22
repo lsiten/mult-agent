@@ -50,12 +50,12 @@ export function ChatPage() {
   // Compute grouped sessions
   const groupedSessions = groupSessions(sessions);
 
-  // Compute current session title
+  // Compute current session title (same fallback logic as SessionItem)
   const currentSessionTitle = useMemo(() => {
     if (!currentSessionId) return null;
     const session = sessions.find(s => s.id === currentSessionId);
-    console.log("[ChatPage] Computing sessionTitle for", currentSessionId, "found:", session?.title);
-    return session?.title || null;
+    // Use title, fallback to preview, then to "新对话"
+    return session?.title || session?.preview || "新对话";
   }, [sessions, currentSessionId]);
 
   const handleNewChat = useCallback(async () => {
@@ -70,11 +70,8 @@ export function ChatPage() {
   }, [createSession, showToast]);
 
   const handleSessionSelect = useCallback(async (sessionId: string) => {
-    console.log("[ChatPage] handleSessionSelect called with:", sessionId);
     // Refresh sessions list first to get latest titles
-    console.log("[ChatPage] Refreshing sessions before switch...");
     await loadSessions();
-    console.log("[ChatPage] Sessions refreshed, now switching to:", sessionId);
     // Then switch to the selected session
     switchSession(sessionId);
     // Messages will be loaded by useEffect when currentSessionId changes
