@@ -73,13 +73,26 @@ export function InputArea({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter") {
       if (e.shiftKey) {
-        // Shift+Enter: allow default behavior (new line)
-        console.log('[InputArea] Shift+Enter detected, allowing new line');
+        // Shift+Enter: manually insert newline
+        e.preventDefault();
+        const target = e.currentTarget;
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        const value = target.value;
+
+        // Insert newline at cursor position
+        const newValue = value.substring(0, start) + '\n' + value.substring(end);
+        setInput(newValue);
+
+        // Move cursor after the newline
+        setTimeout(() => {
+          target.selectionStart = target.selectionEnd = start + 1;
+        }, 0);
+
         return;
       }
 
       // Enter without Shift: send message (but not during IME composition)
-      console.log('[InputArea] Enter detected, isComposing:', isComposing);
       if (!isComposing) {
         e.preventDefault();
         handleSend();
@@ -218,7 +231,7 @@ export function InputArea({
           </div>
 
           {/* Input + Send button container */}
-          <div className="flex-1 flex items-end gap-0 bg-background/40 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors overflow-hidden">
+          <div className="flex-1 flex items-end gap-0 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors overflow-hidden">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -227,7 +240,7 @@ export function InputArea({
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
               placeholder={placeholder}
-              className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none px-3 py-3"
+              className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-background/40 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none px-3 py-3"
               disabled={disabled}
             />
 
@@ -236,7 +249,7 @@ export function InputArea({
               disabled={!isStreaming && !canSend}
               variant={isStreaming ? "destructive" : "default"}
               size="icon"
-              className="h-12 w-12 shrink-0 rounded-none self-end m-0.5"
+              className="h-12 w-12 shrink-0 rounded-none self-end"
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
