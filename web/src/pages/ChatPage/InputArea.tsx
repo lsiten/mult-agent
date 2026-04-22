@@ -193,7 +193,7 @@ export function InputArea({
           </div>
         )}
 
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex gap-2 flex-shrink-0 items-end">
           <div className="flex gap-1">
             <SkillSelector />
             <AttachmentButtons
