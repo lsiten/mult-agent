@@ -218,7 +218,7 @@ export function InputArea({
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
               placeholder={placeholder}
-              className="resize-none h-12 flex-1 bg-transparent border-0 focus:ring-0 focus:outline-none px-3 py-3"
+              className="resize-none h-12 flex-1 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none px-3 py-3 min-h-0"
               disabled={disabled}
               rows={1}
             />
