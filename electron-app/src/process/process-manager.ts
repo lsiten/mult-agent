@@ -81,6 +81,9 @@ export class ProcessManager {
 
     const { command, args, env, cwd } = this.config;
 
+    console.log('[ProcessManager] Spawning:', command, args.join(' '));
+    console.log('[ProcessManager] cwd:', cwd || process.cwd());
+
     this.process = spawn(command, args, {
       env: env || process.env,
       cwd: cwd || process.cwd(),

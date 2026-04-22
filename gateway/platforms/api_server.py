@@ -268,11 +268,10 @@ if AIOHTTP_AVAILABLE:
                 return web.Response(status=403)
             return web.Response(status=200, headers=cors_headers)
 
-        # DEBUG: 记录到 stderr 确认 CORS middleware 执行
-        import sys
-        print(f"[cors_middleware] {request.method} {request.path}, calling handler...", file=sys.stderr, flush=True)
+        # DEBUG: 记录 CORS middleware 执行
+        logger.info("[cors_middleware] %s %s, calling handler...", request.method, request.path)
         response = await handler(request)
-        print(f"[cors_middleware] handler returned status={response.status}", file=sys.stderr, flush=True)
+        logger.info("[cors_middleware] handler returned status=%d", response.status)
         if cors_headers is not None:
             response.headers.update(cors_headers)
         return response
@@ -347,8 +346,8 @@ if AIOHTTP_AVAILABLE:
         import sys
         logger = logging.getLogger(__name__)
 
-        # DEBUG: 记录到 stderr 确保可见
-        print(f"[electron_auth_middleware] Request: {request.method} {request.path}", file=sys.stderr, flush=True)
+        # DEBUG: 记录请求
+        logger.info("[electron_auth_middleware] Request: %s %s", request.method, request.path)
 
         # v2.1.1: 辅助函数 - 创建带 CORS 头的错误响应
         def _error_response_with_cors(status: int, text: str) -> "web.Response":
@@ -395,12 +394,12 @@ if AIOHTTP_AVAILABLE:
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            logger.warning(f"Missing Authorization header from {request.remote}")
+            logger.warning(f"Missing Authorization header from {request.remote}: '{auth_header[:50]}'")
             return _error_response_with_cors(401, "Missing Authorization header")
 
         token = auth_header[7:].strip()  # "Bearer " 后 7 个字符
         if token != expected_token:
-            logger.warning(f"Invalid token from {request.remote}")
+            logger.warning(f"Invalid token from {request.remote}: got '{token[:16]}...' expected '{expected_token[:16]}...'")
             return _error_response_with_cors(403, "Invalid token")
 
         # ====================================================================
@@ -2745,10 +2744,10 @@ class APIServerAdapter(BasePlatformAdapter):
             mws = [mw for mw in base_middlewares if mw is not None]
 
             # v2.1.2: 调试 - 记录注册的中间件
-            print(f"[Api_Server] Registered {len(mws)} middlewares:", file=sys.stderr, flush=True)
+            logger.info("[%s] Registered %d middlewares", self.name, len(mws))
             for i, mw in enumerate(mws):
                 mw_name = mw.__name__ if hasattr(mw, '__name__') else str(type(mw))
-                print(f"  [{i}] {mw_name}", file=sys.stderr, flush=True)
+                logger.info("[%s]   [%d] %s", self.name, i, mw_name)
 
             self._app = web.Application(middlewares=mws)
             self._app["api_server_adapter"] = self
