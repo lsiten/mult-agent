@@ -240,7 +240,7 @@ export function InputArea({
           </div>
 
           {/* Input + Send button container */}
-          <div className="flex-1 flex items-stretch gap-0 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors overflow-hidden">
+          <div className="flex-1 flex items-stretch gap-0 rounded-md shadow-[0_0_0_1px_hsl(var(--border)/0.5)] focus-within:shadow-[0_0_0_1px_hsl(var(--foreground)/0.25)] transition-shadow overflow-hidden">
             <Textarea
               ref={textareaRef}
               value={input}
