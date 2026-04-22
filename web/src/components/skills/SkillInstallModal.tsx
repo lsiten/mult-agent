@@ -33,8 +33,6 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
   const { setTask } = useSkillInstallStore();
 
   const handleOnlineInstall = async (skillId: string, skillName: string, category?: string) => {
-    console.log('[SkillInstall] Starting installation:', { skillId, skillName, category });
-
     try {
       const data = await fetchJSON<{ task_id: string }>('/api/skills/install', {
         method: 'POST',
@@ -47,8 +45,6 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
           category: category || undefined,
         }),
       });
-
-      console.log('[SkillInstall] Installation started:', data);
 
       // Add task to store with real task_id from server
       setTask({
@@ -67,8 +63,6 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
         started_at: null,
         completed_at: null,
       });
-
-      console.log('[SkillInstall] Task added to store');
     } catch (err) {
       console.error('[SkillInstall] Failed to start installation:', err);
       // Show error to user (could use toast or alert)
@@ -77,8 +71,6 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
   };
 
   const handleUploadComplete = (taskId: string, skillName: string) => {
-    console.log('[SkillInstall] Upload complete:', { taskId, skillName });
-
     // Close modal immediately to show progress panel
     onOpenChange(false);
 

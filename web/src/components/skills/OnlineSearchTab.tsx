@@ -52,17 +52,14 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
     const fetchCategories = async () => {
       try {
         const skills = await api.getSkills();
-        console.log('[OnlineSearchTab] Fetched skills:', skills);
         const categories = new Set<string>();
         skills.forEach((skill: any) => {
           if (skill.name.includes('/')) {
             const category = skill.name.split('/')[0];
-            console.log('[OnlineSearchTab] Found category:', category, 'from skill:', skill.name);
             categories.add(category);
           }
         });
         const categoriesArray = Array.from(categories).sort();
-        console.log('[OnlineSearchTab] Available categories:', categoriesArray);
         setExistingCategories(categoriesArray);
       } catch (err) {
         console.error('[OnlineSearchTab] Failed to fetch categories:', err);
@@ -333,10 +330,7 @@ function InstallButton({ skillId, skillName, installed, offlineMode, onInstall }
   return (
     <Button
       size="sm"
-      onClick={() => {
-        console.log('[OnlineSearchTab] Install button clicked:', { id: skillId, name: skillName });
-        onInstall(skillId, skillName);
-      }}
+      onClick={() => onInstall(skillId, skillName)}
       disabled={installed || offlineMode}
       className="shrink-0 gap-1"
     >

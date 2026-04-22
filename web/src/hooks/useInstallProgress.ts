@@ -33,12 +33,9 @@ export function useInstallProgress(taskId: string | null) {
           },
         });
 
-        console.log(`[useInstallProgress] Poll response for ${taskId}:`, response.status);
-
         if (!response.ok) {
           if (response.status === 404) {
             // Task not found, stop polling
-            console.log(`[useInstallProgress] Task ${taskId} not found, stopping poll`);
             clearInterval(intervalRef.current!);
             return;
           }
@@ -46,7 +43,6 @@ export function useInstallProgress(taskId: string | null) {
         }
 
         const data: TaskState = await response.json();
-        console.log(`[useInstallProgress] Task ${taskId} status:`, data.status, data.progress, data.current_step);
 
         // Update store
         updateTask(taskId, {
@@ -62,7 +58,6 @@ export function useInstallProgress(taskId: string | null) {
 
         // Stop polling if reached terminal state
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
-          console.log(`[useInstallProgress] Task ${taskId} reached terminal state, stopping poll`);
           clearInterval(intervalRef.current!);
         }
       } catch (err) {

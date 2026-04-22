@@ -25,11 +25,6 @@ export function CategorySelector({
   const [newCategoryName, setNewCategoryName] = useState('');
   const [internalValue, setInternalValue] = useState(value);
 
-  // Debug: log props
-  useEffect(() => {
-    console.log('[CategorySelector] Received existingCategories:', existingCategories);
-  }, [existingCategories]);
-
   // Sync internal value with external prop (but ignore "__new__")
   useEffect(() => {
     if (value !== '__new__') {
@@ -38,7 +33,6 @@ export function CategorySelector({
   }, [value]);
 
   const handleSelectChange = (selectedValue: string) => {
-    console.log('[CategorySelector] Select changed:', selectedValue);
     if (selectedValue === '__new__') {
       setIsCreating(true);
       setNewCategoryName('');
@@ -65,7 +59,6 @@ export function CategorySelector({
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '');
 
-    console.log('[CategorySelector] Creating new category:', sanitized);
     if (sanitized) {
       setIsCreating(false);
       setNewCategoryName('');

@@ -61,8 +61,8 @@ export function ChatPage() {
     }
   }, [createSession, showToast]);
 
-  const handleSessionSelect = useCallback((sessionId: string) => {
-    switchSession(sessionId);
+  const handleSessionSelect = useCallback(async (sessionId: string) => {
+    await switchSession(sessionId);
     // Messages will be loaded by useEffect when currentSessionId changes
   }, [switchSession]);
 

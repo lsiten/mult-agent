@@ -68,10 +68,12 @@ export function useSessions(source: string = "electron-chat") {
     }
   }, [source]);
 
-  const switchSession = useCallback((sessionId: string) => {
+  const switchSession = useCallback(async (sessionId: string) => {
     setCurrentSessionId(sessionId);
     localStorage.setItem("lastSessionId", sessionId);
-  }, []);
+    // Refresh sessions to get latest titles and metadata
+    await loadSessions();
+  }, [loadSessions]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {

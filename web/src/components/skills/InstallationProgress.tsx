@@ -202,14 +202,10 @@ export function InstallationProgressList({ onClose }: { onClose?: () => void }) 
       task.status === 'completed'
   );
 
-  console.log('[InstallationProgressList] Active tasks:', activeTasks.length, activeTasks);
-
   if (activeTasks.length === 0) {
-    console.log('[InstallationProgressList] No active tasks, hiding');
     return null;
   }
 
-  console.log('[InstallationProgressList] Rendering progress list');
   return (
     <div className="fixed bottom-4 right-4 w-96 max-w-[calc(100vw-2rem)] z-[9999] space-y-2 pointer-events-none">
       <div className="pointer-events-auto space-y-2">
