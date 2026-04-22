@@ -195,8 +195,8 @@ export function InputArea({
           </div>
         )}
 
-        <div className="flex gap-2 flex-shrink-0 items-center">
-          <div className="flex gap-1">
+        <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-1 items-center">
             <SkillSelector />
             <AttachmentButtons
               onFileSelect={onFileSelect}
@@ -208,8 +208,8 @@ export function InputArea({
             />
           </div>
 
-          {/* Unified input container */}
-          <div className="flex-1 flex items-center gap-2 bg-background/40 border border-border/50 rounded-md pr-1 focus-within:border-foreground/25 transition-colors">
+          {/* Input + Send button container */}
+          <div className="flex-1 flex items-stretch gap-0 bg-background/40 border border-border/50 rounded-md overflow-hidden focus-within:border-foreground/25 transition-colors">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -218,8 +218,9 @@ export function InputArea({
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
               placeholder={placeholder}
-              className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-transparent border-0 focus:ring-0 focus:outline-none px-3 py-2"
+              className="resize-none h-12 flex-1 bg-transparent border-0 focus:ring-0 focus:outline-none px-3 py-3"
               disabled={disabled}
+              rows={1}
             />
 
             <Button
@@ -227,7 +228,7 @@ export function InputArea({
               disabled={!isStreaming && !canSend}
               variant={isStreaming ? "destructive" : "default"}
               size="icon"
-              className="h-10 w-10 shrink-0"
+              className="h-full w-12 shrink-0 rounded-none border-0"
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
