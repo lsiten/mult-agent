@@ -75,11 +75,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   // 诊断接口 (仅在诊断页面可用)
-  getDependencies: () => ipcRenderer.invoke('diagnostic:getDependencies'),
+  getDependencies: () => ipcRenderer.invoke('diagnostic:getDependencies', {}),
   getLogs: (options?: { lines?: number; offset?: number }) =>
     ipcRenderer.invoke('diagnostic:getLogs', options || {}),
-  getLogsPath: () => ipcRenderer.invoke('diagnostic:getLogsPath'),
-  retryStartup: () => ipcRenderer.invoke('diagnostic:retry')
+  getLogsPath: () => ipcRenderer.invoke('diagnostic:getLogsPath', {}),
+  retryStartup: () => ipcRenderer.invoke('diagnostic:retry', {})
 } as ElectronAPI);
 
 console.log('[Preload] electronAPI injected successfully');
