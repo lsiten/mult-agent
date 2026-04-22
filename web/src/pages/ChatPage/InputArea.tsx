@@ -71,10 +71,17 @@ export function InputArea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Don't send if composing (e.g., Chinese/Japanese input)
-    if (e.key === "Enter" && !e.shiftKey && !isComposing) {
-      e.preventDefault();
-      handleSend();
+    if (e.key === "Enter") {
+      if (e.shiftKey) {
+        // Shift+Enter: allow default behavior (new line)
+        return;
+      }
+
+      // Enter without Shift: send message (but not during IME composition)
+      if (!isComposing) {
+        e.preventDefault();
+        handleSend();
+      }
     }
   };
 
@@ -209,7 +216,7 @@ export function InputArea({
           </div>
 
           {/* Input + Send button container */}
-          <div className="flex-1 flex items-end gap-0 bg-background/40 border border-border/50 rounded-md overflow-hidden focus-within:border-foreground/25 transition-colors">
+          <div className="flex-1 flex items-end gap-0 bg-background/40 border border-border/50 rounded-md focus-within:border-foreground/25 transition-colors">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
