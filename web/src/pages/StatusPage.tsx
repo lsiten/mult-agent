@@ -192,6 +192,12 @@ export default function StatusPage() {
                   <span className="text-xs text-muted-foreground truncate">
                     <span className="font-mono-ui">{(s.model ?? t.common.unknown).split("/").pop()}</span> · {s.message_count} {t.common.msgs} · {timeAgo(s.last_active)}
                   </span>
+
+                  {s.preview && (
+                    <span className="text-xs text-muted-foreground/70 truncate">
+                      {s.preview}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
