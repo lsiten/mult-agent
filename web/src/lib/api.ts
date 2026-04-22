@@ -27,9 +27,15 @@ async function getGatewayAuthToken(): Promise<string | null> {
       console.log('[API] Fetching Gateway token from Electron IPC...');
       const result = await (window as any).electronAPI.getGatewayAuthToken();
       console.log('[API] IPC result:', result);
-      _gatewayAuthToken = result.token || '';
-      console.log('[API] Cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
-      return _gatewayAuthToken;
+
+      if (result.ok && result.data?.token) {
+        _gatewayAuthToken = result.data.token;
+        console.log('[API] Cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
+        return _gatewayAuthToken;
+      } else {
+        console.error('[API] IPC returned invalid token:', result);
+        return null;
+      }
     } catch (error) {
       console.error('[API] Failed to get Gateway auth token:', error);
       // IPC 失败不应该缓存空值，应该重试
@@ -49,8 +55,10 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
   // 1. Inject Gateway auth token for all Gateway requests (Electron only)
   if (!headers.has("Authorization") && BASE.includes('8642')) {
     const gatewayToken = await getGatewayAuthToken();
+    console.log('[fetchJSON] Gateway token retrieved:', gatewayToken ? `${gatewayToken.substring(0, 16)}...` : '(none)');
     if (gatewayToken) {
       headers.set("Authorization", `Bearer ${gatewayToken}`);
+      console.log('[fetchJSON] Set Authorization header');
     }
   }
 
@@ -60,6 +68,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     headers.set("Authorization", `Bearer ${token}`);
   }
 
+  console.log('[fetchJSON] Final headers:', Object.fromEntries(headers.entries()));
   const res = await fetch(`${BASE}${url}`, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);

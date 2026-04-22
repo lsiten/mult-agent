@@ -447,12 +447,12 @@ export class GatewayService implements Service {
     env.HERMES_DEV_MODE = isDev ? 'true' : 'false';
 
     // CORS 配置 - Electron-only 架构
-    // 开发: http://localhost:5173 (Vite dev server)
+    // 开发: * (允许任意 origin，便于 Vite 端口变化)
     // 生产: file:// (Electron loadFile)
     env.API_SERVER_ENABLED = 'true';
     env.API_SERVER_HOST = '127.0.0.1';
     env.API_SERVER_PORT = '8642';
-    env.API_SERVER_CORS_ORIGINS = isDev ? 'http://localhost:5173' : 'file://';
+    env.API_SERVER_CORS_ORIGINS = isDev ? '*' : 'file://';
 
     // 禁用 Python 字节码缓存，确保代码修改立即生效
     env.PYTHONDONTWRITEBYTECODE = '1';

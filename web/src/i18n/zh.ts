@@ -181,7 +181,7 @@ export const zh: Translations = {
     searchPlaceholder: "搜索技能和工具集...",
     enabledOf: "已启用 {enabled}/{total}",
     all: "全部",
-    noSkills: "未找到技能。技能从 ~/.hermes/skills/ 加载",
+    noSkills: "未找到技能。技能从 $HERMES_HOME/skills/ 加载",
     noSkillsMatch: "没有匹配的技能。",
     skillCount: "{count} 个技能",
     resultCount: "{count} 个结果",

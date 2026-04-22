@@ -267,7 +267,11 @@ if AIOHTTP_AVAILABLE:
                 return web.Response(status=403)
             return web.Response(status=200, headers=cors_headers)
 
+        # DEBUG: 记录到 stderr 确认 CORS middleware 执行
+        import sys
+        print(f"[cors_middleware] {request.method} {request.path}, calling handler...", file=sys.stderr, flush=True)
         response = await handler(request)
+        print(f"[cors_middleware] handler returned status={response.status}", file=sys.stderr, flush=True)
         if cors_headers is not None:
             response.headers.update(cors_headers)
         return response
@@ -330,15 +334,20 @@ if AIOHTTP_AVAILABLE:
         """
         验证所有请求必须携带有效的 Electron Token
 
-        防护措施：
-        1. Token 验证（Bearer 格式）
-        2. User-Agent 验证（v2.1 新增，防止浏览器绕过）
-        3. 健康检查端点豁免
+        安全机制（三层防护）：
+        1. 父进程验证（run.py）：确保 Gateway 只能从 Electron 启动
+        2. Token 验证（32字节随机）：防止外部应用直接调用 API
+        3. 健康检查端点豁免：允许启动检测
 
-        v2.1.1: 错误响应也添加 CORS 头，确保前端能收到错误信息
+        v2.1.1: 错误响应添加 CORS 头
+        v2.1.2: 移除 User-Agent 验证（Renderer Process fetch 无 Electron 标识）
         """
         import logging
+        import sys
         logger = logging.getLogger(__name__)
+
+        # DEBUG: 记录到 stderr 确保可见
+        print(f"[electron_auth_middleware] Request: {request.method} {request.path}", file=sys.stderr, flush=True)
 
         # v2.1.1: 辅助函数 - 创建带 CORS 头的错误响应
         def _error_response_with_cors(status: int, text: str) -> "web.Response":
@@ -370,6 +379,12 @@ if AIOHTTP_AVAILABLE:
                 return await handler(request)
 
         # ====================================================================
+        # OPTIONS 请求（CORS preflight）豁免
+        # ====================================================================
+        if request.method == 'OPTIONS':
+            return _error_response_with_cors(200, "OK")
+
+        # ====================================================================
         # Token 验证
         # ====================================================================
         expected_token = os.environ.get("HERMES_GATEWAY_TOKEN", "").strip()
@@ -388,16 +403,13 @@ if AIOHTTP_AVAILABLE:
             return _error_response_with_cors(403, "Invalid token")
 
         # ====================================================================
-        # User-Agent 验证（v2.1 新增，防止浏览器 DevTools 绕过）
-        # v2.1.1: 使用正则匹配 Electron 官方格式，带词边界防伪造
+        # User-Agent 验证已移除（v2.1.2）
+        # 原因：
+        #   1. Electron Renderer Process 的 fetch 不包含 "Electron/" 标识
+        #   2. Token 验证（32字节随机）+ 父进程验证已提供足够安全性
+        #   3. User-Agent 可伪造，不是可靠的安全机制
+        #   4. 避免开发/生产环境行为不一致
         # ====================================================================
-        user_agent = request.headers.get("User-Agent", "")
-        electron_ua_pattern = r'\bElectron/\d+\.\d+\.\d+'
-        if not re.search(electron_ua_pattern, user_agent):
-            logger.warning(
-                f"Non-Electron User-Agent from {request.remote}: {user_agent}"
-            )
-            return _error_response_with_cors(403, "Access denied: Electron only")
 
         # Token 验证通过，继续处理请求
         return await handler(request)
@@ -533,17 +545,17 @@ class APIServerAdapter(BasePlatformAdapter):
         """Return CORS headers for an allowed browser origin.
 
         v2.1.1: Electron-only 模式下，对所有 origin 返回 CORS 头
-        （包括 file://, null, localhost）因为 Token 已验证安全性。
+        v2.1.2: 开发环境支持任意 localhost 端口（Vite 端口冲突自动递增）
         """
-        # v2.1.1: Electron 模式 - 对所有 origin 返回 CORS 头
+        # v2.1.2: Electron 模式 - Token 已验证，动态返回请求来源的 CORS 头
         is_electron_mode = os.getenv("HERMES_ELECTRON_MODE") == "1"
         if is_electron_mode:
             headers = dict(_CORS_HEADERS)
-            # file:// 协议无法使用具体 origin，使用 wildcard 或 null
+            # 优先使用请求的实际 origin（开发: localhost:*, 生产: file:// 时为 null）
             if origin and origin not in ("null", ""):
                 headers["Access-Control-Allow-Origin"] = origin
             else:
-                # file:// 协议时 origin 为 null 或空，返回 * 允许所有
+                # file:// 协议或无 origin 时，返回 * 允许所有
                 headers["Access-Control-Allow-Origin"] = "*"
             headers["Access-Control-Max-Age"] = "600"
             return headers
@@ -2730,6 +2742,12 @@ class APIServerAdapter(BasePlatformAdapter):
 
             # 过滤掉 None
             mws = [mw for mw in base_middlewares if mw is not None]
+
+            # v2.1.2: 调试 - 记录注册的中间件
+            print(f"[Api_Server] Registered {len(mws)} middlewares:", file=sys.stderr, flush=True)
+            for i, mw in enumerate(mws):
+                mw_name = mw.__name__ if hasattr(mw, '__name__') else str(type(mw))
+                print(f"  [{i}] {mw_name}", file=sys.stderr, flush=True)
 
             self._app = web.Application(middlewares=mws)
             self._app["api_server_adapter"] = self

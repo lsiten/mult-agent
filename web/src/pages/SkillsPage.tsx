@@ -98,7 +98,7 @@ export default function SkillsPage() {
   const [view, setView] = useState<"skills" | "toolsets">("skills");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [togglingSkills, setTogglingSkills] = useState<Set<string>>(new Set());
-  const [skillsPath, setSkillsPath] = useState<string>("~/.hermes/skills/"); // Dynamic path
+  const [skillsPath, setSkillsPath] = useState<string>("$HERMES_HOME/skills/"); // Dynamic path from HERMES_HOME
   const [installModalOpen, setInstallModalOpen] = useState(false);
   const { toast, showToast } = useToast();
   const { t } = useI18n();
