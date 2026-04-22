@@ -70,12 +70,29 @@ export default function PerformancePage() {
     if (!window.electronAPI) return;
 
     setRestarting(true);
+    const oldPid = status?.pid;
+
     try {
       await window.electronAPI.restartPython();
-      setTimeout(() => {
-        fetchStatus();
-        setRestarting(false);
-      }, 3000);
+
+      // Poll status until PID changes or 20 seconds timeout
+      let attempts = 0;
+      const maxAttempts = 40; // 40 * 500ms = 20 seconds
+
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        await fetchStatus();
+
+        // Get latest status from state
+        const response = await window.electronAPI.getPythonStatus();
+        const newStatus = response?.data || response;
+
+        // Stop polling if PID changed (restart successful) or max attempts reached
+        if (newStatus.pid !== oldPid || !newStatus.running || attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          setRestarting(false);
+        }
+      }, 500);
     } catch (error) {
       console.error('Failed to restart:', error);
       setRestarting(false);
