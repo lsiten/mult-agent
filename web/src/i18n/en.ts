@@ -48,6 +48,7 @@ export const en: Translations = {
     general: "General",
     messaging: "Messaging",
     optional: "optional",
+    messages: "messages",
   },
 
   settings: {

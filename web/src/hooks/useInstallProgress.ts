@@ -29,7 +29,7 @@ export function useInstallProgress(taskId: string | null) {
       try {
         const response = await fetch(`/api/skills/install/${taskId}`, {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
+            // Authorization auto-added by fetchJSON
           },
         });
 

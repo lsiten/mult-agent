@@ -49,6 +49,7 @@ export interface Translations {
     general: string;
     messaging: string;
     optional: string;
+    messages: string;
   };
 
   // ── App shell ──

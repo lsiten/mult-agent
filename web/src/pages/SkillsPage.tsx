@@ -22,7 +22,7 @@ import {
   FolderOpen,
   Edit,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, fetchJSON } from "@/lib/api";
 import type { SkillInfo, ToolsetInfo } from "@/lib/api";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
@@ -280,23 +280,13 @@ export default function SkillsPage() {
 
   const handleOpenSkillDirectory = async (skillPath: string) => {
     try {
-      // Use absolute URL for Electron compatibility
-      const baseUrl = window.location.hostname === 'localhost' && window.location.port === '5173'
-        ? 'http://localhost:8642'
-        : '';
-
-      const response = await fetch(`${baseUrl}/api/skills/open-directory`, {
+      await fetchJSON('/api/skills/open-directory', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify({ path: skillPath }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to open directory');
-      }
       showToast(t.common.success || 'Directory opened', 'success');
     } catch (err) {
       showToast(t.common.failedToReveal, 'error');

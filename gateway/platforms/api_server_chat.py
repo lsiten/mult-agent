@@ -39,7 +39,7 @@ class ChatAPIHandlers:
         since it's a single-user desktop app.
         """
         import os
-        if os.getenv("HERMES_ELECTRON_MODE") == "true":
+        if os.getenv("HERMES_ELECTRON_MODE") == "1":
             return
 
         auth = request.headers.get("Authorization", "")

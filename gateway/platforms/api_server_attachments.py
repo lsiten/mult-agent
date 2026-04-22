@@ -28,7 +28,7 @@ class AttachmentsAPIHandlers:
         In Electron mode (HERMES_ELECTRON_MODE=true), auth is bypassed.
         """
         import os
-        if os.getenv("HERMES_ELECTRON_MODE") == "true":
+        if os.getenv("HERMES_ELECTRON_MODE") == "1":
             return
 
         auth = request.headers.get("Authorization", "")

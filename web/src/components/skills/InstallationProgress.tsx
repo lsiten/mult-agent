@@ -61,7 +61,7 @@ export function InstallationProgress({
       await fetch(`/api/skills/install/${taskId}/cancel`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
+          // Authorization auto-added by fetchJSON
         },
       });
     } catch (err) {

@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '@/i18n';
+import { fetchJSON } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -35,11 +36,10 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
     console.log('[SkillInstall] Starting installation:', { skillId, skillName, category });
 
     try {
-      const response = await fetch('/api/skills/install', {
+      const data = await fetchJSON<{ task_id: string }>('/api/skills/install', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify({
           skill_id: skillId,
@@ -48,15 +48,6 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
         }),
       });
 
-      console.log('[SkillInstall] API response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[SkillInstall] API error:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
       console.log('[SkillInstall] Installation started:', data);
 
       // Add task to store with real task_id from server

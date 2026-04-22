@@ -48,6 +48,7 @@ export const zh: Translations = {
     general: "通用",
     messaging: "消息平台",
     optional: "可选",
+    messages: "条消息",
   },
 
   settings: {

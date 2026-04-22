@@ -113,7 +113,7 @@ export function ZipUploadTab({ onUploadComplete }: ZipUploadTabProps) {
       const response = await fetch('/api/skills/upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
+          // Authorization auto-added by api.fetchJSON
         },
         body: formData,
       });
