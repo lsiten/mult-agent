@@ -39,6 +39,7 @@ export function InputArea({
   const [input, setInput] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [toolElapsedTime, setToolElapsedTime] = useState(0);
+  const [isComposing, setIsComposing] = useState(false);
 
   // Update elapsed time every second when a tool is running
   useEffect(() => {
@@ -70,7 +71,8 @@ export function InputArea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Don't send if composing (e.g., Chinese/Japanese input)
+    if (e.key === "Enter" && !e.shiftKey && !isComposing) {
       e.preventDefault();
       handleSend();
     }
@@ -206,36 +208,41 @@ export function InputArea({
             />
           </div>
 
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={placeholder}
-            className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-background/40 border-border/50 focus:border-foreground/25"
-            disabled={disabled}
-          />
+          {/* Unified input container */}
+          <div className="flex-1 flex items-center gap-2 bg-background/40 border border-border/50 rounded-md pr-1 focus-within:border-foreground/25 transition-colors">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onCompositionStart={() => setIsComposing(true)}
+              onCompositionEnd={() => setIsComposing(false)}
+              placeholder={placeholder}
+              className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-transparent border-0 focus:ring-0 focus:outline-none px-3 py-2"
+              disabled={disabled}
+            />
 
-          <Button
-            onClick={isStreaming ? onStopTask : handleSend}
-            disabled={!isStreaming && !canSend}
-            variant={isStreaming ? "destructive" : "default"}
-            size="icon"
-            className="h-12 w-12 shrink-0"
-            title={
-              isStreaming
-                ? t.chat.stopTask || "停止任务"
-                : (!allUploaded && attachments.length > 0
-                    ? t.chat.waitForUpload
-                    : undefined)
-            }
-          >
-            {isStreaming ? (
-              <X className="h-4 w-4" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+            <Button
+              onClick={isStreaming ? onStopTask : handleSend}
+              disabled={!isStreaming && !canSend}
+              variant={isStreaming ? "destructive" : "default"}
+              size="icon"
+              className="h-10 w-10 shrink-0"
+              title={
+                isStreaming
+                  ? t.chat.stopTask || "停止任务"
+                  : (!allUploaded && attachments.length > 0
+                      ? t.chat.waitForUpload
+                      : undefined)
+              }
+            >
+              {isStreaming ? (
+                <X className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
