@@ -234,7 +234,7 @@ export function InputArea({
               disabled={!isStreaming && !canSend}
               variant={isStreaming ? "destructive" : "default"}
               size="icon"
-              className="h-12 w-12 shrink-0 rounded-none border-0 self-end"
+              className="h-12 w-12 shrink-0 rounded-l-none rounded-r-md border-0 self-end"
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
