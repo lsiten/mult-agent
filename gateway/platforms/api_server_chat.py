@@ -566,6 +566,9 @@ class ChatAPIHandlers:
                     # Capture event loop reference in main thread
                     main_loop = asyncio.get_running_loop()
 
+                    # Track assistant message timestamp for proper ordering
+                    assistant_msg_timestamp = time.time()
+
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
                         if text:
@@ -822,14 +825,16 @@ class ChatAPIHandlers:
                             content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
                             await response.write(content_event.encode())
 
-                        # Send any remaining tool invocations and save to DB
+                        # Send any remaining tool invocations
                         if len(tool_invocations) > last_tool_sent:
                             new_invocations = tool_invocations[last_tool_sent:]
                             tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
                             await response.write(tool_event.encode())
 
-                            # Save/update final tool_use message
-                            if tool_use_msg_id is None and tool_invocations:
+                        # Always update final tool_use message to ensure status is saved
+                        # (tool status may have changed after last send)
+                        if tool_invocations:
+                            if tool_use_msg_id is None:
                                 tool_use_msg_id = db.append_message(
                                     session_id=sid,
                                     role="tool_use",
@@ -837,9 +842,9 @@ class ChatAPIHandlers:
                                     metadata={"tool_invocations": tool_invocations}
                                 )
                                 _log.info("Created final tool_use message with %d invocations", len(tool_invocations))
-                            elif tool_use_msg_id is not None:
+                            else:
                                 db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations})
-                                _log.info("Updated final tool_use message, total %d invocations", len(tool_invocations))
+                                _log.info("Updated final tool_use message with latest status, total %d invocations", len(tool_invocations))
 
                         # Get final result
                         result = await agent_task

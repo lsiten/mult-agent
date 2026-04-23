@@ -65,7 +65,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
         className={cn(
           "max-w-[80%] rounded-lg px-4 py-3 break-words overflow-wrap-anywhere min-w-0",
           isUser && "bg-primary/10 text-primary",
-          isSystem && "bg-error/10 text-error",
+          isSystem && "bg-muted/30 text-muted-foreground",
           isAssistant && "bg-success/10 text-success"
         )}
         style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}

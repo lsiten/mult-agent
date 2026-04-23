@@ -87,21 +87,39 @@ export function useStreamingResponse() {
         }
       });
 
-      // Listen for tool_use events (new)
+      // Listen for tool_use events (new) - receives incremental updates
       eventSource.addEventListener("tool_use", (event) => {
         try {
           const data = JSON.parse(event.data);
           console.log("[SSE] tool_use event received:", data);
 
-          const message: SessionMessage = {
-            role: "tool_use",
-            content: null,
-            timestamp: Date.now() / 1000,
-            metadata: {
-              tool_invocations: data.invocations || [],
-            },
-          };
-          setToolUseMessages(prev => [...prev, message]);
+          const newInvocations = data.invocations || [];
+
+          // Update or create tool_use message (only one per streaming session)
+          setToolUseMessages(prev => {
+            if (prev.length === 0) {
+              // Create first message
+              return [{
+                role: "tool_use",
+                content: null,
+                timestamp: Date.now() / 1000,
+                metadata: {
+                  tool_invocations: newInvocations,
+                },
+              }];
+            } else {
+              // Append new invocations to existing message
+              const existing = prev[0];
+              const existingInvocations = existing.metadata?.tool_invocations || [];
+              return [{
+                ...existing,
+                metadata: {
+                  ...existing.metadata,
+                  tool_invocations: [...existingInvocations, ...newInvocations],
+                },
+              }];
+            }
+          });
         } catch (err) {
           console.error("Failed to parse tool_use event:", err);
         }
@@ -157,6 +175,34 @@ export function useStreamingResponse() {
             setCurrentTool({ name: data.tool, startTime: Date.now() });
           } else if (data.status === "completed") {
             setCurrentTool(null);
+
+            // Update tool status in toolUseMessages
+            setToolUseMessages(prev => {
+              if (prev.length === 0) return prev;
+
+              const updated = [...prev];
+              const lastMessage = updated[updated.length - 1];
+              if (lastMessage.metadata?.tool_invocations) {
+                // Find and update the tool with matching ID
+                const invocations = lastMessage.metadata.tool_invocations;
+                const toolIndex = invocations.findIndex((inv: any) => inv.id === data.id);
+                if (toolIndex !== -1) {
+                  invocations[toolIndex] = {
+                    ...invocations[toolIndex],
+                    status: "success",
+                    duration: data.duration,
+                  };
+                  updated[updated.length - 1] = {
+                    ...lastMessage,
+                    metadata: {
+                      ...lastMessage.metadata,
+                      tool_invocations: [...invocations],
+                    },
+                  };
+                }
+              }
+              return updated;
+            });
           }
         } catch (err) {
           console.error("Failed to parse tool_progress event:", err);
