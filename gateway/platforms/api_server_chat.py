@@ -563,6 +563,9 @@ class ChatAPIHandlers:
                     # Event queue for cross-thread communication
                     tool_events = asyncio.Queue()
 
+                    # Capture event loop reference in main thread
+                    main_loop = asyncio.get_running_loop()
+
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
                         if text:
@@ -581,11 +584,11 @@ class ChatAPIHandlers:
                         tool_invocations.append(current_tool_invocation)
                         _log.info("[TOOL_CALLBACK] Tool started: %s (id=%s)", tool_name, tool_call_id)
 
-                        # Queue event for async processing
+                        # Queue event for async processing using captured loop
                         try:
                             asyncio.run_coroutine_threadsafe(
                                 tool_events.put(("start", tool_call_id, tool_name)),
-                                asyncio.get_event_loop()
+                                main_loop
                             )
                         except Exception as e:
                             _log.warning("Failed to queue tool_start event: %s", e)
@@ -599,11 +602,11 @@ class ChatAPIHandlers:
                             current_tool_invocation["duration"] = int((time.time() - current_tool_invocation["start_time"]) * 1000)
                             _log.info("[TOOL_CALLBACK] Tool completed: %s (id=%s, duration=%dms)", tool_name, tool_call_id, current_tool_invocation["duration"])
 
-                            # Queue event for async processing
+                            # Queue event for async processing using captured loop
                             try:
                                 asyncio.run_coroutine_threadsafe(
                                     tool_events.put(("complete", tool_call_id, tool_name, current_tool_invocation["duration"])),
-                                    asyncio.get_event_loop()
+                                    main_loop
                                 )
                             except Exception as e:
                                 _log.warning("Failed to queue tool_complete event: %s", e)
