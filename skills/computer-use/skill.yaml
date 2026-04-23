@@ -1,0 +1,55 @@
+name: computer-use
+version: 1.0.0
+description: Desktop automation using Computer Use capabilities
+author: Hermes Agent Team
+category: automation
+
+triggers:
+  - "操作电脑"
+  - "控制桌面"
+  - "打开应用"
+  - "点击"
+  - "输入"
+  - "截图"
+  - "computer use"
+  - "desktop automation"
+  - "gui automation"
+
+capabilities:
+  - Desktop screenshot capture
+  - Mouse control (move, click)
+  - Keyboard input
+  - Application launching
+  - Multi-step GUI workflows
+
+requirements:
+  platform:
+    - macos
+    - linux
+  dependencies:
+    macos:
+      - cliclick (brew install cliclick)
+    linux:
+      - xdotool (apt install xdotool)
+      - scrot (apt install scrot)
+  python:
+    - pillow
+
+tools_used:
+  - computer_screenshot
+  - computer_mouse
+  - computer_keyboard
+  - bash
+
+examples:
+  - description: "打开某个应用并执行操作"
+    input: "打开 Chrome 并访问 google.com"
+  - description: "填写表单"
+    input: "在当前页面的搜索框输入 'Hermes Agent'"
+  - description: "自动化点击流程"
+    input: "点击屏幕左上角的菜单，然后选择设置"
+
+security:
+  level: high
+  reason: "Has full desktop control - can access all applications and data"
+  approval_required: true

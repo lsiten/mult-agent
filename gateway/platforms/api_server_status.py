@@ -47,7 +47,10 @@ class StatusAPIHandlers:
                 "env_path": "~/Library/.../.env",
                 "version": "2.0.0",
                 "electron_mode": true,
-                "gateway_enabled": true
+                "gateway_enabled": true,
+                "capabilities": {
+                    "computer_use": true
+                }
             }
         """
         self._check_auth(request)
@@ -59,6 +62,9 @@ class StatusAPIHandlers:
 
             # Get version info
             version = "2.0.0"  # TODO: Read from version file
+
+            # Check Computer Use availability
+            computer_use_available = self._check_computer_use_available()
 
             status = {
                 "hermes_home": str(hermes_home),
@@ -78,6 +84,9 @@ class StatusAPIHandlers:
                 "config_version": 14,  # TODO: Read from config
                 "latest_config_version": 14,
                 "release_date": "2026-04-18",
+                "capabilities": {
+                    "computer_use": computer_use_available,
+                },
             }
 
             return web.json_response(status)
@@ -85,3 +94,13 @@ class StatusAPIHandlers:
         except Exception as e:
             _log.exception("GET /api/status failed")
             return web.json_response({"detail": str(e)}, status=500)
+
+    def _check_computer_use_available(self) -> bool:
+        """Check if Computer Use toolset is available."""
+        try:
+            from tools.registry import registry
+            import tools.computer_use_tool
+            return registry.is_toolset_available("computer-use")
+        except Exception as e:
+            _log.debug(f"Computer Use check failed: {e}")
+            return False

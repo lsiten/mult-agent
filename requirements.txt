@@ -22,8 +22,9 @@ debugpy
 firecrawl-py
 parallel-web>=0.4.2
 
-# Image generation
+# Image generation and processing
 fal-client
+pillow  # Computer Use screenshot handling
 
 # Text-to-speech (Edge TTS is free, no API key needed)
 edge-tts
