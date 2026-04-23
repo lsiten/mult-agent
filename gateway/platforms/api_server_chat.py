@@ -566,6 +566,9 @@ class ChatAPIHandlers:
                     # Capture event loop reference in main thread
                     main_loop = asyncio.get_running_loop()
 
+                    # Track assistant message timestamp for proper ordering
+                    assistant_msg_timestamp = time.time()
+
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
                         if text:

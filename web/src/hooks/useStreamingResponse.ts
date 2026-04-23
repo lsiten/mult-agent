@@ -175,6 +175,34 @@ export function useStreamingResponse() {
             setCurrentTool({ name: data.tool, startTime: Date.now() });
           } else if (data.status === "completed") {
             setCurrentTool(null);
+
+            // Update tool status in toolUseMessages
+            setToolUseMessages(prev => {
+              if (prev.length === 0) return prev;
+
+              const updated = [...prev];
+              const lastMessage = updated[updated.length - 1];
+              if (lastMessage.metadata?.tool_invocations) {
+                // Find and update the tool with matching ID
+                const invocations = lastMessage.metadata.tool_invocations;
+                const toolIndex = invocations.findIndex((inv: any) => inv.id === data.id);
+                if (toolIndex !== -1) {
+                  invocations[toolIndex] = {
+                    ...invocations[toolIndex],
+                    status: "success",
+                    duration: data.duration,
+                  };
+                  updated[updated.length - 1] = {
+                    ...lastMessage,
+                    metadata: {
+                      ...lastMessage.metadata,
+                      tool_invocations: [...invocations],
+                    },
+                  };
+                }
+              }
+              return updated;
+            });
           }
         } catch (err) {
           console.error("Failed to parse tool_progress event:", err);
