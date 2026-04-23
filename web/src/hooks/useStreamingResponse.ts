@@ -259,7 +259,8 @@ export function useStreamingResponse() {
 
       // Listen for cancelled event
       eventSource.addEventListener("cancelled", (event) => {
-        console.log("[SSE] Cancelled event received:", event.data);
+        const messageEvent = event as MessageEvent;
+        console.log("[SSE] Cancelled event received:", messageEvent.data);
         setIsStreaming(false);
         setStreamingContent("");
         setTextSegments([]);
@@ -274,7 +275,8 @@ export function useStreamingResponse() {
       // Listen for error event
       eventSource.addEventListener("error", (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const messageEvent = event as MessageEvent;
+          const data = JSON.parse(messageEvent.data);
           console.log("[SSE] Error event received:", data);
           setError(data.error || "Unknown error");
           setIsStreaming(false);

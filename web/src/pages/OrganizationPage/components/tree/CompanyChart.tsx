@@ -1,5 +1,6 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
+import { getDepartmentTreeWidth } from "../../orgLayout";
 import type { OrgCreateHandler, OrgEditHandler, OrgProvisionHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
@@ -37,6 +38,7 @@ export function CompanyChart({ company, provisioningId, t, onCreate, onEdit, onP
         items={company.departments ?? []}
         addLabel={t.organization.createDepartment}
         onAdd={() => onCreate("department", { company })}
+        getItemWidth={getDepartmentTreeWidth}
         render={(department) => (
           <DepartmentBranch
             company={company}

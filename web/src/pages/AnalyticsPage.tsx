@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Cpu,
@@ -235,19 +235,17 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const { t } = useI18n();
 
-  const load = useCallback(() => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
     api
       .getAnalytics(days)
-      .then(setData)
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
+      .then((result) => { if (!cancelled) setData(result); })
+      .catch((err) => { if (!cancelled) setError(String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [days]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   return (
     <div className="flex flex-col gap-6">

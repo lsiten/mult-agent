@@ -83,19 +83,7 @@
   --font-display: "Circular", -apple-system, sans-serif;
 }
 
-/* ---- Font Faces (Circular + Source Code Pro) ---- */
-@font-face {
-  font-family: "Circular";
-  src: url("https://fonts.cdnfonts.com/s/16176/CircularStd-Book.woff") format("woff");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Circular";
-  src: url("https://fonts.cdnfonts.com/s/16176/CircularStd-Medium.woff") format("woff");
-  font-weight: 500;
-  font-display: swap;
-}
+/* ---- Font Faces (Source Code Pro) ---- */
 @font-face {
   font-family: "Source Code Pro";
   src: url("https://fonts.gstatic.com/s/sourcecodepro/v22/HI_jiYsKILxRpg3hIP6sJ7fM7PqPMcMnZFqUwX28DMyQhM5hTXUcdJg.woff2") format("woff2");

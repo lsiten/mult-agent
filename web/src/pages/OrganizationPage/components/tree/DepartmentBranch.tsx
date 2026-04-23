@@ -1,5 +1,6 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany, OrgDepartment } from "@/lib/api";
+import { getPositionTreeWidth } from "../../orgLayout";
 import type { OrgCreateHandler, OrgEditHandler, OrgProvisionHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
@@ -46,6 +47,7 @@ export function DepartmentBranch({
         items={department.positions ?? []}
         addLabel={t.organization.createPosition}
         onAdd={() => onCreate("position", { company, department })}
+        getItemWidth={getPositionTreeWidth}
         render={(position) => (
           <PositionBranch
             company={company}

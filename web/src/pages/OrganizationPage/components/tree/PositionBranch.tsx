@@ -1,5 +1,6 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany, OrgDepartment, OrgPosition } from "@/lib/api";
+import { getAgentTreeWidth } from "../../orgLayout";
 import type { OrgCreateHandler, OrgEditHandler, OrgProvisionHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
@@ -45,6 +46,7 @@ export function PositionBranch({
         items={position.agents ?? []}
         addLabel={t.organization.createAgent}
         onAdd={() => onCreate("agent", { company, department, position })}
+        getItemWidth={getAgentTreeWidth}
         render={(agent) => (
           <AgentNode
             agent={agent}
