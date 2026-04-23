@@ -12,7 +12,7 @@ from typing import Any, Callable, Iterable
 
 from hermes_constants import get_hermes_home
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def default_org_db_path() -> Path:
@@ -182,6 +182,24 @@ CREATE TABLE IF NOT EXISTS subagent_bootstrap_requirements (
     updated_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS profile_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    scope_type TEXT NOT NULL DEFAULT 'system',
+    scope_id INTEGER,
+    base_soul_md TEXT,
+    default_skills TEXT,
+    default_memory_policy TEXT,
+    default_working_style TEXT,
+    default_output_preferences TEXT,
+    default_hard_rules TEXT,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_departments_company_sort
     ON departments(company_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_positions_department_sort
@@ -192,6 +210,10 @@ CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(employment_status, enable
 CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_type, owner_id);
 CREATE INDEX IF NOT EXISTS idx_bootstrap_scope
     ON subagent_bootstrap_requirements(scope_type, scope_id, template_key);
+CREATE INDEX IF NOT EXISTS idx_profile_templates_scope
+    ON profile_templates(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_master_assets_type_visibility
+    ON master_agent_assets(asset_type, visibility);
 """
 
 
@@ -508,6 +530,411 @@ class ProfileAgentRepository(BaseRepository):
         return self.store.query_one(
             "SELECT * FROM profile_agents WHERE agent_id = ?",
             (agent_id,),
+            conn,
+        )
+
+
+class MasterAgentAssetRepository(BaseRepository):
+    """CRUD for master agent inheritable assets.
+
+    Assets are identified uniquely by (asset_type, asset_key).
+    Use upsert() to reconcile scanner results idempotently.
+    """
+
+    table = "master_agent_assets"
+
+    _UPDATABLE = {
+        "asset_name",
+        "source_path",
+        "source_format",
+        "visibility",
+        "inherit_mode",
+        "target_path_template",
+        "content_checksum",
+        "is_runtime_required",
+        "is_bootstrap_required",
+        "inherit_ready",
+        "validation_status",
+        "validation_message",
+        "last_validated_at",
+        "version",
+        "description",
+        "status",
+    }
+
+    def get_by_key(
+        self,
+        asset_type: str,
+        asset_key: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        return self.store.query_one(
+            "SELECT * FROM master_agent_assets WHERE asset_type = ? AND asset_key = ?",
+            (asset_type, asset_key),
+            conn,
+        )
+
+    def list(
+        self,
+        *,
+        asset_type: str | None = None,
+        visibility: str | None = None,
+        inherit_ready: int | None = None,
+        status: str | None = "active",
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        params: list[Any] = []
+        if asset_type is not None:
+            clauses.append("asset_type = ?")
+            params.append(asset_type)
+        if visibility is not None:
+            clauses.append("visibility = ?")
+            params.append(visibility)
+        if inherit_ready is not None:
+            clauses.append("inherit_ready = ?")
+            params.append(int(inherit_ready))
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self.store.query_all(
+            f"SELECT * FROM master_agent_assets{where} ORDER BY asset_type, asset_key",
+            params,
+            conn,
+        )
+
+    def list_inheritable(
+        self,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        """Assets eligible for sub-agent inheritance (public + ready + active)."""
+        return self.store.query_all(
+            """
+            SELECT * FROM master_agent_assets
+            WHERE visibility = 'public'
+              AND inherit_ready = 1
+              AND status = 'active'
+            ORDER BY asset_type, asset_key
+            """,
+            (),
+            conn,
+        )
+
+    def upsert(self, data: dict[str, Any], conn: sqlite3.Connection) -> dict[str, Any]:
+        if not data.get("asset_type") or not data.get("asset_key"):
+            raise ValueError("master_agent_assets requires asset_type and asset_key")
+        existing = self.get_by_key(data["asset_type"], data["asset_key"], conn)
+        ts = now_ts()
+        if existing:
+            updates = {k: v for k, v in data.items() if k in self._UPDATABLE}
+            if not updates:
+                return existing
+            updates["updated_at"] = ts
+            names = list(updates)
+            sql = (
+                "UPDATE master_agent_assets SET "
+                + ", ".join(f"{n} = ?" for n in names)
+                + " WHERE id = ?"
+            )
+            self.store.execute(sql, (*[updates[n] for n in names], existing["id"]), conn)
+            return self.get(existing["id"], conn) or existing
+        cursor = self.store.execute(
+            """
+            INSERT INTO master_agent_assets(
+                asset_type, asset_key, asset_name, source_path, source_format,
+                visibility, inherit_mode, target_path_template, content_checksum,
+                is_runtime_required, is_bootstrap_required, inherit_ready,
+                validation_status, validation_message, last_validated_at,
+                version, description, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["asset_type"],
+                data["asset_key"],
+                data.get("asset_name"),
+                data.get("source_path"),
+                data.get("source_format"),
+                data.get("visibility") or "private",
+                data.get("inherit_mode") or "copy_to_profile",
+                data.get("target_path_template"),
+                data.get("content_checksum"),
+                1 if data.get("is_runtime_required") else 0,
+                1 if data.get("is_bootstrap_required") else 0,
+                1 if data.get("inherit_ready") else 0,
+                data.get("validation_status") or "warning",
+                data.get("validation_message"),
+                data.get("last_validated_at"),
+                data.get("version"),
+                data.get("description"),
+                data.get("status") or "active",
+                ts,
+                ts,
+            ),
+            conn,
+        )
+        return self.get(cursor.lastrowid, conn) or {}
+
+    def patch(
+        self,
+        asset_id: int,
+        data: dict[str, Any],
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        return self.update(asset_id, data, self._UPDATABLE, conn)
+
+
+class SubagentBootstrapRequirementRepository(BaseRepository):
+    """CRUD for bootstrap requirements that gate one-click sub-agent creation."""
+
+    table = "subagent_bootstrap_requirements"
+
+    _UPDATABLE = {
+        "required_level",
+        "expected_source",
+        "validation_status",
+        "validation_message",
+        "last_validated_at",
+    }
+
+    def list_for_scope(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: int | None = None,
+        template_key: str | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        params: list[Any] = []
+        if scope_type is not None:
+            clauses.append("scope_type = ?")
+            params.append(scope_type)
+        if scope_id is not None:
+            clauses.append("scope_id = ?")
+            params.append(scope_id)
+        if template_key is not None:
+            clauses.append("template_key = ?")
+            params.append(template_key)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self.store.query_all(
+            f"SELECT * FROM subagent_bootstrap_requirements{where} ORDER BY requirement_type, requirement_key",
+            params,
+            conn,
+        )
+
+    def create(self, data: dict[str, Any], conn: sqlite3.Connection) -> dict[str, Any]:
+        required = ("scope_type", "requirement_type", "requirement_key", "expected_source")
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            raise ValueError(
+                "subagent_bootstrap_requirements missing fields: " + ", ".join(missing)
+            )
+        ts = now_ts()
+        cursor = self.store.execute(
+            """
+            INSERT INTO subagent_bootstrap_requirements(
+                scope_type, scope_id, template_key, requirement_type, requirement_key,
+                required_level, expected_source, validation_status, last_validated_at,
+                validation_message, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["scope_type"],
+                data.get("scope_id"),
+                data.get("template_key"),
+                data["requirement_type"],
+                data["requirement_key"],
+                data.get("required_level") or "required",
+                data["expected_source"],
+                data.get("validation_status") or "missing",
+                data.get("last_validated_at"),
+                data.get("validation_message"),
+                ts,
+                ts,
+            ),
+            conn,
+        )
+        return self.get(cursor.lastrowid, conn) or {}
+
+    def patch(
+        self,
+        req_id: int,
+        data: dict[str, Any],
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        return self.update(req_id, data, self._UPDATABLE, conn)
+
+    def delete(self, req_id: int, conn: sqlite3.Connection | None = None) -> None:
+        self.store.execute(
+            "DELETE FROM subagent_bootstrap_requirements WHERE id = ?",
+            (req_id,),
+            conn,
+        )
+
+
+class ProfileTemplateRepository(BaseRepository):
+    """CRUD for sub-agent profile templates.
+
+    Templates resolve with a precedence fallback:
+        position → department → company → system
+    """
+
+    table = "profile_templates"
+
+    _UPDATABLE = {
+        "name",
+        "scope_type",
+        "scope_id",
+        "base_soul_md",
+        "default_skills",
+        "default_memory_policy",
+        "default_working_style",
+        "default_output_preferences",
+        "default_hard_rules",
+        "description",
+        "status",
+    }
+
+    def get_by_key(
+        self,
+        template_key: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        return self.store.query_one(
+            "SELECT * FROM profile_templates WHERE template_key = ?",
+            (template_key,),
+            conn,
+        )
+
+    def list(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: int | None = None,
+        status: str | None = "active",
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        params: list[Any] = []
+        if scope_type is not None:
+            clauses.append("scope_type = ?")
+            params.append(scope_type)
+        if scope_id is not None:
+            clauses.append("scope_id = ?")
+            params.append(scope_id)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self.store.query_all(
+            f"SELECT * FROM profile_templates{where} ORDER BY scope_type, scope_id, template_key",
+            params,
+            conn,
+        )
+
+    def resolve(
+        self,
+        *,
+        template_key: str | None,
+        position_id: int | None,
+        department_id: int | None,
+        company_id: int | None,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        """Resolve the best-matching template using precedence fallback.
+
+        Precedence (highest first):
+            1. explicit template_key (any scope)
+            2. position-scoped template
+            3. department-scoped template
+            4. company-scoped template
+            5. system-scoped template
+        """
+        if template_key:
+            template = self.get_by_key(template_key, conn)
+            if template and template.get("status") == "active":
+                return template
+        for scope_type, scope_id in (
+            ("position", position_id),
+            ("department", department_id),
+            ("company", company_id),
+        ):
+            if scope_id is None:
+                continue
+            row = self.store.query_one(
+                """
+                SELECT * FROM profile_templates
+                WHERE scope_type = ? AND scope_id = ? AND status = 'active'
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (scope_type, scope_id),
+                conn,
+            )
+            if row:
+                return row
+        return self.store.query_one(
+            """
+            SELECT * FROM profile_templates
+            WHERE scope_type = 'system' AND status = 'active'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (),
+            conn,
+        )
+
+    def create(self, data: dict[str, Any], conn: sqlite3.Connection) -> dict[str, Any]:
+        required = ("template_key", "name")
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            raise ValueError("profile_templates missing fields: " + ", ".join(missing))
+        ts = now_ts()
+        cursor = self.store.execute(
+            """
+            INSERT INTO profile_templates(
+                template_key, name, scope_type, scope_id, base_soul_md,
+                default_skills, default_memory_policy, default_working_style,
+                default_output_preferences, default_hard_rules, description,
+                status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["template_key"],
+                data["name"],
+                data.get("scope_type") or "system",
+                data.get("scope_id"),
+                data.get("base_soul_md"),
+                data.get("default_skills"),
+                data.get("default_memory_policy"),
+                data.get("default_working_style"),
+                data.get("default_output_preferences"),
+                data.get("default_hard_rules"),
+                data.get("description"),
+                data.get("status") or "active",
+                ts,
+                ts,
+            ),
+            conn,
+        )
+        return self.get(cursor.lastrowid, conn) or {}
+
+    def patch(
+        self,
+        template_id: int,
+        data: dict[str, Any],
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        return self.update(template_id, data, self._UPDATABLE, conn)
+
+    def delete(self, template_id: int, conn: sqlite3.Connection | None = None) -> None:
+        self.store.execute(
+            "DELETE FROM profile_templates WHERE id = ?",
+            (template_id,),
             conn,
         )
 

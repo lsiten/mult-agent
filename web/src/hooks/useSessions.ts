@@ -8,7 +8,7 @@ export interface GroupedSessions {
   earlier: SessionInfo[];
 }
 
-export function useSessions(source: string = "electron-chat") {
+export function useSessions(source: string = "electron-chat", agentId: number | null = null) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,7 +28,11 @@ export function useSessions(source: string = "electron-chat") {
     } finally {
       setIsLoading(false);
     }
-  }, [source]);
+    // agentId is included so SWR-style re-fetches happen when the active
+    // org identity changes (the header ``X-Hermes-Agent-Id`` stamped by
+    // fetchJSON scopes the response; we just need to trigger the reload).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, agentId]);
 
   const createSession = useCallback(async (title?: string) => {
     setIsLoading(true);
@@ -129,7 +133,18 @@ export function useSessions(source: string = "electron-chat") {
     };
   }, []);
 
+  // Reset scoped state whenever the active agent identity changes so the
+  // sidebar, ``currentSessionId`` and cached lastSessionId don't leak across
+  // master/sub-agent switches.  ``loadSessions`` is invoked right after so
+  // the new scope's list is fetched with the correct ``X-Hermes-Agent-Id``.
   useEffect(() => {
+    setSessions([]);
+    setCurrentSessionId(null);
+    try {
+      localStorage.removeItem("lastSessionId");
+    } catch {
+      // ignore storage errors (Safari private mode, quota, etc.)
+    }
     loadSessions();
   }, [loadSessions]);
 

@@ -3,22 +3,59 @@ import {
   CheckCircle2,
   CircleOff,
   KeyRound,
+  Lock,
+  LockOpen,
   Power,
   RefreshCw,
   Settings2,
   Zap,
 } from "lucide-react";
-import { api, type EnvVarInfo, type ModelInfoResponse, type OAuthProvider } from "@/lib/api";
+import {
+  api,
+  type EnvVarInfo,
+  type MasterAsset,
+  type ModelInfoResponse,
+  type OAuthProvider,
+} from "@/lib/api";
+import { onEnvRefresh } from "@/lib/envRefresh";
 import { PROVIDER_CONFIGS, type ProviderConfig } from "@/lib/providers";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n";
 
+export interface MasterVisibilityBridge {
+  /** Keyed by backend provider id (see PROVIDER_ENV_KEYS). */
+  map: Record<string, MasterAsset>;
+  /** Provider id currently mid-flight (optimistic update in progress). */
+  pendingProvider: string | null;
+  /** Flip a single provider. Throws on failure; caller handles toast. */
+  setVisibility: (providerId: string, next: "public" | "private") => Promise<void>;
+}
+
 interface Props {
   onError?: (msg: string) => void;
   onSuccess?: (msg: string) => void;
+  /**
+   * When provided, the card is rendering in the master-agent context and
+   * should expose a Public / Private inheritance toggle on each provider row.
+   * Omit entirely for sub-agents — the toggle disappears cleanly.
+   */
+  masterVisibility?: MasterVisibilityBridge;
 }
+
+/**
+ * Provider ids that are present in ``PROVIDER_CONFIGS`` but that cannot be
+ * inherited by sub-agents today (their env keys are not in ``ENV_WHITELIST``).
+ * Kept in sync with the backend ``PROVIDER_ENV_KEYS`` — if you add a provider
+ * there, remove it from this set.
+ */
+const NON_INHERITABLE_PROVIDERS = new Set([
+  "anthropic",
+  "deepseek",
+  "qwen",
+  "nvidia",
+]);
 
 interface ProviderStatus {
   id: string;
@@ -139,7 +176,63 @@ function stoppedModelConfig(config: Record<string, unknown>) {
   };
 }
 
-export function OAuthProvidersCard({ onError, onSuccess }: Props) {
+interface InlineVisibilityToggleProps {
+  providerId: string;
+  asset?: MasterAsset;
+  pending: boolean;
+  onChange: (next: "public" | "private") => void;
+}
+
+function InlineVisibilityToggle({
+  providerId,
+  asset,
+  pending,
+  onChange,
+}: InlineVisibilityToggleProps) {
+  const { t } = useI18n();
+
+  if (NON_INHERITABLE_PROVIDERS.has(providerId) && !asset) {
+    return null;
+  }
+
+  const ready = asset?.inherit_ready === 1;
+  const isPublic = asset?.visibility === "public";
+  const disabled = !ready || pending;
+
+  const label = isPublic ? t.env.visibilityPublic : t.env.visibilityPrivate;
+  const title = !ready
+    ? t.env.visibilityUnavailableTooltip
+    : isPublic
+      ? t.env.visibilityPublicTooltip
+      : t.env.visibilityPrivateTooltip;
+
+  return (
+    <button
+      type="button"
+      onClick={() => ready && !pending && onChange(isPublic ? "private" : "public")}
+      disabled={disabled}
+      title={title}
+      className={[
+        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-accent",
+        isPublic
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border bg-background text-muted-foreground",
+      ].join(" ")}
+    >
+      {pending ? (
+        <RefreshCw className="h-3 w-3 animate-spin" />
+      ) : isPublic ? (
+        <LockOpen className="h-3 w-3" />
+      ) : (
+        <Lock className="h-3 w-3" />
+      )}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function OAuthProvidersCard({ onError, onSuccess, masterVisibility }: Props) {
   const [envVars, setEnvVars] = useState<Record<string, EnvVarInfo> | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfoResponse | null>(null);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
@@ -169,6 +262,11 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // When something outside this card mutates ``.env`` (e.g. the onboarding
+  // wizard relaunched from the Env page writes new provider keys), re-read
+  // so a newly configured provider appears here without a manual reload.
+  useEffect(() => onEnvRefresh(() => refresh()), [refresh]);
 
   const configuredProviders = useMemo(
     () => buildProviderStatuses(envVars || {}, modelInfo, oauthProviders),
@@ -235,6 +333,11 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
                 .replace("{configured}", String(configuredProviders.length))
                 .replace("{current}", currentProvider?.name || t.oauth.none)}
             </CardDescription>
+            {masterVisibility && configuredProviders.length > 0 && (
+              <CardDescription className="mt-1 text-xs">
+                {t.env.visibilityMasterHint}
+              </CardDescription>
+            )}
           </div>
           <Button variant="ghost" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -326,6 +429,23 @@ export function OAuthProvidersCard({ onError, onSuccess }: Props) {
                     <Badge variant="outline" className="text-[11px]">
                       {provider.authType === "oauth" ? t.oauth.oauthAuth : t.oauth.apiKeyAuth}
                     </Badge>
+                    {masterVisibility && (
+                      <InlineVisibilityToggle
+                        providerId={provider.id}
+                        asset={masterVisibility.map[provider.id]}
+                        pending={masterVisibility.pendingProvider === provider.id}
+                        onChange={(next) => {
+                          masterVisibility.setVisibility(provider.id, next).catch((error) => {
+                            onError?.(
+                              t.env.visibilityToggleFailed.replace(
+                                "{provider}",
+                                provider.name,
+                              ) + `: ${error}`,
+                            );
+                          });
+                        }}
+                      />
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {provider.configuredKeys.length > 0 && (

@@ -313,6 +313,14 @@ export interface Translations {
     replaceCurrentValue: string;
     showValue: string;
     hideValue: string;
+    // Per-provider Public / Private inheritance toggle (master agent only)
+    visibilityPublic: string;
+    visibilityPrivate: string;
+    visibilityPublicTooltip: string;
+    visibilityPrivateTooltip: string;
+    visibilityUnavailableTooltip: string;
+    visibilityToggleFailed: string;
+    visibilityMasterHint: string;
   };
 
   // ── OAuth ──
@@ -418,6 +426,21 @@ export interface Translations {
     stopRecording: string;
     cancelRecording: string;
     processing: string;
+    masterAgent: string;
+    masterAgentSubtitle: string;
+    masterAgentHint: string;
+    subAgentBadge: string;
+    switchAgent: string;
+    chattingAs: string;
+    noSubAgents: string;
+    loadingAgents: string;
+    profileStatus: string;
+    profileNotReady: string;
+    openChat: string;
+    openChatHint: string;
+    scopeBannerPrefix: string;
+    scopeBannerSuffix: string;
+    scopeBannerBackToMaster: string;
     errors: {
       sessionLoadFailed: string;
       messageSendFailed: string;

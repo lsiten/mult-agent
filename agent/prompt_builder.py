@@ -920,20 +920,30 @@ def _truncate_content(content: str, filename: str, max_chars: int = CONTEXT_FILE
     return head + marker + tail
 
 
-def load_soul_md() -> Optional[str]:
-    """Load SOUL.md from HERMES_HOME and return its content, or None.
+def load_soul_md(home: Optional[Path] = None) -> Optional[str]:
+    """Load SOUL.md and return its content, or None.
+
+    When ``home`` is provided (e.g. an organisation sub-agent's profile
+    directory), that directory is used as the lookup root; otherwise
+    HERMES_HOME is used.  This lets a single process serve multiple
+    identities (master agent + provisioned org sub-agents) without
+    mutating the process-level environment.
 
     Used as the agent identity (slot #1 in the system prompt).  When this
     returns content, ``build_context_files_prompt`` should be called with
     ``skip_soul=True`` so SOUL.md isn't injected twice.
     """
-    try:
-        from hermes_cli.config import ensure_hermes_home
-        ensure_hermes_home()
-    except Exception as e:
-        logger.debug("Could not ensure HERMES_HOME before loading SOUL.md: %s", e)
+    if home is None:
+        try:
+            from hermes_cli.config import ensure_hermes_home
+            ensure_hermes_home()
+        except Exception as e:
+            logger.debug("Could not ensure HERMES_HOME before loading SOUL.md: %s", e)
+        root = get_hermes_home()
+    else:
+        root = Path(home)
 
-    soul_path = get_hermes_home() / "SOUL.md"
+    soul_path = root / "SOUL.md"
     if not soul_path.exists():
         return None
     try:
@@ -1033,7 +1043,11 @@ def _load_cursorrules(cwd_path: Path) -> str:
     return _truncate_content(cursorrules_content, ".cursorrules")
 
 
-def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = False) -> str:
+def build_context_files_prompt(
+    cwd: Optional[str] = None,
+    skip_soul: bool = False,
+    soul_home: Optional[Path] = None,
+) -> str:
     """Discover and load context files for the system prompt.
 
     Priority (first found wins — only ONE project context type is loaded):
@@ -1064,9 +1078,10 @@ def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = Fals
     if project_context:
         sections.append(project_context)
 
-    # SOUL.md from HERMES_HOME only — skip when already loaded as identity
+    # SOUL.md from HERMES_HOME (or the provided profile home) — skip when
+    # already loaded as identity.
     if not skip_soul:
-        soul_content = load_soul_md()
+        soul_content = load_soul_md(home=soul_home)
         if soul_content:
             sections.append(soul_content)
 

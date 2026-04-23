@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { LanguageStep } from "@/components/onboarding/LanguageStep";
@@ -50,12 +50,53 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [configuredKeys, setConfiguredKeys] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const currentStepRef = useRef(currentStep);
+  const selectedProviderRef = useRef(selectedProvider);
+  const modelNameRef = useRef(modelName);
+  const formDataRef = useRef(formData);
+  const touchedFieldsRef = useRef<Set<string>>(new Set());
+
+  const updateCurrentStep = (nextStep: number) => {
+    currentStepRef.current = nextStep;
+    setCurrentStep(nextStep);
+  };
+
+  const updateSelectedProvider = (value: string | ((prev: string) => string)) => {
+    setSelectedProvider((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      selectedProviderRef.current = next;
+      return next;
+    });
+  };
+
+  const updateModelName = (value: string | ((prev: string) => string)) => {
+    setModelName((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      modelNameRef.current = next;
+      return next;
+    });
+  };
+
+  const updateFormData = (
+    value:
+      | Record<string, string>
+      | ((prev: Record<string, string>) => Record<string, string>)
+  ) => {
+    setFormData((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      formDataRef.current = next;
+      return next;
+    });
+  };
 
   // Pre-fill configuration from existing env vars
   useEffect(() => {
     if (open) {
+      touchedFieldsRef.current = new Set();
       loadExistingConfiguration();
     }
+    // Intentionally only depend on `open`: reloading on every render would race
+    // with user input on step 2 and clobber typed API keys.
   }, [open]);
 
   const loadExistingConfiguration = async () => {
@@ -80,7 +121,8 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
 
       // Load current model/provider from config.
       if (typeof config.model === "string" && config.model.trim()) {
-        setModelName(extractModelName(config.model.trim()));
+        const modelStr = config.model;
+        updateModelName((prev) => prev || extractModelName(modelStr.trim()));
       } else if (
         config.model &&
         typeof config.model === "object" &&
@@ -97,7 +139,7 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
           typeof modelConfig.provider === "string" ? modelConfig.provider : "";
 
         if (configuredModel.trim()) {
-          setModelName(configuredModel.trim());
+          updateModelName((prev) => prev || configuredModel.trim());
         }
         if (configuredProvider.trim()) {
           providerToSelect = configuredProvider.trim();
@@ -107,35 +149,66 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
       // Store which keys are already configured
       setConfiguredKeys(configuredSet);
 
-      // Initialize form data with default values from selected provider
+      // Seed form data with default values for the resolved provider, but
+      // *merge* into any user-typed values. Earlier versions called
+      // ``setFormData(initialFormData)`` directly, which clobbered keys the
+      // user had already typed on step 2 when this async loader resolved
+      // after they advanced (e.g. ARK_API_KEY got wiped while ARK_BASE_URL
+      // silently remained because it has a defaultValue).
       const defaultProvider = PROVIDER_CONFIGS.find((p) => p.id === providerToSelect);
-      const initialFormData: Record<string, string> = {};
       if (defaultProvider) {
-        defaultProvider.fields.forEach((field) => {
-          if (field.defaultValue) {
-            initialFormData[field.key] = field.defaultValue;
-          }
+        updateFormData((prev) => {
+          const next = { ...prev };
+          defaultProvider.fields.forEach((field) => {
+            if (field.defaultValue && !next[field.key]?.trim()) {
+              next[field.key] = field.defaultValue;
+            }
+          });
+          return next;
         });
       }
-      setFormData(initialFormData);
 
-      setSelectedProvider(providerToSelect);
+      updateSelectedProvider((prev) => prev || providerToSelect);
     } catch (error) {
       console.error("Failed to load existing configuration:", error);
       // Fallback to default provider based on language
-      setSelectedProvider(getDefaultProviderId(language));
+      updateSelectedProvider((prev) => prev || getDefaultProviderId(language));
     }
   };
+
+  // Whenever the user switches provider in step 2 the field list changes.
+  // Populate ``formData`` with each new field's ``defaultValue`` so the value
+  // shown in the Input is also the value that gets persisted on Next — the
+  // previous code only displayed the default visually, leaving ``formData``
+  // undefined and silently dropping those keys when saving. User-typed values
+  // are preserved (we never overwrite an existing non-empty entry).
+  useEffect(() => {
+    if (!selectedProvider) return;
+    const provider = PROVIDER_CONFIGS.find((p) => p.id === selectedProvider);
+    if (!provider || provider.isOAuth) return;
+    updateFormData((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const field of provider.fields) {
+        if (field.defaultValue && !next[field.key]?.trim()) {
+          next[field.key] = field.defaultValue;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [selectedProvider]);
 
   // Update default provider when language changes
   useEffect(() => {
     if (language && !selectedProvider) {
-      setSelectedProvider(getDefaultProviderId(language));
+      updateSelectedProvider(getDefaultProviderId(language));
     }
   }, [language, selectedProvider]);
 
   const handleFieldChange = (key: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [key]: value }));
+    touchedFieldsRef.current.add(key);
+    updateFormData((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleClose = (e: React.MouseEvent) => {
@@ -174,23 +247,40 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
   };
 
   // Save current step's data to backend
-  const saveCurrentStepData = async () => {
+  const saveCurrentStepData = async (stepOverride?: number) => {
     setIsSaving(true);
     try {
+      const step = stepOverride ?? currentStepRef.current;
+      const providerId = selectedProviderRef.current;
+      const currentFormData = formDataRef.current;
+      const touchedFields = touchedFieldsRef.current;
       const keysToSave: string[] = [];
 
-      if (currentStep === 2) {
+      // Values to send alongside each key. We prefer the user-typed value,
+      // falling back to the provider field's ``defaultValue`` so the BASE_URL
+      // default doesn't silently "win" over an unsaved API key.
+      const valuesToSave: Record<string, string> = {};
+
+      if (step === 2) {
         // Save provider configuration
-        const provider = PROVIDER_CONFIGS.find((p) => p.id === selectedProvider);
+        const provider = PROVIDER_CONFIGS.find((p) => p.id === providerId);
         if (provider && !provider.isOAuth) {
           provider.fields.forEach((field) => {
-            // Only save if user has entered a value (not empty)
-            if (formData[field.key]?.trim()) {
-              keysToSave.push(field.key);
-            }
+            const typed = currentFormData[field.key]?.trim();
+            const isTouched = touchedFields.has(field.key);
+
+            // Required credentials (e.g. ARK_API_KEY) are saved whenever the
+            // user typed a value. Optional fields with default values (e.g.
+            // ARK_BASE_URL) are only persisted when the user explicitly
+            // touched them, so merely showing the default in the UI does not
+            // write an unnecessary override into ``.env``.
+            if (!typed) return;
+            if (!field.required && !isTouched) return;
+            keysToSave.push(field.key);
+            valuesToSave[field.key] = typed;
           });
         }
-      } else if (currentStep === 3) {
+      } else if (step === 3) {
         // Save optional features
         const optionalKeys = [
           "FAL_KEY",
@@ -202,16 +292,20 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
         ];
         optionalKeys.forEach((key) => {
           // Only save if user has entered a value (not empty)
-          if (formData[key]?.trim()) {
+          const typed = currentFormData[key]?.trim();
+          if (typed) {
             keysToSave.push(key);
+            valuesToSave[key] = currentFormData[key];
           }
         });
       }
 
-      // Save all keys in parallel
-      await Promise.all(
-        keysToSave.map((key) => api.setEnvVar(key, formData[key]))
-      );
+      // ``PUT /api/env`` rewrites the whole ``.env`` file for each key.
+      // Saving multiple keys in parallel races those whole-file writes and
+      // can leave only the last key on disk. Keep onboarding saves serial.
+      for (const key of keysToSave) {
+        await api.setEnvVar(key, valuesToSave[key]);
+      }
     } catch (error) {
       console.error("Failed to save step data:", error);
       // Don't block navigation on save errors - user can fix in settings
@@ -221,16 +315,13 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
   };
 
   const handleNext = async () => {
-    // Save current step before proceeding
-    if (currentStep === 2 || currentStep === 3) {
-      await saveCurrentStepData();
-    }
-
     if (currentStep < 4) {
-      setCurrentStep(currentStep + 1);
+      updateCurrentStep(currentStep + 1);
     } else {
-      // Final step - save and complete
-      await saveCurrentStepData();
+      // Final step - persist staged onboarding values in one batch so
+      // navigating the wizard never mutates the user's active keys early.
+      await saveCurrentStepData(2);
+      await saveCurrentStepData(3);
       try {
         const config = await api.getConfig();
         const existingModel =
@@ -250,8 +341,11 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
 
         config.model = {
           ...nextModel,
-          provider: selectedProvider,
-          default: normalizeModelNameForProvider(modelName.trim() || currentDefault, selectedProvider),
+          provider: selectedProviderRef.current,
+          default: normalizeModelNameForProvider(
+            modelNameRef.current.trim() || currentDefault,
+            selectedProviderRef.current
+          ),
         };
         await api.saveConfig(config);
       } catch (error) {
@@ -263,13 +357,12 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
 
   const handlePrevious = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      updateCurrentStep(currentStep - 1);
     }
   };
 
   const handleSkip = async () => {
-    // Save any configured data before skipping
-    await saveCurrentStepData();
+    // Skipping the onboarding wizard should not mutate existing config.
     onSkip();
   };
 
@@ -387,8 +480,8 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
               modelName={modelName}
               formData={formData}
               configuredKeys={configuredKeys}
-              onProviderChange={setSelectedProvider}
-              onModelNameChange={setModelName}
+              onProviderChange={updateSelectedProvider}
+              onModelNameChange={updateModelName}
               onFieldChange={handleFieldChange}
               onTestConnection={handleTestConnection}
             />

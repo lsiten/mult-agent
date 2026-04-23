@@ -178,7 +178,7 @@ export function ProviderStep({
                             ? "Leave empty to keep current value"
                             : field.placeholder
                         }
-                        value={formData[field.key] || field.defaultValue || ""}
+                        value={formData[field.key] ?? field.defaultValue ?? ""}
                         onChange={(e) => onFieldChange(field.key, e.target.value)}
                         required={field.required && !isConfigured}
                       />

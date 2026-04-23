@@ -19,12 +19,10 @@ export default function OrganizationPage() {
         company={page.selectedCompany}
         loading={page.loading}
         multipleCompanies={page.multipleCompanies}
-        provisioningId={page.provisioningId}
         t={page.t}
         onCreate={page.openCreate}
         onEdit={page.openEdit}
         onMoveCompany={page.moveCompany}
-        onProvision={page.provisionProfile}
       />
 
       {page.dialog ? (

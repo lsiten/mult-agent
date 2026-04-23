@@ -15,5 +15,3 @@ export type OrgNodeValues = Record<string, string>;
 export type OrgCreateHandler = (type: OrgNodeType, parent: OrgDialogParent) => void;
 
 export type OrgEditHandler = (type: OrgNodeType, item: OrgDialogItem, parent: OrgDialogParent) => void;
-
-export type OrgProvisionHandler = (agent: OrgAgent) => void;

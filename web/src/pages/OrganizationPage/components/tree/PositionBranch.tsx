@@ -1,7 +1,7 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany, OrgDepartment, OrgPosition } from "@/lib/api";
 import { getAgentTreeWidth } from "../../orgLayout";
-import type { OrgCreateHandler, OrgEditHandler, OrgProvisionHandler } from "../../types";
+import type { OrgCreateHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
 import { OrgNodeCard } from "../OrgNodeCard";
@@ -11,22 +11,18 @@ interface PositionBranchProps {
   company: OrgCompany;
   department: OrgDepartment;
   position: OrgPosition;
-  provisioningId: number | null;
   t: Translations;
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
-  onProvision: OrgProvisionHandler;
 }
 
 export function PositionBranch({
   company,
   department,
   position,
-  provisioningId,
   t,
   onCreate,
   onEdit,
-  onProvision,
 }: PositionBranchProps) {
   const color = nodeColor(position.accent_color, department.accent_color);
   return (
@@ -53,10 +49,8 @@ export function PositionBranch({
             company={company}
             department={department}
             position={position}
-            provisioning={provisioningId === agent.id}
             t={t}
             onEdit={onEdit}
-            onProvision={onProvision}
           />
         )}
       />

@@ -660,6 +660,7 @@ class AIAgent:
         checkpoint_max_snapshots: int = 50,
         pass_session_id: bool = False,
         persist_session: bool = True,
+        profile_home: "Path | None" = None,
     ):
         """
         Initialize the AI Agent.
@@ -727,6 +728,11 @@ class AIAgent:
         self.skip_context_files = skip_context_files
         self.pass_session_id = pass_session_id
         self.persist_session = persist_session
+        # Optional profile home used to override identity/context sources
+        # (SOUL.md, context files) for org sub-agents without mutating the
+        # process-level HERMES_HOME.  Tools still resolve against the master
+        # HERMES_HOME by design.
+        self.profile_home = Path(profile_home) if profile_home else None
         self._credential_pool = credential_pool
         self.log_prefix_chars = log_prefix_chars
         self.log_prefix = f"{log_prefix} " if log_prefix else ""
@@ -3674,10 +3680,13 @@ class AIAgent:
         #   6. Current date & time (frozen at build time)
         #   7. Platform-specific formatting hint
 
-        # Try SOUL.md as primary identity (unless context files are skipped)
+        # Try SOUL.md as primary identity (unless context files are skipped).
+        # When ``self.profile_home`` is set (e.g. an org sub-agent session),
+        # the provisioned profile's SOUL.md takes precedence over the master
+        # agent's SOUL.md so the sub-agent answers in its assigned persona.
         _soul_loaded = False
         if not self.skip_context_files:
-            _soul_content = load_soul_md()
+            _soul_content = load_soul_md(home=self.profile_home)
             if _soul_content:
                 prompt_parts = [_soul_content]
                 _soul_loaded = True
@@ -3791,7 +3800,10 @@ class AIAgent:
             # other dev files — inflating token usage by ~10k for no benefit.
             _context_cwd = os.getenv("TERMINAL_CWD") or None
             context_files_prompt = build_context_files_prompt(
-                cwd=_context_cwd, skip_soul=_soul_loaded)
+                cwd=_context_cwd,
+                skip_soul=_soul_loaded,
+                soul_home=self.profile_home,
+            )
             if context_files_prompt:
                 prompt_parts.append(context_files_prompt)
 

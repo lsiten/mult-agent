@@ -238,7 +238,15 @@ class ResponseStore:
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, Idempotency-Key",
+    # ``X-Hermes-Agent-Id`` / ``X-Hermes-Session-Id`` are the client-stamped
+    # identity/continuation headers our handlers read.  They must be listed
+    # here (case-insensitive, but browsers are strict about preflight
+    # matching) so the dev-server origin (http://localhost:5173) can make
+    # authenticated requests to the gateway on :8642.
+    "Access-Control-Allow-Headers": (
+        "Authorization, Content-Type, Idempotency-Key, "
+        "X-Hermes-Agent-Id, X-Hermes-Session-Id"
+    ),
 }
 
 
@@ -361,7 +369,10 @@ if AIOHTTP_AVAILABLE:
                 else:
                     headers["Access-Control-Allow-Origin"] = "*"
                 headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-                headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+                headers["Access-Control-Allow-Headers"] = (
+                    "Authorization, Content-Type, Idempotency-Key, "
+                    "X-Hermes-Agent-Id, X-Hermes-Session-Id"
+                )
                 headers["Access-Control-Allow-Credentials"] = "true"
 
             return web.Response(
@@ -2675,6 +2686,30 @@ class APIServerAdapter(BasePlatformAdapter):
         self._app.router.add_patch("/api/agents/{id}", org_h.handle_update_agent)
         self._app.router.add_post("/api/agents/{id}/provision-profile", org_h.handle_provision_profile)
         self._app.router.add_get("/api/workspaces/{ownerType}/{ownerId}", org_h.handle_get_workspace)
+        # Master-agent asset inheritance
+        self._app.router.add_post("/api/org/assets/refresh", org_h.handle_refresh_master_assets)
+        self._app.router.add_get("/api/org/assets", org_h.handle_list_master_assets)
+        self._app.router.add_patch("/api/org/assets/{id}", org_h.handle_update_master_asset)
+        self._app.router.add_post(
+            "/api/org/assets/env-provider/{providerId}/visibility",
+            org_h.handle_set_provider_visibility,
+        )
+        # Bootstrap validation
+        self._app.router.add_get(
+            "/api/org/positions/{id}/bootstrap-check",
+            org_h.handle_bootstrap_check_position,
+        )
+        # Profile templates
+        self._app.router.add_get("/api/org/profile-templates", org_h.handle_list_profile_templates)
+        self._app.router.add_post("/api/org/profile-templates", org_h.handle_create_profile_template)
+        self._app.router.add_patch(
+            "/api/org/profile-templates/{id}",
+            org_h.handle_update_profile_template,
+        )
+        self._app.router.add_delete(
+            "/api/org/profile-templates/{id}",
+            org_h.handle_delete_profile_template,
+        )
 
         # Serve static files and SPA fallback
         if self._web_dist and self._web_dist.exists():

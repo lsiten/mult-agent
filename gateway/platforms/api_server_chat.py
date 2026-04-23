@@ -20,6 +20,7 @@ from gateway.platforms.api_server_validation import (
     require_fields,
     ValidationError,
 )
+from gateway.org.runtime import request_agent_id, resolve_request_profile
 from hermes_constants import get_hermes_home
 
 _log = logging.getLogger(__name__)
@@ -121,10 +122,15 @@ class ChatAPIHandlers:
             db = SessionDB()
             try:
                 session_id = f"chat_{uuid.uuid4().hex[:12]}"
+                # Tag the session with the active sub-agent id so future
+                # list/history queries can scope by identity. ``None`` means
+                # master agent — the existing behaviour for web/CLI clients.
+                scope_agent_id = request_agent_id(request)
                 db.create_session(
                     session_id=session_id,
                     source=data["source"],
                     user_id=data["user_id"],
+                    agent_id=scope_agent_id,
                 )
 
                 # Update title if provided
@@ -179,8 +185,16 @@ class ChatAPIHandlers:
 
             db = SessionDB()
             try:
-                # Get all sessions first
-                all_sessions = db.list_sessions_rich(limit=100, offset=0)
+                # Scope to the active sub-agent (or master when header absent).
+                # ``request_agent_id`` returns ``None`` for master; we forward
+                # that into the store, whose ``agent_id=None`` semantics is
+                # "only agent_id IS NULL rows".
+                scope_agent_id = request_agent_id(request)
+                all_sessions = db.list_sessions_rich(
+                    limit=1000,
+                    offset=0,
+                    agent_id=scope_agent_id,
+                )
 
                 # Filter by source if provided
                 if source:
@@ -291,6 +305,19 @@ class ChatAPIHandlers:
         else:
             _log.info("[SKILL_SELECTION] No skills selected for session %s", session_id)
 
+        # Optional org sub-agent identity.  When provided, the chat handler
+        # will build the AIAgent using the provisioned profile's SOUL.md,
+        # config.yaml and .env so the conversation speaks "as" that agent.
+        # Validation failure (bad id, unprovisioned profile, etc.) falls
+        # back to the master agent rather than blocking the chat stream.
+        requested_agent_id_raw = request.query.get("agent_id")
+        requested_agent_id: Optional[int] = None
+        if requested_agent_id_raw:
+            try:
+                requested_agent_id = int(requested_agent_id_raw)
+            except ValueError:
+                _log.warning("Invalid agent_id query parameter: %s", requested_agent_id_raw)
+
         # Create SSE response
         response = web.StreamResponse()
         response.headers["Content-Type"] = "text/event-stream"
@@ -379,6 +406,45 @@ class ChatAPIHandlers:
                     except Exception as e:
                         _log.warning("Failed to load config: %s", e)
 
+                # If the caller targeted an org sub-agent, resolve its
+                # provisioned profile and overlay model/provider/base_url.
+                # Missing or unready profiles silently fall back to the
+                # master agent so chat never hard-fails on identity issues.
+                org_profile = None
+                org_api_key: Optional[str] = None
+                if requested_agent_id is not None:
+                    try:
+                        from gateway.org.runtime import resolve_chat_profile
+                        org_profile = resolve_chat_profile(requested_agent_id)
+                    except Exception as exc:
+                        _log.warning(
+                            "Failed to resolve org chat profile for agent_id=%s: %s",
+                            requested_agent_id, exc,
+                        )
+                        org_profile = None
+                    if org_profile and org_profile.is_ready():
+                        if org_profile.model:
+                            model = org_profile.model
+                            model_configured = True
+                        if org_profile.provider:
+                            provider = org_profile.provider
+                        if org_profile.base_url:
+                            config_base_url = org_profile.base_url
+                        org_api_key = org_profile.api_key
+                        _log.info(
+                            "Chat session %s acting as org agent %s (profile_home=%s, model=%s)",
+                            sid, requested_agent_id, org_profile.profile_home, model or "<inherited>",
+                        )
+                    elif org_profile is not None:
+                        _log.info(
+                            "Org agent %s profile not ready (status=%s); using master defaults",
+                            requested_agent_id, org_profile.profile_status,
+                        )
+                    else:
+                        _log.warning(
+                            "Org agent %s not found; using master defaults", requested_agent_id,
+                        )
+
                 if not model_configured:
                     # Send configuration guide response
                     guide_response = (
@@ -442,6 +508,18 @@ class ChatAPIHandlers:
                     if not provider and model and "/" in model:
                         provider, _ = model.split("/", 1)
                         _log.info("Extracted provider from model: %s", provider)
+
+                    # When acting as an org sub-agent, its provisioned .env
+                    # (filtered by the inheritance whitelist) takes priority
+                    # over the master agent's credential store.  If the
+                    # profile did not carry a usable key we still fall back
+                    # below through the normal resolution chain.
+                    if org_api_key:
+                        api_key = org_api_key
+                        _log.info(
+                            "Using org profile api_key for session %s (provider=%s)",
+                            sid, provider or "<unknown>",
+                        )
 
                     # Try to resolve credentials using hermes_cli.auth
                     if provider:
@@ -659,7 +737,10 @@ class ChatAPIHandlers:
                     async def stream_agent_response():
                         loop = asyncio.get_event_loop()
 
-                        # Create agent instance with explicit credentials
+                        # Create agent instance with explicit credentials.
+                        # ``profile_home`` is set only when the caller is
+                        # conversing AS an org sub-agent so its provisioned
+                        # SOUL.md / context wins over the master identity.
                         agent = AIAgent(
                             session_id=sid,
                             stream_delta_callback=on_delta,
@@ -669,6 +750,11 @@ class ChatAPIHandlers:
                             api_key=api_key,
                             base_url=base_url,
                             provider=provider,
+                            profile_home=(
+                                org_profile.profile_home
+                                if org_profile and org_profile.is_ready()
+                                else None
+                            ),
                         )
 
                         # Send skill_loaded event if skills are selected

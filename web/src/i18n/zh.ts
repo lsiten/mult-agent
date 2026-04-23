@@ -381,6 +381,16 @@ export const zh: Translations = {
     replaceCurrentValue: "替换当前值（{preview}）",
     showValue: "显示实际值",
     hideValue: "隐藏值",
+    visibilityPublic: "公开",
+    visibilityPrivate: "私有",
+    visibilityPublicTooltip: "新的子 Agent 将从主 Agent 继承该提供商的密钥。",
+    visibilityPrivateTooltip:
+      "密钥仅供主 Agent 使用，新创建的子 Agent 不会继承。",
+    visibilityUnavailableTooltip:
+      "请先在主 Agent 为该提供商配置至少一个密钥，然后再将其标记为公开。",
+    visibilityToggleFailed: "更新 {provider} 的继承设置失败",
+    visibilityMasterHint:
+      "作为主 Agent：将提供商标记为「公开」后，新创建的子 Agent 会自动继承其密钥；标记为「私有」则仅限本机使用。",
   },
 
   oauth: {
@@ -484,6 +494,21 @@ export const zh: Translations = {
     stopRecording: "停止录音",
     cancelRecording: "取消",
     processing: "识别中...",
+    masterAgent: "主 Agent",
+    masterAgentSubtitle: "当前登录的主控 Agent",
+    masterAgentHint: "使用 Hermes 主 Agent 配置",
+    subAgentBadge: "子 Agent",
+    switchAgent: "切换 Agent 身份",
+    chattingAs: "当前对话身份",
+    noSubAgents: "暂无可用的子 Agent",
+    loadingAgents: "加载 Agent 列表中...",
+    profileStatus: "Profile 状态",
+    profileNotReady: "未就绪",
+    openChat: "对话",
+    openChatHint: "以该 Agent 身份开启对话",
+    scopeBannerPrefix: "当前以",
+    scopeBannerSuffix: "身份操作，Cron、技能、设置均作用于其 Profile 工作空间",
+    scopeBannerBackToMaster: "回到主 Agent",
     errors: {
       sessionLoadFailed: "加载会话失败",
       messageSendFailed: "发送消息失败",

@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
   Eye,
   EyeOff,
-  ExternalLink,
   KeyRound,
   MessageSquare,
   Pencil,
@@ -11,34 +13,40 @@ import {
   Trash2,
   X,
   Zap,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
-import { api } from "@/lib/api";
-import type { EnvVarInfo } from "@/lib/api";
+import { api, type EnvVarInfo } from "@/lib/api";
+import { onEnvRefresh } from "@/lib/envRefresh";
 import { useToast } from "@/hooks/useToast";
 import { Toast } from "@/components/Toast";
-import { OAuthProvidersCard } from "@/components/OAuthProvidersCard";
+import { OAuthProvidersCard, type MasterVisibilityBridge } from "@/components/OAuthProvidersCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/i18n";
+import { useAgentSwitcher } from "@/hooks/useAgentSwitcher";
+import { useMasterProviderVisibility } from "@/hooks/useMasterProviderVisibility";
 
 /* ------------------------------------------------------------------ */
 /*  Provider grouping                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Map env-var key prefixes to a human-friendly provider name + ordering. */
+/**
+ * Map env-var key prefixes to a human-friendly provider name + ordering.
+ *
+ * The Public / Private inheritance toggle is *not* rendered here anymore —
+ * it lives on the upper "Configured Providers" card (see
+ * ``OAuthProvidersCard``) so the master-agent inheritance decision is shown
+ * next to the providers that are actually configured, instead of being
+ * buried in the key-management section below.
+ */
 const PROVIDER_GROUPS: { prefix: string; name: string; priority: number }[] = [
-  // Nous Portal first
   { prefix: "NOUS_",            name: "Nous Portal",       priority: 0 },
-  // Then alphabetical by display name
   { prefix: "ANTHROPIC_",       name: "Anthropic",         priority: 1 },
   { prefix: "ARK_",             name: "火山引擎（豆包）",    priority: 2 },
   { prefix: "DASHSCOPE_",       name: "DashScope (Qwen)",  priority: 2 },
-  { prefix: "HERMES_QWEN_",    name: "DashScope (Qwen)",  priority: 2 },
+  { prefix: "HERMES_QWEN_",     name: "DashScope (Qwen)",  priority: 2 },
   { prefix: "DEEPSEEK_",        name: "DeepSeek",          priority: 3 },
   { prefix: "GOOGLE_",          name: "Gemini",            priority: 4 },
   { prefix: "GEMINI_",          name: "Gemini",            priority: 4 },
@@ -364,15 +372,59 @@ export default function EnvPage() {
   const { toast, showToast } = useToast();
   const { t } = useI18n();
 
-  useEffect(() => {
+  // The per-provider Public / Private toggle only applies when the current
+  // identity is the master agent. ``activeAgentId == null`` is how the rest
+  // of the app detects that context (see useAgentSwitcher). The toggle now
+  // lives on the upper Configured Providers card; we only keep the hook here
+  // so that saving/clearing keys below stays in sync with ``inherit_ready``.
+  const { activeAgentId } = useAgentSwitcher();
+  const isMaster = activeAgentId == null;
+  const {
+    visibilityMap,
+    pendingProvider,
+    refresh: refreshVisibility,
+    setVisibility,
+  } = useMasterProviderVisibility(isMaster);
+
+  // Bridge used to wire the hook into OAuthProvidersCard without it having
+  // to know about useAgentSwitcher. It is intentionally ``undefined`` for
+  // sub-agents so the toggle UI disappears cleanly.
+  const masterVisibility: MasterVisibilityBridge | undefined = isMaster
+    ? {
+        map: visibilityMap,
+        pendingProvider,
+        setVisibility,
+      }
+    : undefined;
+
+  // Re-fetch env vars from the server. Extracted from the initial-load
+  // effect so we can also call it from the ``env-refresh`` listener below
+  // without duplicating logic.
+  const reloadVars = useCallback(() => {
     api.getEnvVars().then(setVars).catch(() => {});
-    // Get actual env path from status
+  }, []);
+
+  useEffect(() => {
+    reloadVars();
+    // Get actual env path from status (one-shot — it doesn't change after boot)
     api.getStatus().then((status) => {
       if (status.env_path) {
         setEnvPath(status.env_path);
       }
     }).catch(() => {});
-  }, []);
+  }, [reloadVars]);
+
+  // When the onboarding wizard (re-launched from this page via the OAuth
+  // card's "Open setup" button) writes new keys to ``.env``, refresh both
+  // the raw env-var list and, on the master agent, the per-provider
+  // visibility so newly configured providers show up immediately without
+  // requiring a manual page reload.
+  useEffect(() => {
+    return onEnvRefresh(() => {
+      reloadVars();
+      if (isMaster) void refreshVisibility();
+    });
+  }, [reloadVars, isMaster, refreshVisibility]);
 
   const handleSave = async (key: string) => {
     const value = edits[key];
@@ -391,6 +443,10 @@ export default function EnvPage() {
       setEdits((prev) => { const n = { ...prev }; delete n[key]; return n; });
       setRevealed((prev) => { const n = { ...prev }; delete n[key]; return n; });
       showToast(`${key} ${t.common.save.toLowerCase()}d`, "success");
+      // Keep the scanner's view of ``.env`` in sync so ``inherit_ready`` and
+      // the Public/Private toggle availability flip as soon as an operator
+      // sets or removes a key. Fire-and-forget: not critical for save path.
+      if (isMaster) void refreshVisibility();
     } catch (e) {
       showToast(`${t.config.failedToSave} ${key}: ${e}`, "error");
     } finally {
@@ -410,6 +466,7 @@ export default function EnvPage() {
       setEdits((prev) => { const n = { ...prev }; delete n[key]; return n; });
       setRevealed((prev) => { const n = { ...prev }; delete n[key]; return n; });
       showToast(`${key} ${t.common.removed}`, "success");
+      if (isMaster) void refreshVisibility();
     } catch (e) {
       showToast(`${t.common.failedToRemove} ${key}: ${e}`, "error");
     } finally {
@@ -514,10 +571,11 @@ export default function EnvPage() {
         </Button>
       </div>
 
-      {/* ═══════════════ OAuth Logins ══ */}
+      {/* ═══════════════ Configured providers + Public/Private ═══════════════ */}
       <OAuthProvidersCard
         onError={(msg) => showToast(msg, "error")}
         onSuccess={(msg) => showToast(msg, "success")}
+        masterVisibility={masterVisibility}
       />
 
       {/* ═══════════════ LLM Providers (grouped) ═══════════════ */}

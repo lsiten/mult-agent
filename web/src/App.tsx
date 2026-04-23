@@ -1,5 +1,5 @@
 import { useMemo, lazy, Suspense, useState, useEffect } from "react";
-import { Routes, Route, NavLink, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, useNavigate, useLocation } from "react-router-dom";
 import {
   Activity, BarChart3, Clock, FileText, KeyRound,
   MessageSquare, Package, Settings, Puzzle,
@@ -8,6 +8,8 @@ import {
   Loader2, AlertTriangle, Gauge, Building2,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { AgentIdentitySwitcher } from "@/components/AgentIdentitySwitcher";
+import { useAgentSwitcher } from "@/hooks/useAgentSwitcher";
 // import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OnboardingModal } from "@/components/OnboardingModal";
@@ -15,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { usePlugins } from "@/plugins";
 import { api } from "@/lib/api";
+import { emitEnvRefresh } from "@/lib/envRefresh";
 import { PROVIDER_CONFIGS } from "@/lib/providers";
 import type { RegisteredPlugin } from "@/plugins";
 
@@ -50,15 +53,25 @@ interface NavItem {
   label: string;
   labelKey?: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** If true the nav item is only shown for the master agent. */
+  masterOnly?: boolean;
 }
 
 const BUILTIN_NAV: NavItem[] = [
   { path: "/", labelKey: "chat", label: "Chat", icon: MessagesSquare },
-  { path: "/organization", labelKey: "organization", label: "Organization", icon: Building2 },
+  { path: "/organization", labelKey: "organization", label: "Organization", icon: Building2, masterOnly: true },
   { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
   { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
   { path: "/settings", labelKey: "settings", label: "Settings", icon: Settings },
 ];
+
+/**
+ * Paths that may only be visited while the master agent is active.
+ * Sub-agent sessions are confined to their own Profile workspace and any
+ * attempt to navigate here while a sub-agent is selected is redirected to
+ * the chat page for that agent.
+ */
+const MASTER_ONLY_PATHS = new Set<string>(["/organization", "/dev-tools"]);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -118,10 +131,35 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showConfigWarning, setShowConfigWarning] = useState(false);
 
+  const {
+    activeAgentId,
+    activeAgent,
+    availableAgents,
+    agentsLoaded,
+    loadAgents,
+    switchToAgent,
+  } = useAgentSwitcher();
+
+  const isSubAgent = activeAgentId != null;
+
   const navItems = useMemo(
-    () => buildNavItems(BUILTIN_NAV, plugins),
-    [plugins],
+    () => buildNavItems(BUILTIN_NAV, plugins).filter((item) => !(isSubAgent && item.masterOnly)),
+    [plugins, isSubAgent],
   );
+
+  // Route guard: sub-agents are confined to their Profile workspace, so any
+  // attempt to visit a master-only path while a sub-agent is active routes
+  // them back to the chat for that agent.  We keep the ``agentId`` query
+  // parameter so the user does not lose their identity.
+  const location = useLocation();
+  useEffect(() => {
+    if (!isSubAgent) return;
+    if (MASTER_ONLY_PATHS.has(location.pathname)) {
+      const params = new URLSearchParams(location.search);
+      params.set("agentId", String(activeAgentId));
+      navigate(`/?${params.toString()}`, { replace: true });
+    }
+  }, [isSubAgent, activeAgentId, location.pathname, location.search, navigate]);
 
   // Global keyboard shortcut: Cmd+Shift+D to open DevTools
   useEffect(() => {
@@ -242,6 +280,10 @@ export default function App() {
     setShowOnboarding(false);
     // Re-check configuration
     setShowConfigWarning(false);
+    // The wizard just wrote fresh keys into ``.env``. Notify any cached
+    // consumers (Env page, OAuth card, master visibility hook) so they
+    // can re-read the file instead of showing stale "not configured" UI.
+    emitEnvRefresh();
   };
 
   const handleOnboardingSkip = async () => {
@@ -249,6 +291,9 @@ export default function App() {
       await window.electronAPI.markOnboardingComplete();
     }
     setShowOnboarding(false);
+    // Skip still closes the wizard, but the user may have saved keys part
+    // way through — refetch defensively so nothing is left stale.
+    emitEnvRefresh();
   };
 
   const handleCompleteSetup = () => {
@@ -273,7 +318,15 @@ export default function App() {
             {navItems.map(({ path, label, labelKey, icon: Icon }) => (
               <NavLink
                 key={path}
-                to={path}
+                // Preserve the active ``agentId`` across nav clicks so
+                // switching tabs does not silently drop the user back to
+                // the master agent.  NavLink's ``to`` accepts a partial
+                // location object — the ``search`` field carries
+                // ``?agentId=X`` when a sub-agent is active.
+                to={{
+                  pathname: path,
+                  search: isSubAgent ? `?agentId=${activeAgentId}` : "",
+                }}
                 end={path === "/"}
                 className={({ isActive }) =>
                   `group relative inline-flex items-center gap-1 sm:gap-1.5 border-r border-border px-2.5 sm:px-4 py-2 font-display text-[0.65rem] sm:text-[0.8rem] tracking-[0.12em] uppercase whitespace-nowrap transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
@@ -300,6 +353,14 @@ export default function App() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2 px-2 sm:px-4">
+            <AgentIdentitySwitcher
+              activeAgent={activeAgent}
+              availableAgents={availableAgents}
+              agentsLoaded={agentsLoaded}
+              onLoadAgents={loadAgents}
+              onSwitchAgent={switchToAgent}
+            />
+            <span className="hidden h-5 w-px bg-border/70 sm:block" />
             <LanguageSwitcher />
             <span className="hidden sm:inline text-[0.7rem] tracking-[0.15em] uppercase opacity-50">
               {t.app.webUi}
@@ -330,8 +391,49 @@ export default function App() {
         </div>
       )}
 
+      {/* Sub-agent scope banner: makes it explicit that everything the user
+          does from this point on lives inside the selected sub-agent's
+          Profile workspace. Clicking "回到主 Agent" drops the query param
+          and returns to the master agent context. */}
+      {isSubAgent && !showOnboarding && (
+        <div
+          className="fixed left-0 right-0 z-30 border-b border-primary/20 bg-primary/5 backdrop-blur-sm"
+          style={{ top: showConfigWarning ? "5.5rem" : "3rem" }}
+        >
+          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-3 sm:px-6 py-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: activeAgent?.accent_color || "#6366f1" }}
+              />
+              <span className="truncate text-[11px] sm:text-xs text-foreground/80">
+                {t.chat.scopeBannerPrefix}
+                <span className="mx-1 font-semibold text-foreground">
+                  {activeAgent?.display_name || activeAgent?.name || `Agent #${activeAgentId}`}
+                </span>
+                {t.chat.scopeBannerSuffix}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => switchToAgent(null)}
+              className="h-6 shrink-0 px-2 text-[11px]"
+            >
+              {t.chat.scopeBannerBackToMaster}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <main className={`relative z-2 mx-auto w-full max-w-[1400px] flex-1 px-3 sm:px-6 pb-4 sm:pb-8 overflow-y-auto ${
-        showConfigWarning ? "pt-24 sm:pt-28" : "pt-16 sm:pt-20"
+        showConfigWarning && isSubAgent
+          ? "pt-32 sm:pt-36"
+          : showConfigWarning
+            ? "pt-24 sm:pt-28"
+            : isSubAgent
+              ? "pt-24 sm:pt-28"
+              : "pt-16 sm:pt-20"
       }`}>
         <ErrorBoundary>
           <Suspense fallback={

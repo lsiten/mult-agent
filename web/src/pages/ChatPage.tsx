@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { Sidebar } from "./ChatPage/Sidebar";
 import { ChatArea } from "./ChatPage/ChatArea";
 import { useSessions } from "@/hooks/useSessions";
@@ -15,6 +16,20 @@ export function ChatPage() {
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const { selectedSkills, clearSelection: clearSkills } = useSkillSelectionStore();
 
+  const location = useLocation();
+
+  // ``agentId`` query parameter selects which provisioned sub-agent should
+  // drive this chat.  ``null`` means the master agent.  The global
+  // ``AgentIdentitySwitcher`` in the app header is the sole UI that mutates
+  // this query parameter; we just consume it here to thread ``agentId``
+  // through to the streaming endpoint.
+  const activeAgentId = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("agentId");
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [location.search]);
+
   const {
     sessions,
     currentSessionId,
@@ -25,7 +40,7 @@ export function ChatPage() {
     updateSessionTitle,
     groupSessions,
     loadSessions,
-  } = useSessions();
+  } = useSessions("electron-chat", activeAgentId);
 
   const {
     streamingContent,
@@ -185,7 +200,7 @@ export function ChatPage() {
     // Start streaming with attachments and selected skills
     console.log("[ChatPage] Starting stream with session:", sid, "skills:", skillsToSend);
     try {
-      const finalContent = await startStreaming(sid, content, attachmentData, skillsToSend);
+      const finalContent = await startStreaming(sid, content, attachmentData, skillsToSend, activeAgentId);
       console.log("[ChatPage] Streaming completed, final content length:", finalContent.length);
 
       // After streaming completes, reload messages from backend to get the split messages
@@ -230,6 +245,16 @@ export function ChatPage() {
       setMessages([]);
     }
   }, [currentSessionId]);
+
+  // Clear in-memory chat state whenever the active agent identity changes
+  // so that stale transcripts from the previous master/sub-agent scope are
+  // not visible during the brief window before ``useSessions`` reloads the
+  // new scope's session list.  Scheduled via setTimeout(0) to avoid the
+  // cascading-render lint (the same pattern used elsewhere in ChatPage).
+  useEffect(() => {
+    const tid = setTimeout(() => setMessages([]), 0);
+    return () => clearTimeout(tid);
+  }, [activeAgentId]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([

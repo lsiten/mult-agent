@@ -115,7 +115,8 @@ export function Sidebar({
     if (currentSessionId) {
       const index = flatSessions.findIndex(s => s.id === currentSessionId);
       if (index >= 0) {
-        setFocusedIndex(index);
+        const id = setTimeout(() => setFocusedIndex(index), 0);
+        return () => clearTimeout(id);
       }
     }
   }, [currentSessionId, flatSessions]);

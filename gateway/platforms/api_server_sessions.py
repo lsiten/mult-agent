@@ -7,6 +7,8 @@ import logging
 import os
 from aiohttp import web
 
+from gateway.org.runtime import request_agent_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +38,13 @@ class SessionsAPIHandlers:
 
             from hermes_state import SessionDB
             db = SessionDB()
-            sessions = db.list_sessions_rich(limit=limit, offset=offset)
+            # Scope sessions to the active sub-agent (master when header absent).
+            scope_agent_id = request_agent_id(request)
+            sessions = db.list_sessions_rich(
+                limit=limit,
+                offset=offset,
+                agent_id=scope_agent_id,
+            )
             total = len(sessions)  # list_sessions_rich returns filtered list
 
             return web.json_response({

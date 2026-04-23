@@ -381,6 +381,17 @@ export const en: Translations = {
     replaceCurrentValue: "Replace current value ({preview})",
     showValue: "Show real value",
     hideValue: "Hide value",
+    visibilityPublic: "Public",
+    visibilityPrivate: "Private",
+    visibilityPublicTooltip:
+      "New sub-agents inherit this provider's keys from the master agent.",
+    visibilityPrivateTooltip:
+      "Keys stay private to the master agent. New sub-agents do not inherit them.",
+    visibilityUnavailableTooltip:
+      "Configure at least one key for this provider on the master agent before marking it Public.",
+    visibilityToggleFailed: "Failed to update inheritance for {provider}",
+    visibilityMasterHint:
+      "As master agent: mark a provider Public to let new sub-agents inherit its keys automatically; Private keeps them local.",
   },
 
   oauth: {
@@ -482,6 +493,21 @@ export const en: Translations = {
     stopTask: "Stop task",
     noSessions: "No sessions yet. Start a new chat!",
     stopRecording: "Stop recording",
+    masterAgent: "Master Agent",
+    masterAgentSubtitle: "Top-level Hermes agent",
+    masterAgentHint: "Uses the master agent's configuration",
+    subAgentBadge: "Sub-agent",
+    switchAgent: "Switch agent identity",
+    chattingAs: "Chatting as",
+    noSubAgents: "No sub-agents available",
+    loadingAgents: "Loading agents...",
+    profileStatus: "Profile status",
+    profileNotReady: "Not ready",
+    openChat: "Chat",
+    openChatHint: "Open a chat as this agent",
+    scopeBannerPrefix: "Acting as",
+    scopeBannerSuffix: "— Cron, Skills, and Settings apply to this agent's Profile workspace",
+    scopeBannerBackToMaster: "Back to Master",
     cancelRecording: "Cancel",
     processing: "Processing...",
     errors: {

@@ -33,7 +33,8 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
 
   // Reset displayed count when switching sessions (messages array changes drastically)
   useEffect(() => {
-    setDisplayedMessageCount(INITIAL_MESSAGE_COUNT);
+    const id = setTimeout(() => setDisplayedMessageCount(INITIAL_MESSAGE_COUNT), 0);
+    return () => clearTimeout(id);
   }, [messages.length === 0]); // Reset when messages are cleared (new session)
 
   // Build list items including streaming content and real-time events

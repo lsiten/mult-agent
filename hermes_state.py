@@ -31,7 +31,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     pricing_version TEXT,
     title TEXT,
     selected_skills TEXT,
+    agent_id INTEGER,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
 );
 
@@ -91,6 +92,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
+-- Note: idx_sessions_agent is created after migrations because the
+-- ``agent_id`` column is only added in v9.  Creating the index in this
+-- baseline script would raise ``no such column`` on any pre-v9 DB and
+-- abort the entire _init_schema transaction.
 """
 
 FTS_SQL = """
@@ -352,6 +357,33 @@ class SessionDB:
                 except sqlite3.OperationalError:
                     pass  # Index already dropped
                 cursor.execute("UPDATE schema_version SET version = 8")
+            if current_version < 9:
+                # v9: tag sessions with the org sub-agent they belong to.
+                # ``agent_id`` is NULL for the master agent (and for all
+                # pre-existing rows), >0 for provisioned sub-agents.
+                try:
+                    cursor.execute('ALTER TABLE sessions ADD COLUMN "agent_id" INTEGER')
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                try:
+                    cursor.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_sessions_agent "
+                        "ON sessions(agent_id, started_at DESC)"
+                    )
+                except sqlite3.OperationalError:
+                    pass
+                cursor.execute("UPDATE schema_version SET version = 9")
+
+        # Indexes on columns added by migrations must live *after* the
+        # migration block so fresh DBs (which skip migrations and land on
+        # the latest SCHEMA_VERSION straight away) still get them.
+        try:
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_agent "
+                "ON sessions(agent_id, started_at DESC)"
+            )
+        except sqlite3.OperationalError:
+            pass  # Column may be missing on very old DBs that failed to migrate.
 
         # FTS5 setup (separate because CREATE VIRTUAL TABLE can't be in executescript with IF NOT EXISTS reliably)
         try:
@@ -374,13 +406,21 @@ class SessionDB:
         system_prompt: str = None,
         user_id: str = None,
         parent_session_id: str = None,
+        agent_id: Optional[int] = None,
     ) -> str:
-        """Create a new session record. Returns the session_id."""
+        """Create a new session record. Returns the session_id.
+
+        ``agent_id`` scopes the session to a specific org sub-agent
+        (``NULL`` = master agent).  All existing callers that don't pass it
+        end up in the master bucket, which is the desired behaviour for
+        legacy sessions and for gateway code paths that don't participate in
+        the org identity switcher.
+        """
         def _do(conn):
             conn.execute(
                 """INSERT OR IGNORE INTO sessions (id, source, user_id, model, model_config,
-                   system_prompt, parent_session_id, started_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   system_prompt, parent_session_id, started_at, agent_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     source,
@@ -390,6 +430,7 @@ class SessionDB:
                     system_prompt,
                     parent_session_id,
                     time.time(),
+                    agent_id,
                 ),
             )
         self._execute_write(_do)
@@ -734,6 +775,7 @@ class SessionDB:
         limit: int = 20,
         offset: int = 0,
         include_children: bool = False,
+        agent_id: Any = "__any__",
     ) -> List[Dict[str, Any]]:
         """List sessions with preview (first user message) and last active timestamp.
 
@@ -759,6 +801,17 @@ class SessionDB:
             placeholders = ",".join("?" for _ in exclude_sources)
             where_clauses.append(f"s.source NOT IN ({placeholders})")
             params.extend(exclude_sources)
+
+        # ``agent_id`` filter semantics:
+        #   "__any__" — no filter (legacy behaviour, default)
+        #   None       — only the master agent's sessions (``agent_id IS NULL``)
+        #   int (>0)   — only that sub-agent's sessions
+        if agent_id != "__any__":
+            if agent_id is None:
+                where_clauses.append("s.agent_id IS NULL")
+            else:
+                where_clauses.append("s.agent_id = ?")
+                params.append(int(agent_id))
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         query = f"""

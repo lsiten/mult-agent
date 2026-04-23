@@ -1,7 +1,7 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
 import { getDepartmentTreeWidth } from "../../orgLayout";
-import type { OrgCreateHandler, OrgEditHandler, OrgProvisionHandler } from "../../types";
+import type { OrgCreateHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
 import { OrgNodeCard } from "../OrgNodeCard";
@@ -9,14 +9,12 @@ import { DepartmentBranch } from "./DepartmentBranch";
 
 interface CompanyChartProps {
   company: OrgCompany;
-  provisioningId: number | null;
   t: Translations;
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
-  onProvision: OrgProvisionHandler;
 }
 
-export function CompanyChart({ company, provisioningId, t, onCreate, onEdit, onProvision }: CompanyChartProps) {
+export function CompanyChart({ company, t, onCreate, onEdit }: CompanyChartProps) {
   return (
     <div className="mx-auto flex w-max min-w-full flex-col items-center">
       <OrgNodeCard
@@ -43,11 +41,9 @@ export function CompanyChart({ company, provisioningId, t, onCreate, onEdit, onP
           <DepartmentBranch
             company={company}
             department={department}
-            provisioningId={provisioningId}
             t={t}
             onCreate={onCreate}
             onEdit={onEdit}
-            onProvision={onProvision}
           />
         )}
       />

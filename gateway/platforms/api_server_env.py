@@ -6,10 +6,28 @@ import hmac
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from aiohttp import web
 
+from gateway.org.runtime import resolve_request_profile
+
 logger = logging.getLogger(__name__)
+
+
+def _resolve_profile_home(request: web.Request) -> Optional[Path]:
+    """Return the sub-agent ``profile_home`` for this request, if any.
+
+    We fall back to ``None`` (master agent / ``HERMES_HOME``) when the
+    request is unscoped or when the referenced profile is not ready; the
+    caller is responsible for treating that case as the master agent.
+    """
+    profile = resolve_request_profile(request)
+    if profile is None:
+        return None
+    if not profile.is_ready():
+        return None
+    return profile.profile_home
 
 
 class EnvAPIHandlers:
@@ -51,7 +69,7 @@ class EnvAPIHandlers:
         try:
             from hermes_cli.config import load_env, OPTIONAL_ENV_VARS, redact_key
 
-            env_vars = load_env()
+            env_vars = load_env(home=_resolve_profile_home(request))
             result = {}
 
             # Return all known env vars with metadata (even if not set)
@@ -112,7 +130,7 @@ class EnvAPIHandlers:
             )
 
             from hermes_cli.config import save_env_value
-            save_env_value(data["key"], data["value"])
+            save_env_value(data["key"], data["value"], home=_resolve_profile_home(request))
 
             return web.json_response({"ok": True})
 
@@ -132,7 +150,7 @@ class EnvAPIHandlers:
             data = await parse_request_json(request, {"key": str}, required=["key"])
 
             from hermes_cli.config import remove_env_value
-            remove_env_value(data["key"])
+            remove_env_value(data["key"], home=_resolve_profile_home(request))
 
             return web.json_response({"ok": True})
 
@@ -167,7 +185,7 @@ class EnvAPIHandlers:
             data = await parse_request_json(request, {"key": str}, required=["key"])
 
             from hermes_cli.config import load_env
-            env_vars = load_env()
+            env_vars = load_env(home=_resolve_profile_home(request))
 
             key = data["key"]
             if key not in env_vars:

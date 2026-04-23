@@ -112,3 +112,95 @@ class OrganizationAPIHandlers:
         owner_type = request.match_info["ownerType"]
         owner_id = int(request.match_info["ownerId"])
         return await self._handle(request, lambda: self._service.get_workspace(owner_type, owner_id))
+
+    # ------------------------------ master_agent_assets ------------------------------
+
+    async def handle_refresh_master_assets(self, request: web.Request) -> web.Response:
+        return await self._handle(request, self._service.refresh_master_assets)
+
+    async def handle_list_master_assets(self, request: web.Request) -> web.Response:
+        asset_type = request.query.get("asset_type") or None
+        visibility = request.query.get("visibility") or None
+        inheritable_only = request.query.get("inheritable_only", "").lower() in {"1", "true"}
+        return await self._handle(
+            request,
+            lambda: self._service.list_master_assets(
+                asset_type=asset_type,
+                visibility=visibility,
+                inheritable_only=inheritable_only,
+            ),
+        )
+
+    async def handle_update_master_asset(self, request: web.Request) -> web.Response:
+        asset_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        return await self._handle(
+            request,
+            lambda: self._service.update_master_asset(asset_id, data),
+        )
+
+    async def handle_set_provider_visibility(
+        self, request: web.Request
+    ) -> web.Response:
+        """Flip Public / Private on a single ``env_provider`` row.
+
+        POST body: ``{"visibility": "public" | "private"}``. The provider id
+        comes from the URL path (``/api/org/assets/env-provider/{providerId}/visibility``)
+        and is re-validated server-side via ``PROVIDER_ENV_KEYS`` so clients
+        cannot mint arbitrary asset rows.
+        """
+        provider_id = request.match_info["providerId"]
+        data = await self._json_body(request)
+        visibility = data.get("visibility")
+        return await self._handle(
+            request,
+            lambda: self._service.set_provider_visibility(
+                provider_id, str(visibility or "")
+            ),
+        )
+
+    # ------------------------------ bootstrap check ------------------------------
+
+    async def handle_bootstrap_check_position(self, request: web.Request) -> web.Response:
+        position_id = int(request.match_info["id"])
+        return await self._handle(
+            request,
+            lambda: self._service.bootstrap_check_position(position_id),
+        )
+
+    # ------------------------------ profile_templates ------------------------------
+
+    async def handle_list_profile_templates(self, request: web.Request) -> web.Response:
+        scope_type = request.query.get("scope_type") or None
+        scope_id_raw = request.query.get("scope_id")
+        scope_id = int(scope_id_raw) if scope_id_raw and scope_id_raw.isdigit() else None
+        return await self._handle(
+            request,
+            lambda: self._service.list_profile_templates(
+                scope_type=scope_type,
+                scope_id=scope_id,
+            ),
+        )
+
+    async def handle_create_profile_template(self, request: web.Request) -> web.Response:
+        data = await self._json_body(request)
+        return await self._handle(
+            request,
+            lambda: self._service.create_profile_template(data),
+            success_status=201,
+        )
+
+    async def handle_update_profile_template(self, request: web.Request) -> web.Response:
+        template_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        return await self._handle(
+            request,
+            lambda: self._service.update_profile_template(template_id, data),
+        )
+
+    async def handle_delete_profile_template(self, request: web.Request) -> web.Response:
+        template_id = int(request.match_info["id"])
+        return await self._handle(
+            request,
+            lambda: self._service.delete_profile_template(template_id),
+        )

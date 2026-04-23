@@ -14,6 +14,22 @@ declare global {
 }
 let _sessionToken: string | null = null;
 let _gatewayAuthToken: string | null = null;
+/**
+ * Tracks the currently active sub-agent id (mirrors the ``agentId`` URL
+ * query parameter).  Populated by ``useAgentSwitcher`` and consumed by
+ * ``fetchJSON`` so that every profile-scoped request carries a
+ * ``X-Hermes-Agent-Id`` header — the Gateway can then resolve the request
+ * against the sub-agent's Profile workspace instead of ``HERMES_HOME``.
+ */
+let _activeAgentId: number | null = null;
+
+export function setActiveAgentId(id: number | null): void {
+  _activeAgentId = id;
+}
+
+export function getActiveAgentId(): number | null {
+  return _activeAgentId;
+}
 
 function isElectronRuntime(): boolean {
   return typeof window !== 'undefined' && Boolean(window.electronAPI);
@@ -72,6 +88,14 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
   const token = window.__HERMES_SESSION_TOKEN__;
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  // 3. Stamp every request with the active sub-agent id so backend handlers
+  // can scope themselves to the sub-agent's Profile workspace.  We only
+  // send the header when it's set and when the caller did not already
+  // specify one (e.g. when explicitly targeting a different agent).
+  if (!headers.has("X-Hermes-Agent-Id") && _activeAgentId != null) {
+    headers.set("X-Hermes-Agent-Id", String(_activeAgentId));
   }
 
   const res = await fetch(`${requestBase}${url}`, { ...init, headers });
@@ -227,13 +251,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-  getStreamUrl: async (sessionId: string, message: string, attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>, selectedSkills?: string[]) => {
+  getStreamUrl: async (
+    sessionId: string,
+    message: string,
+    attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>,
+    selectedSkills?: string[],
+    agentId?: number | null,
+  ) => {
     const params = new URLSearchParams({ message });
     if (attachments && attachments.length > 0) {
       params.append('attachments', JSON.stringify(attachments));
     }
     if (selectedSkills && selectedSkills.length > 0) {
       params.append('selected_skills', JSON.stringify(selectedSkills));
+    }
+    if (agentId != null) {
+      params.append('agent_id', String(agentId));
     }
 
     // Add Gateway token as URL parameter for EventSource (cannot use headers)
@@ -417,7 +450,65 @@ export const api = {
     fetchJSON<OrgProfileAgent>(`/api/agents/${id}/provision-profile`, { method: "POST" }),
   getWorkspace: (ownerType: OrgOwnerType, ownerId: number) =>
     fetchJSON<OrgWorkspace>(`/api/workspaces/${ownerType}/${ownerId}`),
+
+  // Master-agent asset inheritance (per-provider Public/Private toggle lives here)
+  refreshMasterAssets: () =>
+    fetchJSON<MasterAssetRefreshReport>("/api/org/assets/refresh", { method: "POST" }),
+  listMasterAssets: (params?: {
+    asset_type?: string;
+    visibility?: "public" | "private";
+    inheritable_only?: boolean;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.asset_type) qs.set("asset_type", params.asset_type);
+    if (params?.visibility) qs.set("visibility", params.visibility);
+    if (params?.inheritable_only) qs.set("inheritable_only", "true");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return fetchJSON<MasterAsset[]>(`/api/org/assets${suffix}`);
+  },
+  setProviderVisibility: (providerId: string, visibility: "public" | "private") =>
+    fetchJSON<MasterAsset>(
+      `/api/org/assets/env-provider/${encodeURIComponent(providerId)}/visibility`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility }),
+      }
+    ),
 };
+
+/** Row from ``master_agent_assets`` exposed by ``GET /api/org/assets``. */
+export interface MasterAsset {
+  id: number;
+  asset_type: string;
+  asset_key: string;
+  asset_name: string | null;
+  source_path: string | null;
+  source_format: string | null;
+  visibility: "public" | "private";
+  inherit_mode: string;
+  target_path_template: string | null;
+  content_checksum: string | null;
+  is_runtime_required: number | boolean;
+  is_bootstrap_required: number | boolean;
+  inherit_ready: number | boolean;
+  validation_status: string;
+  validation_message: string | null;
+  last_validated_at: number | null;
+  version: number | null;
+  description: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MasterAssetRefreshReport {
+  scanned: number;
+  created: number;
+  updated: number;
+  deactivated: number;
+  missing_sources: string[];
+}
 
 export type OrgOwnerType = "company" | "department" | "position" | "agent";
 

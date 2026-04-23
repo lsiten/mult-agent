@@ -29,6 +29,7 @@ export function useStreamingResponse() {
     message: string,
     attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>,
     selectedSkills?: string[],
+    agentId?: number | null,
     isRetry = false
   ) => {
     if (!isRetry) {
@@ -45,7 +46,7 @@ export function useStreamingResponse() {
     setCurrentTool(null);
     setError(null);
 
-    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills);
+    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills, agentId);
     console.log("[SSE] Starting stream from:", url, isRetry ? `(retry ${retryCountRef.current}/${maxRetries})` : "");
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
@@ -307,7 +308,7 @@ export function useStreamingResponse() {
           setError(`连接断开，正在重试 (${retryCountRef.current}/${maxRetries})...`);
 
           setTimeout(() => {
-            startStreaming(sessionId, message, attachments, selectedSkills, true)
+            startStreaming(sessionId, message, attachments, selectedSkills, agentId, true)
               .then(resolve)
               .catch(reject);
           }, delay);

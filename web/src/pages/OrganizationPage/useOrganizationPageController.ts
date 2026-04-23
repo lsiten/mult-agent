@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
-import type { OrgAgent, OrganizationTreeResponse } from "@/lib/api";
+import type { OrganizationTreeResponse } from "@/lib/api";
 import { persistOrgNode, type DialogState } from "./orgActions";
 import type { OrgDialogItem, OrgDialogParent, OrgNodeType, OrgNodeValues } from "./types";
 import { formatReason, getErrorMessage } from "./utils";
@@ -16,7 +16,6 @@ export function useOrganizationPageController() {
   const [companyIndex, setCompanyIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [provisioningId, setProvisioningId] = useState<number | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
   const loadTree = useCallback(
@@ -100,24 +99,10 @@ export function useOrganizationPageController() {
     }
   };
 
-  const provisionProfile = async (agent: OrgAgent) => {
-    try {
-      setProvisioningId(agent.id);
-      await api.provisionAgentProfile(agent.id);
-      showToast(t.organization.profileQueued, "success");
-      await loadTree(selectedCompany?.id);
-    } catch (error) {
-      showToast(formatReason(t.organization.profileFailedWithReason, getErrorMessage(error)), "error");
-    } finally {
-      setProvisioningId(null);
-    }
-  };
-
   return {
     dialog,
     loading,
     multipleCompanies,
-    provisioningId,
     saving,
     selectedCompany,
     t,
@@ -128,7 +113,6 @@ export function useOrganizationPageController() {
     openCreate,
     openCreateCompany,
     openEdit,
-    provisionProfile,
     refreshSelectedCompany,
     saveDialog,
   };

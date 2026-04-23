@@ -44,8 +44,8 @@ export function InputArea({
   // Update elapsed time every second when a tool is running
   useEffect(() => {
     if (!currentTool) {
-      setToolElapsedTime(0);
-      return;
+      const id = setTimeout(() => setToolElapsedTime(0), 0);
+      return () => clearTimeout(id);
     }
 
     const interval = setInterval(() => {

@@ -7,13 +7,20 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .assets import MasterAgentAssetScanner, ScanReport
+from .bootstrap import BootstrapResult, BootstrapValidator
+from .inheritance import InheritanceApplier, InheritContext, InheritanceResult
+from .whitelist import PROVIDER_ENV_KEYS, is_provider_id_valid
 from .store import (
     AgentRepository,
     CompanyRepository,
     DepartmentRepository,
+    MasterAgentAssetRepository,
     OrganizationStore,
     PositionRepository,
     ProfileAgentRepository,
+    ProfileTemplateRepository,
+    SubagentBootstrapRequirementRepository,
     WorkspaceRepository,
     now_ts,
     slugify,
@@ -76,49 +83,132 @@ class WorkspaceProvisionService:
 
 
 class SoulRenderService:
-    def render(self, company: dict[str, Any], department: dict[str, Any], position: dict[str, Any], agent: dict[str, Any]) -> str:
-        return "\n".join(
-            [
-                "# Identity",
-                f"You are {agent['name']}, a Profile Agent in {company['name']} / {department['name']} / {position['name']}.",
-                "",
-                "# Mission",
-                f"Company goal: {company['goal']}",
-                f"Department goal: {department['goal']}",
-                f"Position goal: {position.get('goal') or 'Follow the position responsibilities.'}",
-                f"Agent goal: {agent.get('service_goal') or 'Support the assigned position.'}",
-                "",
-                "# Responsibilities",
-                position["responsibilities"],
-                "",
-                "# Organization Rules",
-                "- Use SQLite organization data as the source of truth for reporting lines and status.",
-                "- Use only your own Profile Agent resources at runtime.",
-                "- Do not access personal workspace data from other agents.",
-                "- Put company work outputs in company, department, position, or agent workspaces as appropriate.",
-                "",
-                "# Output Preferences",
-                "- Lead with the result, then include concise supporting details.",
-                "- Mark assumptions and missing permissions explicitly.",
-                "",
-                "# Hard Rules",
-                "- Do not fabricate files, data, execution results, or permissions.",
-                "- Do not expose private workspace content.",
-                "",
-            ]
+    """Render the sub-agent's SOUL.md using the three design-doc sources:
+
+    (1) Profile template (with fallback to a built-in base skeleton)
+    (2) Master agent inheritable prompt snippets (``inject_prompt`` mode)
+    (3) SQLite organization rows (company / department / position / agent)
+    """
+
+    _DEFAULT_SECTIONS = {
+        "working_style": (
+            "- Clarify the task before acting.\n"
+            "- Produce structured, reusable, auditable output.\n"
+            "- Call out risks, assumptions, and missing permissions explicitly."
+        ),
+        "output_preferences": (
+            "- Lead with the result, then the supporting detail.\n"
+            "- Prefer lists, tables, and concise summaries."
+        ),
+        "hard_rules": (
+            "- Do not fabricate files, data, execution results, or permissions.\n"
+            "- Do not expose private workspace content.\n"
+            "- Use SQLite organization data as the source of truth for reporting lines."
+        ),
+    }
+
+    def render(
+        self,
+        company: dict[str, Any],
+        department: dict[str, Any],
+        position: dict[str, Any],
+        agent: dict[str, Any],
+        *,
+        template: dict[str, Any] | None = None,
+        prompt_snippets: list[str] | None = None,
+    ) -> str:
+        tpl = template or {}
+        context = {
+            "agent_name": agent.get("display_name") or agent.get("name", ""),
+            "company_name": company.get("name", ""),
+            "company_goal": company.get("goal", ""),
+            "department_name": department.get("name", ""),
+            "department_goal": department.get("goal", ""),
+            "position_name": position.get("name", ""),
+            "position_goal": position.get("goal") or "Follow the position responsibilities.",
+            "position_responsibilities": position.get("responsibilities", ""),
+            "agent_goal": agent.get("service_goal") or "Support the assigned position.",
+            "working_style": tpl.get("default_working_style") or self._DEFAULT_SECTIONS["working_style"],
+            "output_preferences": tpl.get("default_output_preferences")
+            or self._DEFAULT_SECTIONS["output_preferences"],
+            "hard_rules": tpl.get("default_hard_rules") or self._DEFAULT_SECTIONS["hard_rules"],
+        }
+
+        base = tpl.get("base_soul_md") or self._default_template()
+        body = base
+        for key, value in context.items():
+            body = body.replace("{{" + key + "}}", str(value))
+
+        if prompt_snippets:
+            body += "\n\n# Inherited Knowledge\n\n" + "\n\n---\n\n".join(prompt_snippets)
+        if not body.endswith("\n"):
+            body += "\n"
+        return body
+
+    @staticmethod
+    def _default_template() -> str:
+        return (
+            "# Identity\n"
+            "You are {{agent_name}}, a Profile Agent in "
+            "{{company_name}} / {{department_name}} / {{position_name}}.\n"
+            "\n"
+            "# Mission\n"
+            "Company goal: {{company_goal}}\n"
+            "Department goal: {{department_goal}}\n"
+            "Position goal: {{position_goal}}\n"
+            "Agent goal: {{agent_goal}}\n"
+            "\n"
+            "# Responsibilities\n"
+            "{{position_responsibilities}}\n"
+            "\n"
+            "# Working Style\n"
+            "{{working_style}}\n"
+            "\n"
+            "# Output Preferences\n"
+            "{{output_preferences}}\n"
+            "\n"
+            "# Hard Rules\n"
+            "{{hard_rules}}\n"
         )
 
 
 class ProfileProvisionService:
+    """Provision a sub-agent's profile using three truth sources.
+
+    Pipeline (see design doc §16.1 and §16.10):
+      1. Load agent/position/department/company from SQLite.
+      2. Run BootstrapValidator → abort early as ``blocked`` on issues.
+      3. Resolve the Profile Template with precedence fallback.
+      4. Collect master agent inheritable assets (visibility=public).
+      5. Apply each asset according to its inherit_mode (copy/merge/inject).
+      6. Render SOUL.md from (template + snippets + organization rows).
+      7. Write organization.json metadata for runtime consumers.
+    """
+
     def __init__(
         self,
         store: OrganizationStore,
         profiles: ProfileAgentRepository,
         soul_renderer: SoulRenderService,
+        *,
+        templates: ProfileTemplateRepository | None = None,
+        assets: MasterAgentAssetRepository | None = None,
+        validator: BootstrapValidator | None = None,
+        applier: InheritanceApplier | None = None,
     ):
         self.store = store
         self.profiles = profiles
         self.soul_renderer = soul_renderer
+        self.templates = templates or ProfileTemplateRepository(store)
+        self.assets = assets or MasterAgentAssetRepository(store)
+        self.validator = validator or BootstrapValidator(
+            store,
+            templates=self.templates,
+            assets=self.assets,
+        )
+        self.applier = applier or InheritanceApplier()
+
+    # ----------------------------------------------------------------- utils
 
     def profile_name(self, agent_id: int) -> str:
         return f"org-{agent_id}"
@@ -131,26 +221,8 @@ class ProfileProvisionService:
         position: dict[str, Any],
         conn: sqlite3.Connection,
     ) -> list[str]:
-        rows = self.store.query_all(
-            """
-            SELECT requirement_type, requirement_key, validation_status, validation_message
-            FROM subagent_bootstrap_requirements
-            WHERE required_level = 'required'
-              AND (
-                scope_type = 'system'
-                OR (scope_type = 'position' AND scope_id = ?)
-                OR (scope_type = 'template' AND template_key = ?)
-              )
-            """,
-            (position["id"], position.get("template_key")),
-            conn,
-        )
-        issues = []
-        for row in rows:
-            if row["validation_status"] not in ("ready", "ok"):
-                detail = row.get("validation_message") or row["requirement_key"]
-                issues.append(f"{row['requirement_type']}:{detail}")
-        return issues
+        result = self.validator.validate_position(position["id"], conn)
+        return result.required_messages
 
     def create_metadata(
         self,
@@ -173,6 +245,8 @@ class ProfileProvisionService:
             conn,
         )
 
+    # --------------------------------------------------------------- provision
+
     def provision(
         self,
         agent_id: int,
@@ -186,31 +260,71 @@ class ProfileProvisionService:
         if not profile:
             profile = self.create_metadata(agent, position, conn)
 
-        issues = self.bootstrap_issues(position, conn)
-        if issues:
+        # Step 1 & 2: run full dynamic validation (also persists rows).
+        verdict = self.validator.validate_position(position["id"], conn)
+        if not verdict.can_bootstrap:
             return self._mark_profile(
                 profile["id"],
                 "blocked",
-                "; ".join(issues),
+                "; ".join(verdict.required_messages) or "Bootstrap requirements unmet",
                 conn,
             )
 
         profile_home = Path(profile["profile_home"])
+        profile_home.mkdir(parents=True, exist_ok=True)
         for child in ("memories", "sessions", "skills"):
             (profile_home / child).mkdir(parents=True, exist_ok=True)
-        profile_home.mkdir(parents=True, exist_ok=True)
 
-        soul = self.soul_renderer.render(company, department, position, agent)
+        # Step 3: resolve template (verdict.template already ran the fallback).
+        template = verdict.template
+
+        # Step 4 + 5: apply inheritable assets.
+        inheritable = self.assets.list_inheritable(conn)
+        agent_workspace = (
+            Path(agent["workspace_path"]) if agent.get("workspace_path") else None
+        )
+        context = InheritContext(
+            profile_home=profile_home,
+            agent_workspace=agent_workspace,
+        )
+        inheritance_result: InheritanceResult = self.applier.apply(inheritable, context)
+
+        # Step 6: render SOUL.md using template + inject_prompt snippets.
+        soul = self.soul_renderer.render(
+            company,
+            department,
+            position,
+            agent,
+            template=template,
+            prompt_snippets=inheritance_result.prompt_snippets,
+        )
         Path(profile["soul_path"]).write_text(soul, encoding="utf-8")
-        config = {
+
+        # Step 7: emit organization.json for runtime consumers. We no longer
+        # clobber the merged config.yaml written by the inheritance applier;
+        # organization metadata lives in its own file.
+        organization_meta = {
             "organization": {
                 "company_id": company["id"],
                 "department_id": department["id"],
                 "position_id": position["id"],
                 "agent_id": agent["id"],
-            }
+                "company_name": company.get("name"),
+                "department_name": department.get("name"),
+                "position_name": position.get("name"),
+                "agent_name": agent.get("name"),
+            },
+            "template_key": template.get("template_key") if template else None,
+            "inheritance": {
+                "applied": inheritance_result.applied,
+                "skipped": inheritance_result.skipped,
+            },
         }
-        Path(profile["config_path"]).write_text(json.dumps(config, indent=2), encoding="utf-8")
+        (profile_home / "organization.json").write_text(
+            json.dumps(organization_meta, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
         return self._mark_profile(profile["id"], "ready", None, conn)
 
     def _get_required(self, table: str, item_id: int, conn: sqlite3.Connection) -> dict[str, Any]:
@@ -260,11 +374,26 @@ class OrganizationService:
         self.agents = AgentRepository(self.store)
         self.profile_agents = ProfileAgentRepository(self.store)
         self.workspaces = WorkspaceRepository(self.store)
+        self.master_assets = MasterAgentAssetRepository(self.store)
+        self.bootstrap_requirements = SubagentBootstrapRequirementRepository(self.store)
+        self.profile_templates = ProfileTemplateRepository(self.store)
         self.workspace_service = WorkspaceProvisionService(self.store, self.workspaces)
+        self.asset_scanner = MasterAgentAssetScanner(self.store, self.master_assets)
+        self.validator = BootstrapValidator(
+            self.store,
+            templates=self.profile_templates,
+            assets=self.master_assets,
+            requirements=self.bootstrap_requirements,
+        )
+        self.inheritance = InheritanceApplier()
         self.profile_service = ProfileProvisionService(
             self.store,
             self.profile_agents,
             SoulRenderService(),
+            templates=self.profile_templates,
+            assets=self.master_assets,
+            validator=self.validator,
+            applier=self.inheritance,
         )
         self.agent_provision = AgentProvisionService(self.profile_service)
 
@@ -449,6 +578,168 @@ class OrganizationService:
         if not workspace:
             raise OrganizationError("Workspace not found", 404)
         return workspace
+
+    # ----------------------------------------- master_agent_assets management
+
+    def refresh_master_assets(self) -> dict[str, Any]:
+        """Run the scanner and return the report (scanned / created / ...)."""
+        report: ScanReport = self.asset_scanner.scan()
+        return report.as_dict()
+
+    def list_master_assets(
+        self,
+        *,
+        asset_type: str | None = None,
+        visibility: str | None = None,
+        inheritable_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        if inheritable_only:
+            return self.master_assets.list_inheritable()
+        return self.master_assets.list(
+            asset_type=asset_type,
+            visibility=visibility,
+        )
+
+    def update_master_asset(self, asset_id: int, data: dict[str, Any]) -> dict[str, Any]:
+        _ALLOWED = {
+            "visibility",
+            "inherit_mode",
+            "target_path_template",
+            "is_runtime_required",
+            "is_bootstrap_required",
+            "description",
+            "status",
+        }
+        payload = {k: v for k, v in data.items() if k in _ALLOWED}
+        if "visibility" in payload and payload["visibility"] not in {"public", "private"}:
+            raise OrganizationError("visibility must be 'public' or 'private'")
+        if "inherit_mode" in payload and payload["inherit_mode"] not in {
+            "copy_to_workspace",
+            "copy_to_profile",
+            "merge_config",
+            "inject_prompt",
+        }:
+            raise OrganizationError(
+                "inherit_mode must be one of copy_to_workspace/copy_to_profile/"
+                "merge_config/inject_prompt"
+            )
+        if "is_runtime_required" in payload:
+            payload["is_runtime_required"] = 1 if payload["is_runtime_required"] else 0
+        if "is_bootstrap_required" in payload:
+            payload["is_bootstrap_required"] = 1 if payload["is_bootstrap_required"] else 0
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            if not self.master_assets.get(asset_id, conn):
+                raise OrganizationError("Master asset not found", 404)
+            result = self.master_assets.patch(asset_id, payload, conn)
+            if not result:
+                raise OrganizationError("Master asset not found", 404)
+            return result
+
+        return self.store.transaction(tx)
+
+    def set_provider_visibility(
+        self,
+        provider_id: str,
+        visibility: str,
+    ) -> dict[str, Any]:
+        """Flip the Public / Private toggle for a single provider asset row.
+
+        Validation rules (enforced here, not in the generic ``update_master_asset``):
+          * ``provider_id`` must be a registered id in ``PROVIDER_ENV_KEYS`` —
+            prevents operators from creating arbitrary rows via the API.
+          * ``visibility`` must be ``public`` or ``private``.
+          * A provider may only be set to ``public`` if ``inherit_ready == 1``
+            (i.e. the master agent has at least one key configured for it).
+            This protects the bootstrap flow from promising keys that do not
+            actually exist.
+        """
+        if visibility not in {"public", "private"}:
+            raise OrganizationError("visibility must be 'public' or 'private'")
+        if not is_provider_id_valid(provider_id):
+            raise OrganizationError(
+                f"Unknown provider id: {provider_id!r}", 404
+            )
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            asset = self.master_assets.get_by_key(
+                "env_provider", provider_id, conn
+            )
+            if not asset:
+                raise OrganizationError(
+                    f"Provider asset not found for {provider_id!r}. "
+                    "Run refresh_master_assets first.",
+                    404,
+                )
+            if visibility == "public" and not asset.get("inherit_ready"):
+                raise OrganizationError(
+                    f"Provider {provider_id!r} has no configured keys; "
+                    "cannot mark as public.",
+                    400,
+                )
+            result = self.master_assets.patch(
+                asset["id"], {"visibility": visibility}, conn
+            )
+            if not result:
+                raise OrganizationError("Master asset not found", 404)
+            return result
+
+        return self.store.transaction(tx)
+
+    # ----------------------------------------------------- bootstrap checking
+
+    def bootstrap_check_position(self, position_id: int) -> dict[str, Any]:
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            if not self.positions.get(position_id, conn):
+                raise OrganizationError("Position not found", 404)
+            result: BootstrapResult = self.validator.validate_position(position_id, conn)
+            return result.as_dict()
+
+        return self.store.transaction(tx)
+
+    # ------------------------------------------- profile_templates management
+
+    def list_profile_templates(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.profile_templates.list(scope_type=scope_type, scope_id=scope_id)
+
+    def create_profile_template(self, data: dict[str, Any]) -> dict[str, Any]:
+        _require(data, "template_key", "name")
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            if self.profile_templates.get_by_key(data["template_key"], conn):
+                raise OrganizationError("template_key already exists", 409)
+            return self.profile_templates.create(data, conn)
+
+        return self.store.transaction(tx)
+
+    def update_profile_template(
+        self,
+        template_id: int,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            if not self.profile_templates.get(template_id, conn):
+                raise OrganizationError("Profile template not found", 404)
+            updated = self.profile_templates.patch(template_id, data, conn)
+            if not updated:
+                raise OrganizationError("Profile template not found", 404)
+            return updated
+
+        return self.store.transaction(tx)
+
+    def delete_profile_template(self, template_id: int) -> dict[str, Any]:
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            if not self.profile_templates.get(template_id, conn):
+                raise OrganizationError("Profile template not found", 404)
+            self.profile_templates.delete(template_id, conn)
+            return {"deleted": template_id}
+
+        return self.store.transaction(tx)
 
     def _update_existing(
         self,
