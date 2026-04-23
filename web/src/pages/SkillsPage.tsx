@@ -33,7 +33,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { SkillInstallModal } from "@/components/skills/SkillInstallModal";
-// import { InstallationProgressList } from "@/components/skills/InstallationProgress";
+import { InstallationProgressList } from "@/components/skills/InstallationProgress";
 import { useSkillInstallStore, type TaskState, type TaskStatus } from "@/stores/useSkillInstallStore";
 
 /* ------------------------------------------------------------------ */
@@ -704,6 +704,9 @@ export default function SkillsPage() {
           )}
         </div>
       </div>
+
+      {/* Installation Progress Notifications */}
+      <InstallationProgressList />
     </div>
   );
 }
