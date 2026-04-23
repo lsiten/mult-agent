@@ -126,14 +126,27 @@ def _check_computer_use_available() -> bool:
 
 
 def _capture_screenshot_macos() -> bytes:
-    """Capture screenshot on macOS using screencapture."""
+    """Capture screenshot on macOS using screencapture or PIL."""
+    # Try PIL ImageGrab first - better at capturing all windows including foreground
+    try:
+        from PIL import ImageGrab
+        img = ImageGrab.grab()
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except Exception as e:
+        # Fallback to screencapture if PIL fails (missing permissions)
+        logger.debug(f"PIL ImageGrab failed: {e}, falling back to screencapture")
+        pass
+    
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
+        # Use -x (no sound) and -C include cursor, capture entire main screen
         subprocess.run(
-            ["screencapture", "-x", tmp_path],
+            ["screencapture", "-x", "-C", tmp_path],
             check=True,
             capture_output=True,
             timeout=5
@@ -632,7 +645,11 @@ registry.register(
         "description": (
             "Capture the current desktop screen as a PNG image. "
             "Returns base64-encoded image data. Use this to see what's "
-            "currently displayed on the screen before taking actions."
+            "currently displayed on the screen before taking actions.\n\n"
+            "IMPORTANT: After capturing, describe ONLY what you actually see in the image. "
+            "DO NOT fill in details based on what you expect or what the user said. "
+            "If the screenshot shows unexpected content (e.g., a wallpaper instead of windows), "
+            "report exactly that and offer to retry the capture."
         ),
         "parameters": {
             "type": "object",
