@@ -303,6 +303,40 @@ class ChatAPIHandlers:
                     attachments=attachments
                 )
 
+                # Check if this is the first message in the session
+                # If so, add system messages for auth and tools
+                cursor = db._conn.execute(
+                    "SELECT message_count FROM sessions WHERE id = ?",
+                    (sid,)
+                )
+                row = cursor.fetchone()
+                is_first_message = row and row["message_count"] == 1
+
+                if is_first_message:
+                    # Save authorization system message
+                    db.append_message(
+                        session_id=sid,
+                        role="system",
+                        content="✅ API 授权成功"
+                    )
+                    _log.info("Saved authorization system message for session %s", sid)
+
+                    # Count available tools and save tools loaded message
+                    try:
+                        from model_tools import get_available_toolsets
+                        toolsets = get_available_toolsets()
+                        total_tools = sum(len(ts.get("tools", [])) for ts in toolsets.values())
+
+                        tools_message = f"🛠️ 工具已加载：{total_tools} 个工具可用"
+                        db.append_message(
+                            session_id=sid,
+                            role="system",
+                            content=tools_message
+                        )
+                        _log.info("Saved tools loaded message: %d tools", total_tools)
+                    except Exception as e:
+                        _log.warning("Failed to count tools: %s", e)
+
                 # Check if model is configured
                 import yaml
 
