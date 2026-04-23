@@ -248,6 +248,10 @@ export function useStreamingResponse() {
         console.log("[SSE] Done event received:", event.data);
         setIsStreaming(false);
         setStreamingContent(""); // Clear streaming content
+        setTextSegments([]); // Clear completed text segments
+        setToolUseMessages([]); // Clear tool messages
+        setSkillUseMessages([]); // Clear skill messages
+        setAuthRequestMessages([]); // Clear auth messages
         setCurrentTool(null);
         eventSource.close();
         resolve(fullContent);
@@ -258,6 +262,10 @@ export function useStreamingResponse() {
         console.log("[SSE] Cancelled event received:", event.data);
         setIsStreaming(false);
         setStreamingContent("");
+        setTextSegments([]);
+        setToolUseMessages([]);
+        setSkillUseMessages([]);
+        setAuthRequestMessages([]);
         setCurrentTool(null);
         eventSource.close();
         reject(new Error("Task cancelled by user"));
@@ -271,6 +279,10 @@ export function useStreamingResponse() {
           setError(data.error || "Unknown error");
           setIsStreaming(false);
           setStreamingContent("");
+          setTextSegments([]);
+          setToolUseMessages([]);
+          setSkillUseMessages([]);
+          setAuthRequestMessages([]);
           setCurrentTool(null);
           eventSource.close();
           reject(new Error(data.error || "Unknown error"));
@@ -301,6 +313,11 @@ export function useStreamingResponse() {
           console.error("[SSE] Max retries reached");
           setError("连接失败，请重试");
           setIsStreaming(false);
+          setStreamingContent("");
+          setTextSegments([]);
+          setToolUseMessages([]);
+          setSkillUseMessages([]);
+          setAuthRequestMessages([]);
           reject(new Error("连接失败，已达到最大重试次数"));
         }
       };
