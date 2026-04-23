@@ -32,7 +32,7 @@ interface SkillSource {
 }
 
 interface OnlineSearchTabProps {
-  onInstall: (skillId: string, skillName: string, category?: string) => void;
+  onInstall: (skillId: string, skillName: string, category?: string, source?: string) => void;
 }
 
 export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
@@ -211,6 +211,7 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
                     skill={skill}
                     offlineMode={offlineMode}
                     selectedCategory={selectedCategory}
+                    source={source}
                     onInstall={onInstall}
                     t={t}
                   />
@@ -231,11 +232,12 @@ interface SkillCardContentProps {
   skill: any;
   offlineMode: boolean;
   selectedCategory: string;
-  onInstall: (skillId: string, skillName: string, category?: string) => void;
+  source: string;
+  onInstall: (skillId: string, skillName: string, category?: string, source?: string) => void;
   t: any;
 }
 
-function SkillCardContent({ skill, offlineMode, selectedCategory, onInstall, t }: SkillCardContentProps) {
+function SkillCardContent({ skill, offlineMode, selectedCategory, source, onInstall, t }: SkillCardContentProps) {
   const tasks = useSkillInstallStore((state) => state.tasks);
 
   const task = Object.values(tasks).find((task) => task.skill_id === skill.id);
@@ -302,7 +304,7 @@ function SkillCardContent({ skill, offlineMode, selectedCategory, onInstall, t }
         skillName={skill.name}
         installed={skill.installed}
         offlineMode={offlineMode}
-        onInstall={(id, name) => onInstall(id, name, selectedCategory)}
+        onInstall={(id, name) => onInstall(id, name, selectedCategory, skill.source || source)}
       />
     </>
   );

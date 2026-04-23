@@ -927,7 +927,7 @@ async def delete_session(session_id: str) -> dict:
     db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
     
     # 删除附件文件
-    attachment_dir = Path(f"~/.hermes/data/attachments/{session_id}").expanduser()
+    attachment_dir = Path(f"$HERMES_HOME/data/attachments/{session_id}").expanduser()
     if attachment_dir.exists():
         shutil.rmtree(attachment_dir)
     
@@ -1046,7 +1046,7 @@ async def upload_attachment(
     filename = secure_filename(file.filename)
     
     # 保存文件
-    session_dir = Path(f"~/.hermes/data/attachments/{session_id}").expanduser()
+    session_dir = Path(f"$HERMES_HOME/data/attachments/{session_id}").expanduser()
     session_dir.mkdir(parents=True, exist_ok=True)
     
     file_path = session_dir / f"{attachment_id}_{filename}"
@@ -1072,7 +1072,7 @@ async def upload_attachment(
 async def get_attachment(attachment_id: str):
     """获取附件"""
     # 查找文件
-    attachments_dir = Path("~/.hermes/data/attachments").expanduser()
+    attachments_dir = Path("$HERMES_HOME/data/attachments").expanduser()
     
     for session_dir in attachments_dir.iterdir():
         for file_path in session_dir.iterdir():
@@ -1523,7 +1523,7 @@ interface ToolCall {
 3. **附件管理**（api_server_attachments.py）
    - ✅ POST /api/attachments/upload
    - ✅ GET /api/attachments/{session_id}/{filename}
-   - ✅ 文件存储（~/.hermes/data/attachments/）
+   - ✅ 文件存储（$HERMES_HOME/data/attachments/）
    - ✅ 路径遍历防护
    - ❌ 图片缩略图生成
 
@@ -1544,7 +1544,7 @@ interface ToolCall {
    - 模型：ark-code-latest
    - Base URL：https://ark.cn-beijing.volces.com/api/coding
    - Provider：anthropic（兼容层）
-   - 配置文件：~/.hermes/config.yaml
+   - 配置文件：$HERMES_HOME/config.yaml
 
 3. **Electron 构建路径**
    - Web 构建：`npm run build:web` → electron-app/dist/renderer

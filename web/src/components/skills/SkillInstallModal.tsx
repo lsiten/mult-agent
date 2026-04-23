@@ -32,7 +32,7 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
   const [activeTab, setActiveTab] = useState<'online' | 'upload'>('online');
   const { setTask } = useSkillInstallStore();
 
-  const handleOnlineInstall = async (skillId: string, skillName: string, category?: string) => {
+  const handleOnlineInstall = async (skillId: string, skillName: string, category?: string, sourceId?: string) => {
     try {
       const data = await fetchJSON<{ task_id: string }>('/api/skills/install', {
         method: 'POST',
@@ -42,6 +42,7 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
         body: JSON.stringify({
           skill_id: skillId,
           source: 'online',
+          source_id: sourceId || 'hermes', // Pass the selected registry source
           category: category || undefined,
         }),
       });

@@ -586,7 +586,7 @@ class SkillsAPIHandlers:
 
             data = await parse_request_json(
                 request,
-                {"skill_id": str, "source": str, "category": str},
+                {"skill_id": str, "source": str, "source_id": str, "category": str},
                 required=["skill_id", "source"]
             )
 
@@ -594,12 +594,13 @@ class SkillsAPIHandlers:
                 return web.json_response({"error": "Invalid source, expected 'online'"}, status=400)
 
             skill_id = data["skill_id"]
+            source_id = data.get("source_id", "hermes")  # Which registry to use
             category = data.get("category", "")  # Optional category parameter
-            print(f"[DEBUG SkillInstallOnline] Received install request - skill_id: {skill_id}, category: '{category}'")
-            logger.info(f"[SkillInstallOnline] Received install request - skill_id: {skill_id}, category: '{category}'")
+            print(f"[DEBUG SkillInstallOnline] Received install request - skill_id: {skill_id}, source_id: {source_id}, category: '{category}'")
+            logger.info(f"[SkillInstallOnline] Received install request - skill_id: {skill_id}, source_id: {source_id}, category: '{category}'")
 
-            # Fetch registry to get download URL
-            registry = await self._fetch_registry()
+            # Fetch registry from the selected source
+            registry = await self._fetch_registry(source_id)
             if not registry:
                 return web.json_response({
                     "error": "skill_registry_unavailable",

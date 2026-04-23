@@ -2,7 +2,7 @@
 Event Hook System
 
 A lightweight event-driven system that fires handlers at key lifecycle points.
-Hooks are discovered from ~/.hermes/hooks/ directories, each containing:
+Hooks are discovered from $HERMES_HOME/hooks/ directories, each containing:
   - HOOK.yaml  (metadata: name, description, events list)
   - handler.py (Python handler with async def handle(event_type, context))
 
@@ -59,7 +59,7 @@ class HookRegistry:
             self._handlers.setdefault("gateway:startup", []).append(boot_md_handle)
             self._loaded_hooks.append({
                 "name": "boot-md",
-                "description": "Run ~/.hermes/BOOT.md on gateway startup",
+                "description": "Run $HERMES_HOME/BOOT.md on gateway startup",
                 "events": ["gateway:startup"],
                 "path": "(builtin)",
             })

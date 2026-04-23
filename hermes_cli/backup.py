@@ -1,7 +1,7 @@
 """
 Backup and import commands for hermes CLI.
 
-`hermes backup` creates a zip archive of the entire ~/.hermes/ directory
+`hermes backup` creates a zip archive of the entire $HERMES_HOME/ directory
 (excluding the hermes-agent repo and transient files).
 
 `hermes import` restores from a backup zip, overlaying onto the current

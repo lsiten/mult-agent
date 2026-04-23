@@ -73,7 +73,7 @@
 ## 8. 后端 API 实现 - 附件管理
 
 - [x] 8.1 实现 POST /api/attachments/upload 文件上传接口
-- [x] 8.2 实现文件存储逻辑（~/.hermes/data/attachments/{session_id}/）
+- [x] 8.2 实现文件存储逻辑（$HERMES_HOME/data/attachments/{session_id}/）
 - [x] 8.3 实现 GET /api/attachments/{session_id}/{filename} 文件获取接口
 - [ ] 8.4 为图片生成缩略图（Pillow）
 - [x] 8.5 实现文件类型和大小验证（前端验证）

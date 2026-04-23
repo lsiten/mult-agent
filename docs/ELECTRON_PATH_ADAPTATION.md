@@ -33,7 +33,7 @@ Hermes Agent 代码库扫描发现 **200+ 处** 包含 `.hermes` 字符串，其
 
 | 模式 | HERMES_HOME 路径 | 配置方式 |
 |------|-----------------|---------|
-| **CLI** | `~/.hermes/` | 环境变量或默认值 |
+| **CLI** | `$HERMES_HOME/` | 环境变量或默认值 |
 | **Electron** | `~/Library/Application Support/hermes-agent-electron/` | `app.getPath('userData')` |
 | **Docker** | `/opt/data/` (自定义) | 环境变量 |
 
@@ -47,9 +47,9 @@ Hermes Agent 代码库扫描发现 **200+ 处** 包含 `.hermes` 字符串，其
 
 ```python
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the Hermes home directory (default: $HERMES_HOME).
     
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
+    Reads HERMES_HOME env var, falls back to $HERMES_HOME.
     In Electron mode, uses HERMES_CONFIG_PATH if set.
     """
     # Electron 环境优先（向后兼容）
@@ -74,7 +74,7 @@ process.env.HERMES_ELECTRON_MODE = 'true';
 
 **问题出现的原因**：
 
-部分代码绕过了 `get_hermes_home()`，直接使用备用逻辑硬编码 `~/.hermes`，导致在 Electron 模式下路径不一致。
+部分代码绕过了 `get_hermes_home()`，直接使用备用逻辑硬编码 `$HERMES_HOME`，导致在 Electron 模式下路径不一致。
 
 ---
 
@@ -258,7 +258,7 @@ When developing features that will run in Electron desktop app:
 
 ### Path Resolution
 
-**NEVER** hardcode `~/.hermes` or `Path.home() / ".hermes"`:
+**NEVER** hardcode `$HERMES_HOME` or `Path.home() / ".hermes"`:
 
 ```python
 # ❌ BAD - Hardcoded path
@@ -341,7 +341,7 @@ hermes -p personal gateway start
 └── logs/
 ```
 
-该路径与 CLI 的 `~/.hermes/` 完全独立。
+该路径与 CLI 的 `$HERMES_HOME/` 完全独立。
 ```
 
 ---
@@ -356,8 +356,8 @@ hermes -p personal gateway start
 Config files location:
 
 **CLI Mode**:
-- `~/.hermes/config.yaml` - All settings
-- `~/.hermes/.env` - API keys and secrets
+- `$HERMES_HOME/config.yaml` - All settings
+- `$HERMES_HOME/.env` - API keys and secrets
 
 **Electron Mode**:
 - `~/Library/Application Support/hermes-agent-electron/config.yaml`
@@ -384,7 +384,7 @@ The location is determined by `hermes_constants.get_hermes_home()`.
 
 | 模式 | 位置 |
 |------|------|
-| CLI | `~/.hermes/state.db` |
+| CLI | `$HERMES_HOME/state.db` |
 | Electron | `~/Library/Application Support/hermes-agent-electron/state.db` |
 | Docker | `$HERMES_HOME/state.db` |
 
@@ -451,12 +451,12 @@ $ python -c "from hermes_constants import get_hermes_home; print(get_hermes_home
 # 2. 测试聊天 API
 $ hermes chat
 > 发送带图片的消息
-> 检查图片是否正确保存到 ~/.hermes/data/attachments/
+> 检查图片是否正确保存到 $HERMES_HOME/data/attachments/
 
 # 3. 测试 MCP 工具
 $ hermes chat
 > /mcp list
-> 确认配置从 ~/.hermes/ 加载
+> 确认配置从 $HERMES_HOME/ 加载
 ```
 
 #### Electron 模式验证
@@ -484,8 +484,8 @@ $ ls ~/Library/Application\ Support/hermes-agent-electron/data/attachments/
 
 ```bash
 # 1. 重新生成 completion 脚本
-$ hermes completion bash > ~/.hermes-completion.bash
-$ hermes completion zsh > ~/.hermes-completion.zsh
+$ hermes completion bash > $HERMES_HOME-completion.bash
+$ hermes completion zsh > $HERMES_HOME-completion.zsh
 
 # 2. 重新加载 shell
 $ source ~/.bashrc  # 或 source ~/.zshrc
@@ -511,7 +511,7 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 
 def test_cli_mode_default_path():
-    """CLI 模式使用 ~/.hermes"""
+    """CLI 模式使用 $HERMES_HOME"""
     # 清除环境变量
     os.environ.pop('HERMES_HOME', None)
     os.environ.pop('HERMES_ELECTRON_MODE', None)
@@ -558,7 +558,7 @@ def test_mcp_tool_uses_hermes_home(monkeypatch):
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|
-| CLI 用户路径改变 | 无影响 | 保持默认 `~/.hermes` 向后兼容 |
+| CLI 用户路径改变 | 无影响 | 保持默认 `$HERMES_HOME` 向后兼容 |
 | Electron 用户需要重新配置 | 低影响 | Electron 路径始终是 `userData`，无需迁移 |
 | Shell completion 不工作 | 低影响 | 用户可重新生成脚本 |
 

@@ -237,7 +237,7 @@ electron-app/src/
 
 **存储位置**：
 ```
-~/.hermes/data/attachments/
+$HERMES_HOME/data/attachments/
 ├── {session_id}/
 │   ├── {message_id}_{filename}
 │   └── ...
@@ -544,7 +544,7 @@ Phase 3: 高级功能 (可选，看需求)
    - 模型：ark-code-latest
    - Base URL：https://ark.cn-beijing.volces.com/api/coding
    - Provider：anthropic（兼容层）
-   - 配置文件：~/.hermes/config.yaml
+   - 配置文件：$HERMES_HOME/config.yaml
 
 3. **Electron 构建优化**
    - Web 构建命令：`npm run build:web`

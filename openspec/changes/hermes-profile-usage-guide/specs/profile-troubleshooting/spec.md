@@ -45,7 +45,7 @@
 
 #### Scenario: 查看 Token 占用情况
 - **WHEN** 用户怀疑 token 冲突
-- **THEN** 检查 ~/.hermes/profiles/*/auth.lock 文件
+- **THEN** 检查 $HERMES_HOME/profiles/*/auth.lock 文件
 - **THEN** 查看哪个 Profile 正在使用该 token
 - **THEN** 决定是否停止占用 Profile 的 Gateway
 
@@ -118,8 +118,8 @@
 
 #### Scenario: Profile 占用过多空间
 - **WHEN** 用户发现 Profile 目录过大
-- **THEN** 检查各子目录大小：`du -sh ~/.hermes/profiles/*/`
-- **THEN** 清理 logs 目录：`rm ~/.hermes/profiles/<name>/logs/*.log`
+- **THEN** 检查各子目录大小：`du -sh $HERMES_HOME/profiles/*/`
+- **THEN** 清理 logs 目录：`rm $HERMES_HOME/profiles/<name>/logs/*.log`
 - **THEN** 清理旧会话：删除 sessions 目录中的旧 JSON 文件
 - **THEN** 清理缓存：删除 image_cache、audio_cache 目录
 
@@ -150,7 +150,7 @@
 
 #### Scenario: 查看 Gateway 日志
 - **WHEN** 用户需要诊断 Gateway 问题
-- **THEN** 查看日志文件：`tail -f ~/.hermes/profiles/<name>/logs/gateway.log`
+- **THEN** 查看日志文件：`tail -f $HERMES_HOME/profiles/<name>/logs/gateway.log`
 - **THEN** 增加日志详细程度：在 config.yaml 设置 `log_level: DEBUG`
 - **THEN** 重启 Gateway 查看详细日志
 

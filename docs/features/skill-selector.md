@@ -197,7 +197,7 @@ Represents skill loading status:
 ## Validation Rules
 
 1. **Type Validation**: `selected_skills` must be an array of strings
-2. **Skill Existence**: All skill names must exist in `~/.hermes/skills/`
+2. **Skill Existence**: All skill names must exist in `$HERMES_HOME/skills/`
 3. **Session Lock**: Skills cannot be changed after the first message in a session
 4. **Empty Array**: An empty `[]` means no skills selected (default behavior)
 5. **Null/Undefined**: Omitting the parameter loads all enabled skills
@@ -279,7 +279,7 @@ function MessageRenderer({ message }) {
 
 ### Enabling/Disabling Skills
 
-Skills are managed in `~/.hermes/skills/` directory. To disable a skill:
+Skills are managed in `$HERMES_HOME/skills/` directory. To disable a skill:
 
 ```bash
 # Via CLI
@@ -312,7 +312,7 @@ enabled: true
 
 ### Skills Not Appearing
 
-1. Check `~/.hermes/skills/` directory exists
+1. Check `$HERMES_HOME/skills/` directory exists
 2. Verify `skill.yaml` is present in each skill directory
 3. Check skill is enabled: `hermes skills list`
 4. Restart the gateway: `hermes gateway restart`
