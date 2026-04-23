@@ -143,7 +143,12 @@ class SessionsAPIHandlers:
 
             # Update title if provided
             if "title" in data:
-                db.update_session_metadata(session_id, title=data["title"])
+                with db._lock:
+                    db._conn.execute(
+                        "UPDATE sessions SET title = ? WHERE id = ?",
+                        (data["title"], session_id)
+                    )
+                    db._conn.commit()
 
             return web.json_response({"ok": True})
 

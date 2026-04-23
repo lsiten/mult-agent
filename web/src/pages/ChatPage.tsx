@@ -186,9 +186,9 @@ export function ChatPage() {
 
       // After streaming completes, reload messages from backend to get the split messages
       console.log("[ChatPage] Reloading messages from backend...");
-      const updatedMessages = await api.getSessionMessages(sid);
-      setMessages(updatedMessages);
-      console.log("[ChatPage] Messages reloaded, count:", updatedMessages.length);
+      const response = await api.getSessionMessages(sid);
+      setMessages(response.messages);
+      console.log("[ChatPage] Messages reloaded, count:", response.messages.length);
 
       // Reload sessions to get updated title from backend
       console.log("[ChatPage] Reloading sessions to fetch updated title...");
