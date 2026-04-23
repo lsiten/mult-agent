@@ -857,6 +857,7 @@ def _ensure_tui_node() -> None:
     if not helper.is_file():
         return
 
+    # CLI-only: fallback to .hermes for bootstrap scenarios
     hermes_home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
     try:
         # Helper writes logs to stderr; we ask bash to print `command -v node`

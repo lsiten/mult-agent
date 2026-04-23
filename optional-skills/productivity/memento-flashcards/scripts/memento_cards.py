@@ -15,7 +15,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-_HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+# Add project root to path for hermes_constants import
+_script_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(_script_root) not in sys.path:
+    sys.path.insert(0, str(_script_root))
+
+from hermes_constants import get_hermes_home
+
+_HERMES_HOME = get_hermes_home()
 DATA_DIR = _HERMES_HOME / "skills" / "productivity" / "memento-flashcards" / "data"
 CARDS_FILE = DATA_DIR / "cards.json"
 

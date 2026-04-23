@@ -1160,8 +1160,11 @@ def _hermes_home_for_target_user(target_home_dir: str) -> str:
       /root/.hermes                    → /home/alice/.hermes
       /root/.hermes/profiles/coder     → /home/alice/.hermes/profiles/coder
       /opt/custom-hermes               → /opt/custom-hermes  (kept as-is)
+
+    NOTE: This function is for CLI mode only, not used in Electron mode.
     """
     current_hermes = get_hermes_home().resolve()
+    # CLI-only: fallback to .hermes for migration scenarios
     current_default = (Path.home() / ".hermes").resolve()
     target_default = Path(target_home_dir) / ".hermes"
 

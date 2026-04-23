@@ -104,7 +104,14 @@ def load_hermes_dotenv(
     """
     loaded: list[Path] = []
 
-    home_path = Path(hermes_home or os.getenv("HERMES_HOME", Path.home() / ".hermes"))
+    # Use hermes_constants if available, otherwise require HERMES_HOME to be set
+    if hermes_home:
+        home_path = Path(hermes_home)
+    else:
+        env_home = os.getenv("HERMES_HOME")
+        if not env_home:
+            raise RuntimeError("HERMES_HOME environment variable is not set")
+        home_path = Path(env_home)
     user_env = home_path / ".env"
     project_env_path = Path(project_env) if project_env else None
 

@@ -31,7 +31,14 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from pathlib import Path
 
-HERMES_HOME = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes"))
+# Import hermes_constants - add project root to path
+_script_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(_script_root) not in sys.path:
+    sys.path.insert(0, str(_script_root))
+
+from hermes_constants import get_hermes_home
+
+HERMES_HOME = get_hermes_home()
 TOKEN_PATH = HERMES_HOME / "google_token.json"
 CLIENT_SECRET_PATH = HERMES_HOME / "google_client_secret.json"
 

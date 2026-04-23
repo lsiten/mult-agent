@@ -10,9 +10,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Import hermes_constants - add project root to path
+_script_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(_script_root) not in sys.path:
+    sys.path.insert(0, str(_script_root))
+
+from hermes_constants import get_hermes_home as _get_hermes_home
+
 
 def get_hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return _get_hermes_home()
 
 
 def get_token_path() -> Path:
