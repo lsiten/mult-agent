@@ -297,7 +297,7 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         id="volcengine",
         name="Volcengine ARK (Doubao)",
         auth_type="api_key",
-        inference_base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+        inference_base_url="https://ark.cn-beijing.volces.com/api/v3",
         api_key_env_vars=("ARK_API_KEY",),
         base_url_env_var="ARK_BASE_URL",
     ),

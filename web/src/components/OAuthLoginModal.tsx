@@ -14,6 +14,15 @@ interface Props {
 
 type Phase = "idle" | "starting" | "awaiting_user" | "submitting" | "polling" | "approved" | "error";
 
+async function openAuthUrl(url: string) {
+  const opener = (window as any).electronAPI?.openExternal;
+  if (opener) {
+    await opener(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function OAuthLoginModal({ provider, onClose, onSuccess, onError }: Props) {
   const [phase, setPhase] = useState<Phase>("starting");
   const [start, setStart] = useState<OAuthStartResponse | null>(null);
@@ -36,9 +45,9 @@ export function OAuthLoginModal({ provider, onClose, onSuccess, onError }: Props
         setSecondsLeft(resp.expires_in);
         setPhase(resp.flow === "device_code" ? "polling" : "awaiting_user");
         if (resp.flow === "pkce") {
-          window.open(resp.auth_url, "_blank", "noopener,noreferrer");
+          openAuthUrl(resp.auth_url).catch(() => {});
         } else {
-          window.open(resp.verification_url, "_blank", "noopener,noreferrer");
+          openAuthUrl(resp.verification_url).catch(() => {});
         }
       })
       .catch((e) => {
@@ -308,9 +317,9 @@ export function OAuthLoginModal({ provider, onClose, onSuccess, onError }: Props
                       setSecondsLeft(resp.expires_in);
                       setPhase(resp.flow === "device_code" ? "polling" : "awaiting_user");
                       if (resp.flow === "pkce") {
-                        window.open(resp.auth_url, "_blank", "noopener,noreferrer");
+                        openAuthUrl(resp.auth_url).catch(() => {});
                       } else {
-                        window.open(resp.verification_url, "_blank", "noopener,noreferrer");
+                        openAuthUrl(resp.verification_url).catch(() => {});
                       }
                     }).catch((e) => {
                       if (!isMounted.current) return;

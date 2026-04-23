@@ -47,7 +47,7 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = [
         label: "Base URL (可选)",
         type: "url",
         required: false,
-        defaultValue: "https://ark.cn-beijing.volces.com/api/coding/v3",
+        defaultValue: "https://ark.cn-beijing.volces.com/api/v3",
         hint: "默认使用 OpenAI 兼容协议端点",
       },
     ],

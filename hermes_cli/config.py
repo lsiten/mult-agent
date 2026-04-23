@@ -1045,7 +1045,7 @@ OPTIONAL_ENV_VARS = {
         "category": "provider",
     },
     "ARK_BASE_URL": {
-        "description": "Bytedance ARK base URL override (default: https://ark.cn-beijing.volces.com/api/coding/v3, OpenAI-compatible)",
+        "description": "Bytedance ARK base URL override (default: https://ark.cn-beijing.volces.com/api/v3, OpenAI-compatible)",
         "prompt": "ARK Base URL",
         "url": "",
         "password": False,

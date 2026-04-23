@@ -66,6 +66,28 @@ class ChatAPIHandlers:
         # Neither header nor URL param matched
         raise web.HTTPUnauthorized(text="Unauthorized")
 
+    @staticmethod
+    def _extract_model_settings(config: Dict[str, Any]) -> tuple[str, Optional[str], Optional[str]]:
+        """Return model, provider, and base URL from string or dict config."""
+        model_cfg = config.get("model", "")
+        model = ""
+        provider = None
+        base_url = None
+
+        if isinstance(model_cfg, dict):
+            model = str(model_cfg.get("default") or model_cfg.get("name") or "").strip()
+            raw_provider = str(model_cfg.get("provider") or "").strip()
+            raw_base_url = str(model_cfg.get("base_url") or "").strip()
+            provider = raw_provider if raw_provider and raw_provider != "auto" else None
+            base_url = raw_base_url or None
+        elif isinstance(model_cfg, str):
+            model = model_cfg.strip()
+
+        if model and "/" in model and not provider:
+            provider = model.split("/", 1)[0].strip() or None
+
+        return model, provider, base_url
+
     async def handle_create_session(self, request: web.Request) -> web.Response:
         """POST /api/chat/sessions/create
 
@@ -343,13 +365,17 @@ class ChatAPIHandlers:
                 hermes_home = get_hermes_home()
                 config_path = hermes_home / "config.yaml"
 
+                config = {}
+                model = ""
+                provider = None
+                config_base_url = None
                 model_configured = False
                 if config_path.exists():
                     try:
                         with open(config_path) as f:
                             config = yaml.safe_load(f) or {}
-                            model = config.get("model", "")
-                            model_configured = bool(model and model.strip())
+                            model, provider, config_base_url = self._extract_model_settings(config)
+                            model_configured = bool(model)
                     except Exception as e:
                         _log.warning("Failed to load config: %s", e)
 
@@ -410,11 +436,10 @@ class ChatAPIHandlers:
 
                     # Load provider credentials from config (needed for vision analysis)
                     api_key = None
-                    base_url = None
-                    provider = None
+                    base_url = config_base_url
 
                     # Extract provider from model name if it has provider/ prefix
-                    if model and "/" in model:
+                    if not provider and model and "/" in model:
                         provider, _ = model.split("/", 1)
                         _log.info("Extracted provider from model: %s", provider)
 
@@ -427,7 +452,7 @@ class ChatAPIHandlers:
                                 try:
                                     creds = resolve_api_key_provider_credentials(provider)
                                     api_key = creds.get("api_key")
-                                    base_url = creds.get("base_url")
+                                    base_url = base_url or creds.get("base_url")
                                     _log.info("Loaded credentials for %s provider: base_url=%s", provider, base_url)
                                 except Exception as e:
                                     _log.warning("Failed to resolve %s credentials: %s", provider, e)
@@ -435,27 +460,25 @@ class ChatAPIHandlers:
                             _log.warning("Could not import PROVIDER_REGISTRY")
 
                     # Fallback: check legacy config.providers for bedrock/anthropic
-                    if not (api_key and base_url) and config_path.exists():
+                    if not (api_key and base_url):
                         try:
-                            with open(config_path) as f:
-                                config = yaml.safe_load(f) or {}
-                                providers = config.get("providers", {})
+                            providers = config.get("providers", {})
 
-                                # Check bedrock provider first
-                                bedrock = providers.get("bedrock", {})
-                                if bedrock.get("enabled"):
-                                    api_key = bedrock.get("apiKey")
-                                    base_url = bedrock.get("baseUrl")
-                                    provider = "bedrock"
-                                    _log.info("Using Bedrock provider from config.providers: %s", base_url)
-                                else:
-                                    # Check anthropic provider
-                                    anthropic = providers.get("anthropic", {})
-                                    if anthropic.get("enabled"):
-                                        api_key = anthropic.get("apiKey")
-                                        base_url = anthropic.get("baseUrl")
-                                        provider = "anthropic"
-                                        _log.info("Using Anthropic provider from config.providers: %s", base_url)
+                            # Check bedrock provider first
+                            bedrock = providers.get("bedrock", {})
+                            if bedrock.get("enabled"):
+                                api_key = bedrock.get("apiKey")
+                                base_url = bedrock.get("baseUrl")
+                                provider = "bedrock"
+                                _log.info("Using Bedrock provider from config.providers: %s", base_url)
+                            else:
+                                # Check anthropic provider
+                                anthropic = providers.get("anthropic", {})
+                                if anthropic.get("enabled"):
+                                    api_key = anthropic.get("apiKey")
+                                    base_url = anthropic.get("baseUrl")
+                                    provider = "anthropic"
+                                    _log.info("Using Anthropic provider from config.providers: %s", base_url)
                         except Exception as e:
                             _log.warning("Failed to load provider config: %s", e)
 
@@ -894,6 +917,18 @@ class ChatAPIHandlers:
                         result = await agent_task
 
                         # Save or update final text message
+                        if not full_response:
+                            result_text = ""
+                            if isinstance(result, dict):
+                                result_text = result.get("final_response") or ""
+                                if not result_text and result.get("error"):
+                                    result_text = f"API call failed: {result.get('error')}"
+
+                            if result_text.strip():
+                                full_response.append(result_text)
+                                content_event = f'event: content\ndata: {json.dumps({"delta": result_text})}\n\n'
+                                await response.write(content_event.encode())
+
                         final_text = "".join(full_response)
                         if final_text.strip():
                             if assistant_msg_id is not None:

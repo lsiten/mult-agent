@@ -2575,6 +2575,7 @@ class APIServerAdapter(BasePlatformAdapter):
         self._app.router.add_get("/api/config/raw", config_h.handle_get_config_raw)
         self._app.router.add_put("/api/config/raw", config_h.handle_put_config_raw)
         self._app.router.add_get("/api/model/info", config_h.handle_get_model_info)
+        self._app.router.add_post("/api/provider/test", config_h.handle_test_provider)
 
         # Env API
         self._app.router.add_get("/api/env", env_h.handle_get_env)

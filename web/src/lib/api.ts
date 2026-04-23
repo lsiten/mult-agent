@@ -1,23 +1,26 @@
-// In Electron, use Gateway (Pure Gateway architecture on 8642);
-// in web, use relative path (proxied by server)
-const BASE = typeof window !== 'undefined' && (window as any).electronAPI
-  ? 'http://127.0.0.1:8642'
-  : '';
+// In Electron, always use Gateway (Pure Gateway architecture on 8642).
+// In standalone web development, use relative paths through the dev server proxy.
+const GATEWAY_BASE = 'http://127.0.0.1:8642';
 
 // Ephemeral session token for protected endpoints.
 // Injected into index.html by the server — never fetched via API.
 declare global {
   interface Window {
     __HERMES_SESSION_TOKEN__?: string;
+    electronAPI?: {
+      getGatewayAuthToken?: () => Promise<{ data?: { token?: string }; token?: string } | null>;
+    };
   }
 }
 let _sessionToken: string | null = null;
 let _gatewayAuthToken: string | null = null;
 
-function isViteDevPage(): boolean {
-  if (typeof window === "undefined") return false;
-  const { hostname, port, protocol } = window.location;
-  return protocol.startsWith("http") && (hostname === "localhost" || hostname === "127.0.0.1") && port.startsWith("517");
+function isElectronRuntime(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.electronAPI);
+}
+
+function getRequestBase(): string {
+  return isElectronRuntime() ? GATEWAY_BASE : '';
 }
 
 async function getGatewayAuthToken(): Promise<string | null> {
@@ -27,9 +30,9 @@ async function getGatewayAuthToken(): Promise<string | null> {
   }
 
   // 仅在 Electron 环境中获取 Gateway auth token
-  if (typeof window !== 'undefined' && (window as any).electronAPI?.getGatewayAuthToken) {
+  if (typeof window !== 'undefined' && window.electronAPI?.getGatewayAuthToken) {
     try {
-      const result = await (window as any).electronAPI.getGatewayAuthToken();
+      const result = await window.electronAPI.getGatewayAuthToken();
 
       const token = result?.data?.token ?? result?.token;
       if (token) {
@@ -53,7 +56,7 @@ async function getGatewayAuthToken(): Promise<string | null> {
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  let requestBase = isViteDevPage() ? "" : BASE;
+  const requestBase = getRequestBase();
 
   // 1. Inject Gateway auth token for all Gateway requests (Electron only)
   if (!headers.has("Authorization") && requestBase.includes('8642')) {
@@ -117,6 +120,12 @@ export const api = {
   getDefaults: () => fetchJSON<Record<string, unknown>>("/api/config/defaults"),
   getSchema: () => fetchJSON<{ fields: Record<string, unknown>; category_order: string[] }>("/api/config/schema"),
   getModelInfo: () => fetchJSON<ModelInfoResponse>("/api/model/info"),
+  testProvider: (payload: { provider: string; credentials: Record<string, string>; model?: string }) =>
+    fetchJSON<{ ok: boolean; message?: string; error?: string }>("/api/provider/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   saveConfig: (config: Record<string, unknown>) =>
     fetchJSON<{ ok: boolean }>("/api/config", {
       method: "PUT",
@@ -233,7 +242,7 @@ export const api = {
       params.append('token', gatewayToken);
     }
 
-    return `${BASE}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
+    return `${getRequestBase()}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>
     fetchJSON<{ ok: boolean; message: string }>(`/api/sessions/${encodeURIComponent(sessionId)}/stop`, {
@@ -265,7 +274,7 @@ export const api = {
       };
 
       xhr.onerror = () => reject(new Error("Network error"));
-      xhr.open("POST", `${BASE}/api/attachments/upload`);
+      xhr.open("POST", `${getRequestBase()}/api/attachments/upload`);
 
       // In Electron mode, use Gateway auth token; otherwise use session token
       if (gatewayToken) {

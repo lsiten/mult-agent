@@ -9,11 +9,6 @@ import { PROVIDER_CONFIGS, getDefaultProviderId } from "@/lib/providers";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-// API base URL for Electron environment
-const API_BASE = typeof window !== 'undefined' && (window as any).electronAPI
-  ? 'http://localhost:8642'
-  : '';
-
 interface OnboardingModalProps {
   open: boolean;
   onComplete: () => void;
@@ -31,14 +26,19 @@ function extractModelName(fullModelName: string): string {
   return fullModelName;
 }
 
-// Helper function to build full model name with provider prefix
-function buildFullModelName(modelName: string, providerId: string): string {
-  if (!modelName) return "";
-  // If already has a provider prefix, return as-is
-  if (modelName.includes("/")) {
-    return modelName;
+function normalizeModelNameForProvider(modelName: string, providerId: string): string {
+  const trimmed = modelName.trim();
+  if (!trimmed) return "";
+
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex <= 0) return trimmed;
+
+  const prefix = trimmed.substring(0, slashIndex);
+  const bareModel = trimmed.substring(slashIndex + 1);
+  if (prefix === providerId && providerId !== "openrouter") {
+    return bareModel;
   }
-  return `${providerId}/${modelName}`;
+  return trimmed;
 }
 
 export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalProps) {
@@ -76,18 +76,39 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
 
       // Get default provider ID based on language
       const defaultProviderId = getDefaultProviderId(language);
+      let providerToSelect = defaultProviderId;
 
-      // Load current model name from config (extract short name without provider prefix)
+      // Load current model/provider from config.
       if (typeof config.model === "string" && config.model.trim()) {
-        const shortModelName = extractModelName(config.model.trim());
-        setModelName(shortModelName);
+        setModelName(extractModelName(config.model.trim()));
+      } else if (
+        config.model &&
+        typeof config.model === "object" &&
+        !Array.isArray(config.model)
+      ) {
+        const modelConfig = config.model as Record<string, unknown>;
+        const configuredModel =
+          typeof modelConfig.default === "string"
+            ? modelConfig.default
+            : typeof modelConfig.name === "string"
+              ? modelConfig.name
+              : "";
+        const configuredProvider =
+          typeof modelConfig.provider === "string" ? modelConfig.provider : "";
+
+        if (configuredModel.trim()) {
+          setModelName(configuredModel.trim());
+        }
+        if (configuredProvider.trim()) {
+          providerToSelect = configuredProvider.trim();
+        }
       }
 
       // Store which keys are already configured
       setConfiguredKeys(configuredSet);
 
-      // Initialize form data with default values from language-based default provider
-      const defaultProvider = PROVIDER_CONFIGS.find((p) => p.id === defaultProviderId);
+      // Initialize form data with default values from selected provider
+      const defaultProvider = PROVIDER_CONFIGS.find((p) => p.id === providerToSelect);
       const initialFormData: Record<string, string> = {};
       if (defaultProvider) {
         defaultProvider.fields.forEach((field) => {
@@ -98,8 +119,7 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
       }
       setFormData(initialFormData);
 
-      // Set provider based on language (not based on configured keys)
-      setSelectedProvider(defaultProviderId);
+      setSelectedProvider(providerToSelect);
     } catch (error) {
       console.error("Failed to load existing configuration:", error);
       // Fallback to default provider based on language
@@ -109,11 +129,10 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
 
   // Update default provider when language changes
   useEffect(() => {
-    // Always update default provider based on language selection
-    if (language) {
+    if (language && !selectedProvider) {
       setSelectedProvider(getDefaultProviderId(language));
     }
-  }, [language]);
+  }, [language, selectedProvider]);
 
   const handleFieldChange = (key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -212,16 +231,31 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
     } else {
       // Final step - save and complete
       await saveCurrentStepData();
-      // Save model name to config if provided (with provider prefix)
-      if (modelName.trim()) {
-        try {
-          const config = await api.getConfig();
-          const fullModelName = buildFullModelName(modelName.trim(), selectedProvider);
-          config.model = fullModelName;
-          await api.saveConfig(config);
-        } catch (error) {
-          console.error("Failed to save model name:", error);
-        }
+      try {
+        const config = await api.getConfig();
+        const existingModel =
+          config.model &&
+          typeof config.model === "object" &&
+          !Array.isArray(config.model)
+            ? config.model as Record<string, unknown>
+            : {};
+        const currentDefault =
+          typeof existingModel.default === "string"
+            ? existingModel.default
+            : typeof config.model === "string"
+              ? extractModelName(config.model)
+              : "";
+        const nextModel = { ...existingModel };
+        delete nextModel.base_url;
+
+        config.model = {
+          ...nextModel,
+          provider: selectedProvider,
+          default: normalizeModelNameForProvider(modelName.trim() || currentDefault, selectedProvider),
+        };
+        await api.saveConfig(config);
+      } catch (error) {
+        console.error("Failed to save model configuration:", error);
       }
       onComplete();
     }
@@ -284,34 +318,14 @@ export function OnboardingModal({ open, onComplete, onSkip }: OnboardingModalPro
       }
     }
 
-    // Call backend API to test connection
-    try {
-      const response = await fetch(`${API_BASE}/api/provider/test`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          credentials,
-        }),
-      });
+    const result = await api.testProvider({
+      provider: selectedProvider,
+      credentials,
+      model: modelName.trim() || undefined,
+    });
 
-      const result = await response.json();
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error || "Connection test failed");
-      }
-
-      return result;
-    } catch (error) {
-      // If API is not available, fall back to client-side validation
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        console.warn("Backend API not available, using client-side validation only");
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return Promise.resolve();
-      }
-      throw error;
+    if (!result.ok) {
+      throw new Error(result.error || "Connection test failed");
     }
   };
 

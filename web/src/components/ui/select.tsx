@@ -160,17 +160,14 @@ export function SelectOption(_props: SelectOptionProps) {
 
 function flattenChildren(children: React.ReactNode, out: SelectOptionData[]) {
   const arr = Array.isArray(children) ? children : [children];
-  console.log('[Select flattenChildren] Processing children:', arr);
   for (const child of arr) {
     // Handle nested arrays (e.g., from .map())
     if (Array.isArray(child)) {
-      console.log('[Select flattenChildren] Found nested array, recursing...');
       flattenChildren(child, out);
       continue;
     }
 
     if (!child || typeof child !== "object" || !("props" in child)) {
-      console.log('[Select flattenChildren] Skipping child:', child);
       continue;
     }
     const props = child.props as Record<string, unknown>;
@@ -179,7 +176,6 @@ function flattenChildren(children: React.ReactNode, out: SelectOptionData[]) {
         value: String(props.value),
         label: typeof props.children === "string" ? props.children : String(props.value),
       };
-      console.log('[Select flattenChildren] Adding option:', option);
       out.push(option);
     } else if (props.children) {
       flattenChildren(props.children as React.ReactNode, out);
@@ -211,4 +207,3 @@ export const SelectTrigger = Select;
 export const SelectContent = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 export const SelectItem = SelectOption;
 export const SelectValue = ({ placeholder }: { placeholder?: string }) => <>{placeholder}</>;
-

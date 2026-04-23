@@ -171,10 +171,44 @@ export default function App() {
   useEffect(() => {
     const checkConfiguration = async () => {
       try {
-        const envVars = await api.getEnvVars();
+        const [envResult, modelResult] = await Promise.allSettled([
+          api.getEnvVars(),
+          api.getModelInfo(),
+        ]);
+
+        if (envResult.status !== "fulfilled") {
+          setShowConfigWarning(false);
+          return;
+        }
+
+        const envVars = envResult.value;
+
+        const hasRequiredFields = (providerId: string) => {
+          const provider = PROVIDER_CONFIGS.find((p) => p.id === providerId);
+          if (!provider || provider.isOAuth) return false;
+
+          return provider.fields
+            .filter((f) => f.required)
+            .every((f) => envVars[f.key]?.is_set);
+        };
+
+        const activeProvider =
+          modelResult.status === "fulfilled" ? modelResult.value.provider : "";
+        const activeProviderId =
+          activeProvider === "kimi-coding" ? "kimi" :
+          activeProvider === "ollama-cloud" ? "ollama" :
+          activeProvider;
+        const activeModel =
+          modelResult.status === "fulfilled" ? modelResult.value.model : "";
+
+        const activeProviderConfigured =
+          Boolean(activeModel) &&
+          activeProviderId !== "" &&
+          activeProviderId !== "auto" &&
+          hasRequiredFields(activeProviderId);
 
         // Check if any provider is configured
-        let hasConfiguredProvider = false;
+        let hasConfiguredProvider = activeProviderConfigured;
         for (const provider of PROVIDER_CONFIGS) {
           if (provider.isOAuth) continue; // Skip OAuth for now
 

@@ -244,6 +244,187 @@ class ConfigAPIHandlers:
             logger.error(f"Failed to get model info: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_test_provider(self, request: web.Request) -> web.Response:
+        """POST /api/provider/test - Validate API-key provider connectivity."""
+        if not self._check_auth(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        try:
+            from gateway.platforms.api_server_validation import parse_request_json
+            data = await parse_request_json(
+                request,
+                {"provider": str, "credentials": dict, "model": str},
+                required=["provider", "credentials"],
+            )
+
+            provider_id = self._normalize_provider_id(data["provider"])
+            credentials = data.get("credentials", {})
+            model = str(data.get("model", "")).strip()
+
+            from hermes_cli.auth import PROVIDER_REGISTRY, resolve_api_key_provider_credentials
+
+            pconfig = PROVIDER_REGISTRY.get(provider_id)
+            if not pconfig or pconfig.auth_type != "api_key":
+                return web.json_response(
+                    {"ok": False, "error": f"Provider '{data['provider']}' does not support API-key testing."},
+                )
+
+            api_key = self._credential_value(credentials, pconfig.api_key_env_vars)
+            base_url = self._credential_value(credentials, (pconfig.base_url_env_var,))
+
+            if not api_key or not base_url:
+                resolved = resolve_api_key_provider_credentials(provider_id)
+                api_key = api_key or str(resolved.get("api_key", "")).strip()
+                base_url = base_url or str(resolved.get("base_url", "")).strip()
+
+            if not api_key:
+                key_names = ", ".join(pconfig.api_key_env_vars) or "API key"
+                return web.json_response(
+                    {"ok": False, "error": f"Missing {key_names}."},
+                )
+            if not base_url:
+                return web.json_response(
+                    {"ok": False, "error": "Missing provider base URL."},
+                )
+
+            result = await self._test_openai_compatible_provider(
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+            )
+            return web.json_response(result)
+
+        except web.HTTPBadRequest:
+            raise
+        except Exception as e:
+            logger.error("Failed to test provider connection: %s", e)
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    def _normalize_provider_id(self, provider: str) -> str:
+        """Map UI provider ids to auth registry provider ids."""
+        normalized = provider.strip().lower()
+        aliases = {
+            "kimi": "kimi-coding",
+            "ollama": "ollama-cloud",
+        }
+        if normalized in aliases:
+            return aliases[normalized]
+
+        try:
+            from hermes_cli.auth import resolve_provider
+            resolved = resolve_provider(normalized)
+            if resolved != "custom":
+                return resolved
+        except Exception:
+            pass
+        return normalized
+
+    @staticmethod
+    def _credential_value(credentials: Dict[str, Any], keys: tuple) -> str:
+        """Return the first non-empty credential value for the given keys."""
+        for key in keys:
+            if not key:
+                continue
+            value = credentials.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    async def _test_openai_compatible_provider(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+    ) -> Dict[str, Any]:
+        """Probe an OpenAI-compatible provider without logging secrets."""
+        import aiohttp
+
+        url = base_url.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        timeout = aiohttp.ClientTimeout(total=20)
+
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            models_result = await self._probe_models_endpoint(session, url)
+            if models_result.get("ok"):
+                return models_result
+
+            status = int(models_result.get("status") or 0)
+            if status in (401, 403):
+                return models_result
+
+            if model:
+                return await self._probe_chat_endpoint(session, url, model)
+
+            if status in (404, 405):
+                return {
+                    "ok": True,
+                    "message": "Provider endpoint reached. Model-level test skipped because no model name was provided.",
+                }
+
+            return models_result
+
+    async def _probe_models_endpoint(self, session: Any, base_url: str) -> Dict[str, Any]:
+        """Try the standard OpenAI-compatible GET /models endpoint."""
+        endpoint = f"{base_url}/models"
+        async with session.get(endpoint) as response:
+            if response.status < 400:
+                return {"ok": True, "message": "Provider connection succeeded."}
+            text = await response.text()
+            return {
+                "ok": False,
+                "status": response.status,
+                "error": self._provider_error_message(response.status, text),
+            }
+
+    async def _probe_chat_endpoint(self, session: Any, base_url: str, model: str) -> Dict[str, Any]:
+        """Try a minimal OpenAI-compatible chat completions request."""
+        endpoint = f"{base_url}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "temperature": 0,
+            "stream": False,
+        }
+        async with session.post(endpoint, json=payload) as response:
+            if response.status < 400:
+                return {"ok": True, "message": "Provider connection succeeded."}
+            text = await response.text()
+            return {
+                "ok": False,
+                "status": response.status,
+                "error": self._provider_error_message(response.status, text),
+            }
+
+    @staticmethod
+    def _provider_error_message(status: int, body: str) -> str:
+        """Return a concise provider error without leaking request headers."""
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                error = parsed.get("error")
+                if isinstance(error, dict):
+                    message = error.get("message") or error.get("code")
+                    if message:
+                        return f"Provider returned {status}: {message}"
+                if isinstance(error, str):
+                    return f"Provider returned {status}: {error}"
+                message = parsed.get("message") or parsed.get("detail")
+                if isinstance(message, str):
+                    return f"Provider returned {status}: {message}"
+        except Exception:
+            pass
+
+        compact = " ".join(body.strip().split())
+        if compact:
+            return f"Provider returned {status}: {compact[:240]}"
+        return f"Provider returned {status}."
+
     async def handle_detect_chrome(self, request):
         """Detect running Chrome instances and check if debugging is enabled."""
         import subprocess
