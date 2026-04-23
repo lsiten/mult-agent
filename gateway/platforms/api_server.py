@@ -379,6 +379,13 @@ if AIOHTTP_AVAILABLE:
                 return await handler(request)
 
         # ====================================================================
+        # 附件下载端点豁免（浏览器 <img> 标签无法发送 Authorization header）
+        # ====================================================================
+        if request.path.startswith('/api/attachments/') and request.method == 'GET':
+            # 仅豁免下载，上传仍需认证
+            return await handler(request)
+
+        # ====================================================================
         # OPTIONS 请求（CORS preflight）豁免
         # ====================================================================
         if request.method == 'OPTIONS':
