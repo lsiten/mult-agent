@@ -33,6 +33,7 @@ export function ChatPage() {
     toolUseMessages,
     skillUseMessages,
     authRequestMessages,
+    textSegments,
     currentTool,
     startStreaming,
     stopStreaming,
@@ -257,6 +258,7 @@ export function ChatPage() {
         toolUseMessages={toolUseMessages}
         skillUseMessages={skillUseMessages}
         authRequestMessages={authRequestMessages}
+        textSegments={textSegments}
         currentTool={currentTool}
         isLoading={sessionsLoading || isUploading}
         onSendMessage={handleSendMessage}

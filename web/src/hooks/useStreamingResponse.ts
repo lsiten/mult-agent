@@ -16,6 +16,7 @@ export function useStreamingResponse() {
   const [toolUseMessages, setToolUseMessages] = useState<SessionMessage[]>([]);
   const [skillUseMessages, setSkillUseMessages] = useState<SessionMessage[]>([]);
   const [authRequestMessages, setAuthRequestMessages] = useState<SessionMessage[]>([]);
+  const [textSegments, setTextSegments] = useState<SessionMessage[]>([]); // Completed text segments
   const [currentTool, setCurrentTool] = useState<{ name: string; startTime: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -40,6 +41,7 @@ export function useStreamingResponse() {
     setToolUseMessages([]);
     setSkillUseMessages([]);
     setAuthRequestMessages([]);
+    setTextSegments([]);
     setCurrentTool(null);
     setError(null);
 
@@ -96,6 +98,19 @@ export function useStreamingResponse() {
 
           const newInvocations = data.invocations || [];
 
+          // Before adding tool messages, save current streaming text as a completed segment
+          setStreamingContent(current => {
+            if (current.trim()) {
+              console.log("[SSE] Saving text segment before tool:", current.length, "chars");
+              setTextSegments(prev => [...prev, {
+                role: "assistant",
+                content: current,
+                timestamp: Date.now() / 1000,
+              }]);
+            }
+            return ""; // Clear streaming content for next segment
+          });
+
           // Create separate tool_use message for each new invocation
           const newMessages: SessionMessage[] = newInvocations.map((inv: any) => ({
             role: "tool_use",
@@ -118,6 +133,19 @@ export function useStreamingResponse() {
           const data = JSON.parse(event.data);
           console.log("[SSE] skill_loaded event received:", data);
 
+          // Save current text segment before skill message
+          setStreamingContent(current => {
+            if (current.trim()) {
+              console.log("[SSE] Saving text segment before skill:", current.length, "chars");
+              setTextSegments(prev => [...prev, {
+                role: "assistant",
+                content: current,
+                timestamp: Date.now() / 1000,
+              }]);
+            }
+            return "";
+          });
+
           const message: SessionMessage = {
             role: "skill_use",
             content: null,
@@ -137,6 +165,19 @@ export function useStreamingResponse() {
         try {
           const data = JSON.parse(event.data);
           console.log("[SSE] authorization_request event received:", data);
+
+          // Save current text segment before authorization request
+          setStreamingContent(current => {
+            if (current.trim()) {
+              console.log("[SSE] Saving text segment before auth request:", current.length, "chars");
+              setTextSegments(prev => [...prev, {
+                role: "assistant",
+                content: current,
+                timestamp: Date.now() / 1000,
+              }]);
+            }
+            return "";
+          });
 
           const message: SessionMessage = {
             role: "authorization_request",
@@ -297,6 +338,7 @@ export function useStreamingResponse() {
     toolUseMessages,
     skillUseMessages,
     authRequestMessages,
+    textSegments,
     currentTool,
     error,
     startStreaming,

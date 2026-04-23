@@ -14,6 +14,7 @@ interface ChatAreaProps {
   toolUseMessages: SessionMessage[];
   skillUseMessages: SessionMessage[];
   authRequestMessages: SessionMessage[];
+  textSegments: SessionMessage[];
   currentTool?: { name: string; startTime: number } | null;
   isLoading: boolean;
   onSendMessage: (content: string) => void;
@@ -35,6 +36,7 @@ export function ChatArea({
   toolUseMessages,
   skillUseMessages,
   authRequestMessages,
+  textSegments,
   currentTool,
   isLoading,
   onSendMessage,
@@ -80,6 +82,7 @@ export function ChatArea({
           toolUseMessages={toolUseMessages}
           skillUseMessages={skillUseMessages}
           authRequestMessages={authRequestMessages}
+          textSegments={textSegments}
         />
       </div>
 
