@@ -9,67 +9,34 @@ from pathlib import Path
 
 
 def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
+    """Return the Hermes home directory for Electron-only mode.
 
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
-    In Electron mode, uses HERMES_CONFIG_PATH if set.
-    This is the single source of truth — all other copies should import this.
+    Requires HERMES_HOME env var to be set explicitly.
+    This application is designed to run only in Electron mode.
+    The single source of truth — all other copies should import this.
     """
-def get_hermes_home() -> Path:
-    """Return the Hermes home directory (default: ~/.hermes).
-
-    Reads HERMES_HOME env var, falls back to ~/.hermes.
-    In Electron mode, uses HERMES_CONFIG_PATH if set.
-    This is the single source of truth — all other copies should import this.
-    """
-    # Electron environment priority (backward compatibility)
-    if os.getenv("HERMES_ELECTRON_MODE"):
-        config_path = os.getenv("HERMES_CONFIG_PATH")
-        if config_path:
-            return Path(config_path)
-
-    # Standard logic for CLI usage
+    # Electron mode: HERMES_HOME must be set
     val = os.environ.get("HERMES_HOME", "").strip()
-    return Path(val) if val else Path.home() / ".hermes"
+    if not val:
+        raise RuntimeError(
+            "HERMES_HOME environment variable is not set. "
+            "This application must be run through the Electron wrapper. "
+            "Direct Python execution is not supported."
+        )
+    return Path(val)
 
 
 def get_default_hermes_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """Return the root Hermes directory for Electron-only operations.
 
-    In standard deployments this is ``~/.hermes``.
-
-    In Docker or custom deployments where ``HERMES_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``HERMES_HOME`` directly
-    — that IS the root.
-
-    In profile mode where ``HERMES_HOME`` is ``<root>/profiles/<name>``,
-    returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
-    (``/opt/data/profiles/coder``) layouts.
+    In Electron mode, HERMES_HOME is set to the app data directory.
+    This function returns HERMES_HOME directly, as there is no profile support
+    in Electron-only mode.
 
     Import-safe — no dependencies beyond stdlib.
     """
-    native_home = Path.home() / ".hermes"
-    env_home = os.environ.get("HERMES_HOME", "")
-    if not env_home:
-        return native_home
-    env_path = Path(env_home)
-    try:
-        env_path.resolve().relative_to(native_home.resolve())
-        # HERMES_HOME is under ~/.hermes (normal or profile mode)
-        return native_home
-    except ValueError:
-        pass
-
-    # Docker / custom deployment.
-    # Check if this is a profile path: <root>/profiles/<name>
-    # If the immediate parent dir is named "profiles", the root is
-    # the grandparent — this covers Docker profiles correctly.
-    if env_path.parent.name == "profiles":
-        return env_path.parent.parent
-
-    # Not a profile path — HERMES_HOME itself is the root
-    return env_path
+    # Electron-only: always return HERMES_HOME
+    return get_hermes_home()
 
 
 def get_optional_skills_dir(default: Path | None = None) -> Path:
@@ -110,15 +77,11 @@ def get_hermes_dir(new_subpath: str, old_name: str) -> Path:
 def display_hermes_home() -> str:
     """Return a user-friendly display string for the current HERMES_HOME.
 
-    Uses ``~/`` shorthand for readability::
+    Uses ``~/`` shorthand for readability when path is under home directory.
+    Example: ``~/Library/Application Support/hermes-agent-electron``
 
-        default:  ``~/.hermes``
-        profile:  ``~/.hermes/profiles/coder``
-        custom:   ``/opt/hermes-custom``
-
-    Use this in **user-facing** print/log messages instead of hardcoding
-    ``~/.hermes``.  For code that needs a real ``Path``, use
-    :func:`get_hermes_home` instead.
+    Use this in **user-facing** print/log messages.
+    For code that needs a real ``Path``, use :func:`get_hermes_home` instead.
     """
     home = get_hermes_home()
     try:
@@ -128,16 +91,11 @@ def display_hermes_home() -> str:
 
 
 def get_subprocess_home() -> str | None:
-    """Return a per-profile HOME directory for subprocesses, or None.
+    """Return a per-app HOME directory for subprocesses, or None.
 
     When ``{HERMES_HOME}/home/`` exists on disk, subprocesses should use it
     as ``HOME`` so system tools (git, ssh, gh, npm …) write their configs
-    inside the Hermes data directory instead of the OS-level ``/root`` or
-    ``~/``.  This provides:
-
-    * **Docker persistence** — tool configs land inside the persistent volume.
-    * **Profile isolation** — each profile gets its own git identity, SSH
-      keys, gh tokens, etc.
+    inside the Hermes data directory.
 
     The Python process's own ``os.environ["HOME"]`` and ``Path.home()`` are
     **never** modified — only subprocess environments should inject this value.
