@@ -149,6 +149,26 @@ export function ChatPage() {
     clearAttachments();
     clearSkills();
 
+    // Update session title immediately if it's still default
+    const currentSession = sessions.find(s => s.id === sid);
+    const isDefaultTitle = !currentSession?.title ||
+                          currentSession.title.trim() === "" ||
+                          currentSession.title.startsWith("新对话 ");
+
+    if (isDefaultTitle) {
+      // Generate title from first 30 chars of message
+      const newTitle = content.slice(0, 30) + (content.length > 30 ? "..." : "");
+      console.log("[ChatPage] Updating title immediately:", newTitle);
+
+      // Update backend first
+      try {
+        await updateSessionTitle(sid, newTitle);
+        console.log("[ChatPage] Title updated successfully");
+      } catch (err) {
+        console.error("[ChatPage] Failed to update title:", err);
+      }
+    }
+
     // Add user message to display with attachments
     const userMsg: SessionMessage = {
       role: "user",
