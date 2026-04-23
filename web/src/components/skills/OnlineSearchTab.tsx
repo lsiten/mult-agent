@@ -2,7 +2,7 @@
  * Online Search Tab - Search and install skills from online repository
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, Download, Check, AlertCircle, Cloud, CloudOff, Loader2 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { Input } from '@/components/ui/input';
@@ -82,18 +82,30 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
     return () => clearTimeout(timer);
   }, [query, source]);
 
-  // Refresh when installation completes
+  // Refresh when installation completes (only for newly completed tasks)
   const tasks = useSkillInstallStore((state) => state.tasks);
+  const prevCompletedIds = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    const completedTasks = Object.values(tasks).filter(
+    const currentCompleted = Object.values(tasks).filter(
       (task) => task.status === 'completed' && task.source === 'online'
     );
+    const currentCompletedIds = new Set(currentCompleted.map((t) => t.task_id));
 
-    if (completedTasks.length > 0) {
+    // Find newly completed tasks
+    const newlyCompleted = Array.from(currentCompletedIds).filter(
+      (id) => !prevCompletedIds.current.has(id)
+    );
+
+    if (newlyCompleted.length > 0) {
+      console.log('[OnlineSearchTab] Newly completed tasks, refreshing search');
       // Refresh search results to update installed status
       searchSkills(query, source);
     }
-  }, [tasks, query, source]);
+
+    // Update ref
+    prevCompletedIds.current = currentCompletedIds;
+  }, [tasks]); // Only depend on tasks, use latest query/source from closure
 
   const fetchSources = async () => {
     try {

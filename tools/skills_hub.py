@@ -143,6 +143,22 @@ class SkillBundle:
                     "(max 200MB)"
                 )
 
+            # Detect if all files are in a single top-level directory (GitHub ZIP format)
+            # GitHub creates ZIPs like: repo-name-branch/file1, repo-name-branch/file2
+            top_level_dirs = set()
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                parts = info.filename.split('/')
+                if len(parts) > 1:
+                    top_level_dirs.add(parts[0])
+
+            # If all files are under a single top-level directory, strip it
+            strip_prefix = None
+            if len(top_level_dirs) == 1:
+                strip_prefix = top_level_dirs.pop() + '/'
+                logger.info(f"[from_zip] Detected GitHub ZIP format, stripping prefix: {strip_prefix}")
+
             # Extract all files
             for info in zf.infolist():
                 if info.is_dir():
@@ -150,6 +166,13 @@ class SkillBundle:
 
                 # Validate path (no traversal, no symlinks)
                 rel_path = info.filename
+
+                # Strip GitHub top-level directory if detected
+                if strip_prefix and rel_path.startswith(strip_prefix):
+                    rel_path = rel_path[len(strip_prefix):]
+                    if not rel_path:  # Skip if empty after stripping
+                        continue
+
                 try:
                     normalized = _validate_bundle_rel_path(rel_path)
                 except ValueError as e:
