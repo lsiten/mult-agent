@@ -242,6 +242,9 @@ export const api = {
     formData.append("file", file);
     formData.append("session_id", sessionId);
 
+    // Get appropriate auth token for the environment
+    const gatewayToken = await getGatewayAuthToken();
+
     return new Promise<UploadAttachmentResponse>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
@@ -262,9 +265,14 @@ export const api = {
       xhr.onerror = () => reject(new Error("Network error"));
       xhr.open("POST", `${BASE}/api/attachments/upload`);
 
-      const token = window.__HERMES_SESSION_TOKEN__;
-      if (token) {
-        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      // In Electron mode, use Gateway auth token; otherwise use session token
+      if (gatewayToken) {
+        xhr.setRequestHeader("Authorization", `Bearer ${gatewayToken}`);
+      } else {
+        const token = window.__HERMES_SESSION_TOKEN__;
+        if (token) {
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        }
       }
 
       xhr.send(formData);
