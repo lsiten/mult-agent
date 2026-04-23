@@ -26,7 +26,7 @@ class STTAPIHandlers:
 
         In Electron mode (HERMES_ELECTRON_MODE=true), auth is bypassed.
         """
-        if os.getenv("HERMES_ELECTRON_MODE") == "1":
+        if os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
             return
 
         auth = request.headers.get("Authorization", "")

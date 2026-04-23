@@ -254,7 +254,7 @@ if AIOHTTP_AVAILABLE:
         origin = request.headers.get("Origin", "")
 
         # v2.1.1: 检测是否为 Electron 模式（HERMES_ELECTRON_MODE=1）
-        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE") == "1"
+        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1")
 
         cors_headers = None
         if adapter is not None:
@@ -355,7 +355,7 @@ if AIOHTTP_AVAILABLE:
             headers = {}
             origin = request.headers.get("Origin", "")
             # Electron 模式下，对所有 origin 添加 CORS 头
-            if os.getenv("HERMES_ELECTRON_MODE") == "1":
+            if os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
                 if origin and origin not in ("null", ""):
                     headers["Access-Control-Allow-Origin"] = origin
                 else:
@@ -558,7 +558,7 @@ class APIServerAdapter(BasePlatformAdapter):
         v2.1.2: 开发环境支持任意 localhost 端口（Vite 端口冲突自动递增）
         """
         # v2.1.2: Electron 模式 - Token 已验证，动态返回请求来源的 CORS 头
-        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE") == "1"
+        is_electron_mode = os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1")
         if is_electron_mode:
             headers = dict(_CORS_HEADERS)
             # 优先使用请求的实际 origin（开发: localhost:*, 生产: file:// 时为 null）

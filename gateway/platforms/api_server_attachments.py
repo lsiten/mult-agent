@@ -6,6 +6,7 @@ and secure file serving.
 """
 
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,15 @@ from aiohttp import web
 from hermes_constants import get_hermes_home
 
 _log = logging.getLogger(__name__)
+
+
+def is_electron_mode() -> bool:
+    """Check if running in Electron mode (auth bypass enabled).
+
+    Accepts both 'true' and '1' as valid values.
+    """
+    electron_mode = os.getenv("HERMES_ELECTRON_MODE", "").lower()
+    return electron_mode in ("true", "1")
 
 
 class AttachmentsAPIHandlers:
@@ -27,8 +37,7 @@ class AttachmentsAPIHandlers:
 
         In Electron mode (HERMES_ELECTRON_MODE=true), auth is bypassed.
         """
-        import os
-        if os.getenv("HERMES_ELECTRON_MODE") == "1":
+        if is_electron_mode():
             return
 
         auth = request.headers.get("Authorization", "")

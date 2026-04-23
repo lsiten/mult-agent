@@ -34,7 +34,7 @@ class ChatAPIHandlers:
 
         # In Electron mode, use HERMES_GATEWAY_TOKEN if available
         import os
-        if os.getenv("HERMES_ELECTRON_MODE") == "1":
+        if os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
             gateway_token = os.getenv("HERMES_GATEWAY_TOKEN")
             if gateway_token:
                 self._expected_token = gateway_token
