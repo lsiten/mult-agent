@@ -237,7 +237,7 @@ class ResponseStore:
 # ---------------------------------------------------------------------------
 
 _CORS_HEADERS = {
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type, Idempotency-Key",
 }
 
@@ -360,7 +360,7 @@ if AIOHTTP_AVAILABLE:
                     headers["Access-Control-Allow-Origin"] = origin
                 else:
                     headers["Access-Control-Allow-Origin"] = "*"
-                headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
                 headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
                 headers["Access-Control-Allow-Credentials"] = "true"
 
@@ -2544,6 +2544,7 @@ class APIServerAdapter(BasePlatformAdapter):
         from gateway.platforms.api_server_chat import ChatAPIHandlers
         from gateway.platforms.api_server_attachments import AttachmentsAPIHandlers
         from gateway.platforms.api_server_stt import STTAPIHandlers
+        from gateway.platforms.api_server_org import OrganizationAPIHandlers
 
         status_h = StatusAPIHandlers(self._session_token)
         config_h = ConfigAPIHandlers(self._session_token)
@@ -2560,6 +2561,7 @@ class APIServerAdapter(BasePlatformAdapter):
         chat_h = ChatAPIHandlers(self._session_token)
         attachments_h = AttachmentsAPIHandlers(self._session_token)
         stt_h = STTAPIHandlers(self._session_token)
+        org_h = OrganizationAPIHandlers(self._session_token)
 
         # Register all Dashboard API routes
         # Status API
@@ -2658,6 +2660,20 @@ class APIServerAdapter(BasePlatformAdapter):
 
         # STT API (Speech-to-Text)
         self._app.router.add_post("/api/stt/transcribe", stt_h.handle_transcribe_audio)
+
+        # Organization API
+        self._app.router.add_get("/api/org/tree", org_h.handle_get_tree)
+        self._app.router.add_post("/api/companies", org_h.handle_create_company)
+        self._app.router.add_patch("/api/companies/{id}", org_h.handle_update_company)
+        self._app.router.add_post("/api/departments", org_h.handle_create_department)
+        self._app.router.add_patch("/api/departments/{id}", org_h.handle_update_department)
+        self._app.router.add_post("/api/positions", org_h.handle_create_position)
+        self._app.router.add_patch("/api/positions/{id}", org_h.handle_update_position)
+        self._app.router.add_post("/api/agents", org_h.handle_create_agent)
+        self._app.router.add_get("/api/agents/{id}", org_h.handle_get_agent)
+        self._app.router.add_patch("/api/agents/{id}", org_h.handle_update_agent)
+        self._app.router.add_post("/api/agents/{id}/provision-profile", org_h.handle_provision_profile)
+        self._app.router.add_get("/api/workspaces/{ownerType}/{ownerId}", org_h.handle_get_workspace)
 
         # Serve static files and SPA fallback
         if self._web_dist and self._web_dist.exists():

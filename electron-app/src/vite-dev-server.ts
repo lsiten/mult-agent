@@ -45,8 +45,9 @@ export class ViteDevServer {
       throw new Error(`package.json not found in: ${this.webPath}`);
     }
 
-    // 启动 npm run dev
-    this.process = spawn('npm', ['run', 'dev'], {
+    // 启动 Vite。必须固定 5173，否则 Vite 会在端口冲突时自动退到
+    // 5174，但 Electron 仍加载 5173，导致窗口连接到旧的 dev server。
+    this.process = spawn('npm', ['run', 'dev', '--', '--port', String(this.port), '--strictPort'], {
       cwd: this.webPath,
       env: EnvManager.getViteEnv(),
       stdio: ['ignore', 'pipe', 'pipe']

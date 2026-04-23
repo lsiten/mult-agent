@@ -5,7 +5,7 @@ import {
   MessageSquare, Package, Settings, Puzzle,
   Sparkles, Terminal, Globe, Database, Shield,
   Wrench, Zap, Heart, Star, Code, Eye, MessagesSquare,
-  Loader2, AlertTriangle, Gauge,
+  Loader2, AlertTriangle, Gauge, Building2,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 // import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -39,6 +39,7 @@ const SkillsPage = lazy(() => import("@/pages/SkillsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const ChatPage = lazy(() => import("@/pages/ChatPage").then(m => ({ default: m.ChatPage })));
 const DevToolsPage = lazy(() => import("@/pages/DevToolsPage"));
+const OrganizationPage = lazy(() => import("@/pages/OrganizationPage/index"));
 
 // ---------------------------------------------------------------------------
 // Built-in nav items
@@ -53,6 +54,7 @@ interface NavItem {
 
 const BUILTIN_NAV: NavItem[] = [
   { path: "/", labelKey: "chat", label: "Chat", icon: MessagesSquare },
+  { path: "/organization", labelKey: "organization", label: "Organization", icon: Building2 },
   { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
   { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
   { path: "/settings", labelKey: "settings", label: "Settings", icon: Settings },
@@ -67,7 +69,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Activity, BarChart3, Clock, FileText, KeyRound,
   MessageSquare, MessagesSquare, Package, Settings, Puzzle,
   Sparkles, Terminal, Globe, Database, Shield,
-  Wrench, Zap, Heart, Star, Code, Eye, Gauge,
+  Wrench, Zap, Heart, Star, Code, Eye, Gauge, Building2,
 };
 
 /** Resolve a Lucide icon name to a component, fallback to Puzzle. */
@@ -305,6 +307,7 @@ export default function App() {
           }>
             <Routes>
               <Route path="/" element={<ChatPage />} />
+              <Route path="/organization" element={<OrganizationPage />} />
               <Route path="/cron" element={<CronPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

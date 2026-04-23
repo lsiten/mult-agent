@@ -1,7 +1,7 @@
 // In Electron, use Gateway (Pure Gateway architecture on 8642);
 // in web, use relative path (proxied by server)
 const BASE = typeof window !== 'undefined' && (window as any).electronAPI
-  ? 'http://localhost:8642'
+  ? 'http://127.0.0.1:8642'
   : '';
 
 // Ephemeral session token for protected endpoints.
@@ -14,23 +14,26 @@ declare global {
 let _sessionToken: string | null = null;
 let _gatewayAuthToken: string | null = null;
 
+function isViteDevPage(): boolean {
+  if (typeof window === "undefined") return false;
+  const { hostname, port, protocol } = window.location;
+  return protocol.startsWith("http") && (hostname === "localhost" || hostname === "127.0.0.1") && port.startsWith("517");
+}
+
 async function getGatewayAuthToken(): Promise<string | null> {
   // 缓存 token 避免重复 IPC 调用
   if (_gatewayAuthToken !== null) {
-    console.log('[API] Using cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
     return _gatewayAuthToken;
   }
 
   // 仅在 Electron 环境中获取 Gateway auth token
   if (typeof window !== 'undefined' && (window as any).electronAPI?.getGatewayAuthToken) {
     try {
-      console.log('[API] Fetching Gateway token from Electron IPC...');
       const result = await (window as any).electronAPI.getGatewayAuthToken();
-      console.log('[API] IPC result:', result);
 
-      if (result.ok && result.data?.token) {
-        _gatewayAuthToken = result.data.token;
-        console.log('[API] Cached Gateway token:', _gatewayAuthToken ? `${_gatewayAuthToken.substring(0, 16)}...` : '(empty)');
+      const token = result?.data?.token ?? result?.token;
+      if (token) {
+        _gatewayAuthToken = token;
         return _gatewayAuthToken;
       } else {
         console.error('[API] IPC returned invalid token:', result);
@@ -44,21 +47,21 @@ async function getGatewayAuthToken(): Promise<string | null> {
   }
 
   // 非 Electron 环境，返回空（开发模式）
-  console.log('[API] Not in Electron environment, no Gateway token needed');
   _gatewayAuthToken = '';
   return _gatewayAuthToken;
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
+  let requestBase = isViteDevPage() ? "" : BASE;
 
   // 1. Inject Gateway auth token for all Gateway requests (Electron only)
-  if (!headers.has("Authorization") && BASE.includes('8642')) {
+  if (!headers.has("Authorization") && requestBase.includes('8642')) {
     const gatewayToken = await getGatewayAuthToken();
-    console.log('[fetchJSON] Gateway token retrieved:', gatewayToken ? `${gatewayToken.substring(0, 16)}...` : '(none)');
     if (gatewayToken) {
       headers.set("Authorization", `Bearer ${gatewayToken}`);
-      console.log('[fetchJSON] Set Authorization header');
+    } else {
+      throw new Error("Gateway auth token unavailable");
     }
   }
 
@@ -68,8 +71,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  console.log('[fetchJSON] Final headers:', Object.fromEntries(headers.entries()));
-  const res = await fetch(`${BASE}${url}`, { ...init, headers });
+  const res = await fetch(`${requestBase}${url}`, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
@@ -350,7 +352,218 @@ export const api = {
     fetchJSON<PluginManifestResponse[]>("/api/dashboard/plugins"),
   rescanPlugins: () =>
     fetchJSON<{ ok: boolean; count: number }>("/api/dashboard/plugins/rescan"),
+
+  // Organization orchestration
+  getOrgTree: () => fetchJSON<OrganizationTreeResponse>("/api/org/tree"),
+  createCompany: (data: CompanyPayload) =>
+    fetchJSON<OrgCompany>("/api/companies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateCompany: (id: number, data: Partial<CompanyPayload & { status: string }>) =>
+    fetchJSON<OrgCompany>(`/api/companies/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  createDepartment: (data: DepartmentPayload) =>
+    fetchJSON<OrgDepartment>("/api/departments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateDepartment: (id: number, data: Partial<DepartmentPayload & { status: string }>) =>
+    fetchJSON<OrgDepartment>(`/api/departments/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  createPosition: (data: PositionPayload) =>
+    fetchJSON<OrgPosition>("/api/positions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updatePosition: (id: number, data: Partial<PositionPayload & { status: string }>) =>
+    fetchJSON<OrgPosition>(`/api/positions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  createAgent: (data: AgentPayload) =>
+    fetchJSON<OrgAgent>("/api/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  getAgent: (id: number) => fetchJSON<OrgAgent>(`/api/agents/${id}`),
+  updateAgent: (id: number, data: Partial<AgentPayload & { enabled: boolean; status: string; employment_status: string }>) =>
+    fetchJSON<OrgAgent>(`/api/agents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  provisionAgentProfile: (id: number) =>
+    fetchJSON<OrgProfileAgent>(`/api/agents/${id}/provision-profile`, { method: "POST" }),
+  getWorkspace: (ownerType: OrgOwnerType, ownerId: number) =>
+    fetchJSON<OrgWorkspace>(`/api/workspaces/${ownerType}/${ownerId}`),
 };
+
+export type OrgOwnerType = "company" | "department" | "position" | "agent";
+
+export interface OrgWorkspace {
+  id: number;
+  owner_type: OrgOwnerType;
+  owner_id: number;
+  name: string;
+  root_path: string;
+  visibility: string;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface OrgProfileAgent {
+  id: number;
+  agent_id: number;
+  profile_name: string;
+  profile_home: string;
+  soul_path: string | null;
+  config_path: string | null;
+  profile_status: string;
+  template_key: string | null;
+  last_provisioned_at: number | null;
+  last_sync_at: number | null;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface OrgAgent {
+  id: number;
+  company_id: number;
+  department_id: number;
+  position_id: number;
+  employee_no: string | null;
+  name: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  manager_agent_id: number | null;
+  employment_status: string;
+  role_summary: string;
+  service_goal: string | null;
+  accent_color: string | null;
+  workspace_path: string | null;
+  enabled: number | boolean;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  profile_agent?: OrgProfileAgent | null;
+  workspace?: OrgWorkspace | null;
+}
+
+export interface OrgPosition {
+  id: number;
+  department_id: number;
+  code: string;
+  name: string;
+  goal: string | null;
+  responsibilities: string;
+  icon: string | null;
+  accent_color: string | null;
+  headcount: number | null;
+  template_key: string | null;
+  workspace_path: string | null;
+  sort_order: number;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  agents?: OrgAgent[];
+  agent_count?: number;
+}
+
+export interface OrgDepartment {
+  id: number;
+  company_id: number;
+  parent_id: number | null;
+  code: string;
+  name: string;
+  goal: string;
+  description: string | null;
+  icon: string | null;
+  accent_color: string | null;
+  leader_agent_id: number | null;
+  workspace_path: string | null;
+  sort_order: number;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  positions?: OrgPosition[];
+  position_count?: number;
+  agent_count?: number;
+}
+
+export interface OrgCompany {
+  id: number;
+  code: string;
+  name: string;
+  goal: string;
+  description: string | null;
+  icon: string | null;
+  accent_color: string | null;
+  status: string;
+  workspace_path: string | null;
+  created_at: number;
+  updated_at: number;
+  departments?: OrgDepartment[];
+  department_count?: number;
+  position_count?: number;
+  agent_count?: number;
+}
+
+export interface OrganizationTreeResponse {
+  companies: OrgCompany[];
+}
+
+export interface CompanyPayload {
+  name: string;
+  goal: string;
+  description?: string;
+  icon?: string;
+  accent_color?: string;
+}
+
+export interface DepartmentPayload {
+  company_id: number;
+  name: string;
+  goal: string;
+  description?: string;
+  icon?: string;
+  accent_color?: string;
+}
+
+export interface PositionPayload {
+  department_id: number;
+  name: string;
+  goal?: string;
+  responsibilities: string;
+  icon?: string;
+  accent_color?: string;
+  headcount?: number | null;
+  template_key?: string;
+}
+
+export interface AgentPayload {
+  position_id: number;
+  name: string;
+  role_summary: string;
+  service_goal?: string;
+  employee_no?: string;
+  display_name?: string;
+  avatar_url?: string;
+  accent_color?: string;
+}
 
 export interface PlatformStatus {
   error_code?: string;
