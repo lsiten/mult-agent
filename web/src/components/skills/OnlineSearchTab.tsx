@@ -38,7 +38,7 @@ interface OnlineSearchTabProps {
 export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
-  const [source, setSource] = useState('hermes');
+  const [source, setSource] = useState('');
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [skills, setSkills] = useState<OnlineSkill[]>([]);
   const [loading, setLoading] = useState(false);
@@ -97,19 +97,25 @@ export function OnlineSearchTab({ onInstall }: OnlineSearchTabProps) {
 
   const fetchSources = async () => {
     try {
-      const data = await fetchJSON<{ sources: Array<{ name: string; url: string }> }>('/api/skills/sources');
-      const sourcesWithId = (data.sources || []).map((s, idx) => ({
-        id: `source-${idx}`,
-        name: s.name,
-        repo: s.url
-      }));
-      setSources(sourcesWithId);
+      const data = await fetchJSON<{ sources: Array<{ id: string; name: string; repo: string }> }>('/api/skills/sources');
+      const sourceList = data.sources || [];
+      setSources(sourceList);
+
+      // Initialize source to first available if not set
+      if (sourceList.length > 0 && !source) {
+        setSource(sourceList[0].id);
+      }
     } catch (err) {
       console.error('Failed to fetch sources:', err);
     }
   };
 
   const searchSkills = async (searchQuery: string, selectedSource: string) => {
+    // Don't search if source is not yet loaded
+    if (!selectedSource) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -304,7 +310,7 @@ function SkillCardContent({ skill, offlineMode, selectedCategory, source, onInst
         skillName={skill.name}
         installed={skill.installed}
         offlineMode={offlineMode}
-        onInstall={(id, name) => onInstall(id, name, selectedCategory, skill.source || source)}
+        onInstall={(id, name) => onInstall(id, name, selectedCategory, source)}
       />
     </>
   );

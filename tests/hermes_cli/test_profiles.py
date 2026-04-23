@@ -45,7 +45,7 @@ def profile_env(tmp_path, monkeypatch):
 
     * Path.home() -> tmp_path  (so _get_profiles_root() = tmp_path/.hermes/profiles)
     * HERMES_HOME  -> tmp_path/.hermes  (so get_hermes_home() agrees)
-    * Creates the bare-minimum ~/.hermes directory.
+    * Creates the bare-minimum $HERMES_HOME directory.
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     default_home = tmp_path / ".hermes"
@@ -712,7 +712,7 @@ class TestInternalHelpers:
         assert home == tmp_path / ".hermes"
 
     def test_profiles_root_docker_deployment(self, tmp_path, monkeypatch):
-        """In Docker (HERMES_HOME outside ~/.hermes), profiles go under HERMES_HOME."""
+        """In Docker (HERMES_HOME outside $HERMES_HOME), profiles go under HERMES_HOME."""
         docker_home = tmp_path / "opt" / "data"
         docker_home.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -730,7 +730,7 @@ class TestInternalHelpers:
         assert home == docker_home
 
     def test_profiles_root_profile_mode(self, tmp_path, monkeypatch):
-        """In profile mode (HERMES_HOME under ~/.hermes), profiles root is still ~/.hermes/profiles."""
+        """In profile mode (HERMES_HOME under $HERMES_HOME), profiles root is still $HERMES_HOME/profiles."""
         native = tmp_path / ".hermes"
         profile_dir = native / "profiles" / "coder"
         profile_dir.mkdir(parents=True)

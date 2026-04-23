@@ -511,7 +511,7 @@
           type = types.listOf types.str;
           default = [ ];
           description = ''
-            Interactive users who get a ~/.hermes symlink to the service
+            Interactive users who get a $HERMES_HOME symlink to the service
             stateDir. These users are automatically added to the hermes group.
           '';
           example = [ "sidbin" ];
@@ -568,7 +568,7 @@
       # ── Host CLI ──────────────────────────────────────────────────────
       # Add the hermes CLI to system PATH and export HERMES_HOME system-wide
       # so interactive shells share state (sessions, skills, cron) with the
-      # gateway service instead of creating a separate ~/.hermes/.
+      # gateway service instead of creating a separate $HERMES_HOME/.
       (lib.mkIf cfg.addToSystemPackages {
         environment.systemPackages = [ cfg.package ];
         environment.variables.HERMES_HOME = "${cfg.stateDir}/.hermes";
@@ -677,7 +677,7 @@ HERMES_CONTAINER_MODE_EOF
           ''}
 
           # ── Symlink bridge for interactive users ───────────────────────
-          # Create ~/.hermes -> stateDir/.hermes for each hostUser so the
+          # Create $HERMES_HOME -> stateDir/.hermes for each hostUser so the
           # host CLI shares state with the container service.
           # Only runs when container mode is enabled.
           ${lib.optionalString cfg.container.enable

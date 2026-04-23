@@ -16,7 +16,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _make_hermes_tree(root: Path) -> None:
-    """Create a realistic ~/.hermes directory structure for testing."""
+    """Create a realistic $HERMES_HOME directory structure for testing."""
     (root / "config.yaml").write_text("model:\n  provider: openrouter\n")
     (root / ".env").write_text("OPENROUTER_API_KEY=sk-test-123\n")
     (root / "memory_store.db").write_bytes(b"fake-sqlite")
