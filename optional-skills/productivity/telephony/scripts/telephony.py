@@ -69,7 +69,10 @@ class OwnedTwilioNumber:
 
 
 def _hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+    home = os.environ.get("HERMES_HOME", "").strip()
+    if not home:
+        raise RuntimeError("HERMES_HOME environment variable is not set")
+    return Path(home).expanduser()
 
 
 def _env_path() -> Path:
