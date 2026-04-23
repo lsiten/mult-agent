@@ -58,18 +58,18 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       });
     });
 
-    // Add skill_use messages from streaming
-    skillUseMessages.forEach(msg => {
-      items.push({ type: "message", message: msg, index: items.length });
-    });
+    // Merge and sort streaming messages by timestamp for chronological order
+    const streamingMessages: SessionMessage[] = [
+      ...skillUseMessages,
+      ...authRequestMessages,
+      ...toolUseMessages,
+    ];
 
-    // Add authorization_request messages from streaming
-    authRequestMessages.forEach(msg => {
-      items.push({ type: "message", message: msg, index: items.length });
-    });
+    // Sort by timestamp to interleave text and tool calls
+    streamingMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-    // Add tool_use messages from streaming
-    toolUseMessages.forEach(msg => {
+    // Add sorted streaming messages
+    streamingMessages.forEach(msg => {
       items.push({ type: "message", message: msg, index: items.length });
     });
 

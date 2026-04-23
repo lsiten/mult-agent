@@ -569,14 +569,19 @@ class ChatAPIHandlers:
                     # Track assistant message timestamp for proper ordering
                     assistant_msg_timestamp = time.time()
 
+                    # Track current text segment for message splitting
+                    current_text_segment = []
+                    segment_saved = False  # Track if current segment was saved
+
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
                         if text:
                             full_response.append(text)
+                            current_text_segment.append(text)
 
                     def on_tool_start(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any]):
                         """Callback when a tool invocation starts (called from thread pool)."""
-                        nonlocal current_tool_invocation
+                        nonlocal current_tool_invocation, segment_saved
                         current_tool_invocation = {
                             "id": tool_call_id,
                             "tool": tool_name,
@@ -586,6 +591,9 @@ class ChatAPIHandlers:
                         }
                         tool_invocations.append(current_tool_invocation)
                         _log.info("[TOOL_CALLBACK] Tool started: %s (id=%s)", tool_name, tool_call_id)
+
+                        # Mark that we need to save the current text segment
+                        segment_saved = False
 
                         # Queue event for async processing using captured loop
                         try:
@@ -598,12 +606,15 @@ class ChatAPIHandlers:
 
                     def on_tool_complete(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any], result: str):
                         """Callback when a tool invocation completes (called from thread pool)."""
-                        nonlocal current_tool_invocation
+                        nonlocal current_tool_invocation, segment_saved
                         if current_tool_invocation and current_tool_invocation["id"] == tool_call_id:
                             current_tool_invocation["result"] = result
                             current_tool_invocation["status"] = "success"
                             current_tool_invocation["duration"] = int((time.time() - current_tool_invocation["start_time"]) * 1000)
                             _log.info("[TOOL_CALLBACK] Tool completed: %s (id=%s, duration=%dms)", tool_name, tool_call_id, current_tool_invocation["duration"])
+
+                            # Reset segment_saved flag so new text after tool can be saved
+                            segment_saved = False
 
                             # Queue event for async processing using captured loop
                             try:
@@ -750,6 +761,20 @@ class ChatAPIHandlers:
 
                                         if event_type == "start":
                                             _, tool_call_id, tool_name = event
+
+                                            # Save current text segment before tool starts
+                                            if current_text_segment and not segment_saved:
+                                                segment_text = "".join(current_text_segment)
+                                                db.append_message(
+                                                    session_id=sid,
+                                                    role="assistant",
+                                                    content=segment_text
+                                                )
+                                                _log.info("[MESSAGE_SPLIT] Saved text segment (%d chars) before tool %s", len(segment_text), tool_name)
+                                                current_text_segment.clear()
+                                                segment_saved = True
+                                                assistant_msg_id = None  # Reset for next segment
+
                                             progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "started", "id": tool_call_id})}\n\n'
                                             await response.write(progress_event.encode())
                                             _log.info("[SSE] Sent tool_progress start: %s", tool_name)
@@ -770,11 +795,11 @@ class ChatAPIHandlers:
                                     await response.write(content_event.encode())
                                     last_sent = len(full_response)
 
-                                    # Save/update assistant message every 10 deltas to reduce DB writes
-                                    if len(full_response) - last_saved >= 10:
-                                        current_content = "".join(full_response)
+                                    # Save/update current segment assistant message every 10 deltas to reduce DB writes
+                                    if len(current_text_segment) >= 10 and not segment_saved:
+                                        current_content = "".join(current_text_segment)
                                         if assistant_msg_id is None:
-                                            # Create initial assistant message
+                                            # Create new assistant message for this segment
                                             assistant_msg_id = db.append_message(
                                                 session_id=sid,
                                                 role="assistant",
@@ -783,30 +808,27 @@ class ChatAPIHandlers:
                                         else:
                                             # Update existing assistant message
                                             db.update_message_content(assistant_msg_id, current_content)
-                                        last_saved = len(full_response)
 
-                                # Send tool invocation updates and save to DB
+                                # Send tool invocation updates and save to DB (each tool as separate message)
                                 if len(tool_invocations) > last_tool_sent:
                                     new_invocations = tool_invocations[last_tool_sent:]
+
+                                    # Send SSE event with new invocations
                                     tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
                                     await response.write(tool_event.encode())
 
-                                    # Save/update tool_use message
-                                    if tool_use_msg_id is None:
-                                        # Create initial tool_use message
-                                        tool_use_msg_id = db.append_message(
+                                    # Save each new tool invocation as a separate message
+                                    for inv in new_invocations:
+                                        db.append_message(
                                             session_id=sid,
                                             role="tool_use",
                                             content=None,
-                                            metadata={"tool_invocations": tool_invocations[:]}
+                                            metadata={"tool_invocations": [inv]}
                                         )
-                                        _log.info("Created tool_use message with %d invocations", len(tool_invocations))
-                                    else:
-                                        # Update existing tool_use message with all invocations
-                                        db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations[:]})
-                                        _log.debug("Updated tool_use message, now %d invocations", len(tool_invocations))
+                                        _log.info("[MESSAGE_SPLIT] Saved tool_use message: %s", inv["tool"])
 
                                     last_tool_sent = len(tool_invocations)
+                                    tool_use_msg_id = None  # Reset since we're creating separate messages
 
                                 await asyncio.sleep(0.05)  # Check for new content every 50ms
 
@@ -831,34 +853,63 @@ class ChatAPIHandlers:
                             tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
                             await response.write(tool_event.encode())
 
-                        # Always update final tool_use message to ensure status is saved
-                        # (tool status may have changed after last send)
-                        if tool_invocations:
-                            if tool_use_msg_id is None:
-                                tool_use_msg_id = db.append_message(
+                            # Save remaining tool invocations as separate messages
+                            for inv in new_invocations:
+                                db.append_message(
                                     session_id=sid,
                                     role="tool_use",
                                     content=None,
-                                    metadata={"tool_invocations": tool_invocations}
+                                    metadata={"tool_invocations": [inv]}
                                 )
-                                _log.info("Created final tool_use message with %d invocations", len(tool_invocations))
-                            else:
-                                db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations})
-                                _log.info("Updated final tool_use message with latest status, total %d invocations", len(tool_invocations))
+                                _log.info("[MESSAGE_SPLIT] Saved final tool_use message: %s", inv["tool"])
+                            last_tool_sent = len(tool_invocations)
+
+                        # Update tool statuses in their individual messages
+                        # (tool status may have changed after initial save)
+                        if tool_invocations:
+                            cursor = db._conn.execute(
+                                "SELECT id, metadata FROM messages WHERE session_id = ? AND role = 'tool_use' ORDER BY timestamp",
+                                (sid,)
+                            )
+                            tool_messages = cursor.fetchall()
+
+                            # Match tool messages with updated tool_invocations by tool_call_id
+                            for tool_msg in tool_messages:
+                                msg_id = tool_msg["id"]
+                                metadata = json.loads(tool_msg["metadata"]) if tool_msg["metadata"] else {}
+                                msg_invocations = metadata.get("tool_invocations", [])
+
+                                if msg_invocations:
+                                    # Find matching invocation in tool_invocations by id
+                                    msg_tool_id = msg_invocations[0].get("id")
+                                    updated_inv = next((inv for inv in tool_invocations if inv["id"] == msg_tool_id), None)
+
+                                    if updated_inv:
+                                        # Update with latest status
+                                        db.update_message_metadata(msg_id, {"tool_invocations": [updated_inv]})
+                                        _log.debug("[MESSAGE_SPLIT] Updated tool_use message status: %s -> %s",
+                                                  updated_inv["tool"], updated_inv["status"])
 
                         # Get final result
                         result = await agent_task
-                        final_text = "".join(full_response)
 
-                        # Final save/update of assistant message (always save, even if client disconnected)
-                        if assistant_msg_id is None:
-                            # If no message was created during streaming (very short response), create it now
-                            assistant_msg_id = db.append_message(session_id=sid, role="assistant", content=final_text)
-                            _log.info("Created final assistant message with %d chars", len(final_text))
-                        elif len(full_response) > last_saved:
-                            # Update with final content if there's new content since last save
-                            db.update_message_content(assistant_msg_id, final_text)
-                            _log.info("Updated final assistant message, total %d chars", len(final_text))
+                        # Save final text segment if any
+                        if current_text_segment:
+                            segment_text = "".join(current_text_segment)
+                            if segment_text.strip():  # Only save if not empty
+                                db.append_message(
+                                    session_id=sid,
+                                    role="assistant",
+                                    content=segment_text
+                                )
+                                _log.info("[MESSAGE_SPLIT] Saved final text segment (%d chars)", len(segment_text))
+                                current_text_segment.clear()
+                        # If there was an in-progress assistant message, update it with final content
+                        elif assistant_msg_id is not None:
+                            final_segment_text = "".join(current_text_segment) if current_text_segment else ""
+                            if final_segment_text.strip():
+                                db.update_message_content(assistant_msg_id, final_segment_text)
+                                _log.info("[MESSAGE_SPLIT] Updated in-progress assistant message (%d chars)", len(final_segment_text))
 
                         # Generate session title if this is the first assistant response
                         try:

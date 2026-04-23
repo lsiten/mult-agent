@@ -88,6 +88,7 @@ export function useStreamingResponse() {
       });
 
       // Listen for tool_use events (new) - receives incremental updates
+      // Each invocation is now a separate message for chronological ordering
       eventSource.addEventListener("tool_use", (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -95,31 +96,17 @@ export function useStreamingResponse() {
 
           const newInvocations = data.invocations || [];
 
-          // Update or create tool_use message (only one per streaming session)
-          setToolUseMessages(prev => {
-            if (prev.length === 0) {
-              // Create first message
-              return [{
-                role: "tool_use",
-                content: null,
-                timestamp: Date.now() / 1000,
-                metadata: {
-                  tool_invocations: newInvocations,
-                },
-              }];
-            } else {
-              // Append new invocations to existing message
-              const existing = prev[0];
-              const existingInvocations = existing.metadata?.tool_invocations || [];
-              return [{
-                ...existing,
-                metadata: {
-                  ...existing.metadata,
-                  tool_invocations: [...existingInvocations, ...newInvocations],
-                },
-              }];
-            }
-          });
+          // Create separate tool_use message for each new invocation
+          const newMessages: SessionMessage[] = newInvocations.map((inv: any) => ({
+            role: "tool_use",
+            content: null,
+            timestamp: Date.now() / 1000,
+            metadata: {
+              tool_invocations: [inv],
+            },
+          }));
+
+          setToolUseMessages(prev => [...prev, ...newMessages]);
         } catch (err) {
           console.error("Failed to parse tool_use event:", err);
         }
@@ -177,30 +164,36 @@ export function useStreamingResponse() {
             setCurrentTool(null);
 
             // Update tool status in toolUseMessages
+            // Since each tool is now a separate message, find the message with matching tool_call_id
             setToolUseMessages(prev => {
               if (prev.length === 0) return prev;
 
-              const updated = [...prev];
-              const lastMessage = updated[updated.length - 1];
-              if (lastMessage.metadata?.tool_invocations) {
-                // Find and update the tool with matching ID
-                const invocations = lastMessage.metadata.tool_invocations;
-                const toolIndex = invocations.findIndex((inv: any) => inv.id === data.id);
-                if (toolIndex !== -1) {
-                  invocations[toolIndex] = {
-                    ...invocations[toolIndex],
-                    status: "success",
-                    duration: data.duration,
-                  };
-                  updated[updated.length - 1] = {
-                    ...lastMessage,
-                    metadata: {
-                      ...lastMessage.metadata,
-                      tool_invocations: [...invocations],
-                    },
-                  };
+              const updated = prev.map(msg => {
+                if (msg.metadata?.tool_invocations) {
+                  const invocations = msg.metadata.tool_invocations;
+                  const toolIndex = invocations.findIndex((inv: any) => inv.id === data.id);
+
+                  if (toolIndex !== -1) {
+                    // Found matching tool, update its status
+                    const updatedInvocations = [...invocations];
+                    updatedInvocations[toolIndex] = {
+                      ...updatedInvocations[toolIndex],
+                      status: "success",
+                      duration: data.duration,
+                    };
+
+                    return {
+                      ...msg,
+                      metadata: {
+                        ...msg.metadata,
+                        tool_invocations: updatedInvocations,
+                      },
+                    };
+                  }
                 }
-              }
+                return msg;
+              });
+
               return updated;
             });
           }
