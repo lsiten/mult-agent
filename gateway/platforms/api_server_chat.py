@@ -728,52 +728,62 @@ class ChatAPIHandlers:
                                 _log.info("Saved skill_use message immediately: %s", skills_info)
 
                         while not agent_task.done():
-                            if len(full_response) > last_sent:
-                                # Send accumulated new content
-                                new_content = "".join(full_response[last_sent:])
-                                content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
-                                await response.write(content_event.encode())
-                                last_sent = len(full_response)
+                            try:
+                                if len(full_response) > last_sent:
+                                    # Send accumulated new content
+                                    new_content = "".join(full_response[last_sent:])
+                                    content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
+                                    await response.write(content_event.encode())
+                                    last_sent = len(full_response)
 
-                                # Save/update assistant message every 10 deltas to reduce DB writes
-                                if len(full_response) - last_saved >= 10:
-                                    current_content = "".join(full_response)
-                                    if assistant_msg_id is None:
-                                        # Create initial assistant message
-                                        assistant_msg_id = db.append_message(
+                                    # Save/update assistant message every 10 deltas to reduce DB writes
+                                    if len(full_response) - last_saved >= 10:
+                                        current_content = "".join(full_response)
+                                        if assistant_msg_id is None:
+                                            # Create initial assistant message
+                                            assistant_msg_id = db.append_message(
+                                                session_id=sid,
+                                                role="assistant",
+                                                content=current_content
+                                            )
+                                        else:
+                                            # Update existing assistant message
+                                            db.update_message_content(assistant_msg_id, current_content)
+                                        last_saved = len(full_response)
+
+                                # Send tool invocation updates and save to DB
+                                if len(tool_invocations) > last_tool_sent:
+                                    new_invocations = tool_invocations[last_tool_sent:]
+                                    tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
+                                    await response.write(tool_event.encode())
+
+                                    # Save/update tool_use message
+                                    if tool_use_msg_id is None:
+                                        # Create initial tool_use message
+                                        tool_use_msg_id = db.append_message(
                                             session_id=sid,
-                                            role="assistant",
-                                            content=current_content
+                                            role="tool_use",
+                                            content=None,
+                                            metadata={"tool_invocations": tool_invocations[:]}
                                         )
+                                        _log.info("Created tool_use message with %d invocations", len(tool_invocations))
                                     else:
-                                        # Update existing assistant message
-                                        db.update_message_content(assistant_msg_id, current_content)
-                                    last_saved = len(full_response)
+                                        # Update existing tool_use message with all invocations
+                                        db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations[:]})
+                                        _log.debug("Updated tool_use message, now %d invocations", len(tool_invocations))
 
-                            # Send tool invocation updates and save to DB
-                            if len(tool_invocations) > last_tool_sent:
-                                new_invocations = tool_invocations[last_tool_sent:]
-                                tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
-                                await response.write(tool_event.encode())
+                                    last_tool_sent = len(tool_invocations)
 
-                                # Save/update tool_use message
-                                if tool_use_msg_id is None:
-                                    # Create initial tool_use message
-                                    tool_use_msg_id = db.append_message(
-                                        session_id=sid,
-                                        role="tool_use",
-                                        content=None,
-                                        metadata={"tool_invocations": tool_invocations[:]}
-                                    )
-                                    _log.info("Created tool_use message with %d invocations", len(tool_invocations))
-                                else:
-                                    # Update existing tool_use message with all invocations
-                                    db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations[:]})
-                                    _log.debug("Updated tool_use message, now %d invocations", len(tool_invocations))
+                                await asyncio.sleep(0.05)  # Check for new content every 50ms
 
-                                last_tool_sent = len(tool_invocations)
-
-                            await asyncio.sleep(0.05)  # Check for new content every 50ms
+                            except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+                                # Client disconnected, stop streaming but let agent finish
+                                _log.warning("Client disconnected during streaming for session %s", sid)
+                                break
+                            except Exception as e:
+                                # Unexpected error, log but continue
+                                _log.error("Error during streaming loop: %s", e)
+                                break
 
                         # Send any remaining content
                         if len(full_response) > last_sent:
@@ -804,13 +814,15 @@ class ChatAPIHandlers:
                         result = await agent_task
                         final_text = "".join(full_response)
 
-                        # Final save/update of assistant message
+                        # Final save/update of assistant message (always save, even if client disconnected)
                         if assistant_msg_id is None:
                             # If no message was created during streaming (very short response), create it now
                             assistant_msg_id = db.append_message(session_id=sid, role="assistant", content=final_text)
+                            _log.info("Created final assistant message with %d chars", len(final_text))
                         elif len(full_response) > last_saved:
                             # Update with final content if there's new content since last save
                             db.update_message_content(assistant_msg_id, final_text)
+                            _log.info("Updated final assistant message, total %d chars", len(final_text))
 
                         # Generate session title if this is the first message
                         try:
@@ -838,9 +850,15 @@ class ChatAPIHandlers:
                         # skill_use and tool_use messages are now saved during streaming
                         # No need to save again here
 
-                        # Send done event
-                        done_event = f'event: done\ndata: {json.dumps({"finish_reason": "stop"})}\n\n'
-                        await response.write(done_event.encode())
+                        # Send done event (may fail if client disconnected, but data is already saved)
+                        try:
+                            done_event = f'event: done\ndata: {json.dumps({"finish_reason": "stop"})}\n\n'
+                            await response.write(done_event.encode())
+                            _log.info("Sent done event for session %s", sid)
+                        except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+                            _log.warning("Could not send done event (client disconnected), but data saved for session %s", sid)
+                        except Exception as done_error:
+                            _log.error("Failed to send done event: %s", done_error)
 
                     except asyncio.CancelledError:
                         _log.info("Agent task cancelled for session %s", sid)
