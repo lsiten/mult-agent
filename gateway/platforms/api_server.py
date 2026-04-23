@@ -2766,7 +2766,11 @@ class APIServerAdapter(BasePlatformAdapter):
                 mw_name = mw.__name__ if hasattr(mw, '__name__') else str(type(mw))
                 logger.info("[%s]   [%d] %s", self.name, i, mw_name)
 
-            self._app = web.Application(middlewares=mws)
+            # Set max upload size to 100MB (default is 2MB)
+            self._app = web.Application(
+                middlewares=mws,
+                client_max_size=100 * 1024 * 1024  # 100MB
+            )
             self._app["api_server_adapter"] = self
             self._app.router.add_get("/health", self._handle_health)
             self._app.router.add_get("/health/detailed", self._handle_health_detailed)
