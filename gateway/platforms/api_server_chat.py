@@ -652,6 +652,46 @@ class ChatAPIHandlers:
                         last_tool_sent = 0
                         last_saved = 0  # Track last saved content length
                         assistant_msg_id = None  # Track assistant message ID for updates
+                        skill_use_msg_saved = False  # Track if skill_use message is saved
+                        tool_use_msg_id = None  # Track tool_use message ID for updates
+
+                        # Save skill_use message immediately if skills were selected
+                        if selected_skills and not skill_use_msg_saved:
+                            skills_info = []
+                            hermes_home = get_hermes_home()
+                            skills_dir = hermes_home / "skills"
+
+                            for skill_name in selected_skills:
+                                skill_path = skills_dir / skill_name
+                                status = "loaded" if skill_path.exists() else "unavailable"
+
+                                # Try to read category from skill.yaml
+                                category = "other"
+                                yaml_path = skill_path / "skill.yaml"
+                                if yaml_path.exists():
+                                    try:
+                                        import yaml
+                                        with open(yaml_path) as f:
+                                            skill_yaml = yaml.safe_load(f) or {}
+                                            category = skill_yaml.get("category", "other")
+                                    except Exception:
+                                        pass
+
+                                skills_info.append({
+                                    "name": skill_name,
+                                    "status": status,
+                                    "category": category,
+                                })
+
+                            if skills_info:
+                                db.append_message(
+                                    session_id=sid,
+                                    role="skill_use",
+                                    content=None,
+                                    metadata={"skills": skills_info}
+                                )
+                                skill_use_msg_saved = True
+                                _log.info("Saved skill_use message immediately: %s", skills_info)
 
                         while not agent_task.done():
                             if len(full_response) > last_sent:
@@ -676,11 +716,27 @@ class ChatAPIHandlers:
                                         db.update_message_content(assistant_msg_id, current_content)
                                     last_saved = len(full_response)
 
-                            # Send tool invocation updates
+                            # Send tool invocation updates and save to DB
                             if len(tool_invocations) > last_tool_sent:
                                 new_invocations = tool_invocations[last_tool_sent:]
                                 tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
                                 await response.write(tool_event.encode())
+
+                                # Save/update tool_use message
+                                if tool_use_msg_id is None:
+                                    # Create initial tool_use message
+                                    tool_use_msg_id = db.append_message(
+                                        session_id=sid,
+                                        role="tool_use",
+                                        content=None,
+                                        metadata={"tool_invocations": tool_invocations[:]}
+                                    )
+                                    _log.info("Created tool_use message with %d invocations", len(tool_invocations))
+                                else:
+                                    # Update existing tool_use message with all invocations
+                                    db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations[:]})
+                                    _log.debug("Updated tool_use message, now %d invocations", len(tool_invocations))
+
                                 last_tool_sent = len(tool_invocations)
 
                             await asyncio.sleep(0.05)  # Check for new content every 50ms
@@ -691,11 +747,24 @@ class ChatAPIHandlers:
                             content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
                             await response.write(content_event.encode())
 
-                        # Send any remaining tool invocations
+                        # Send any remaining tool invocations and save to DB
                         if len(tool_invocations) > last_tool_sent:
                             new_invocations = tool_invocations[last_tool_sent:]
                             tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
                             await response.write(tool_event.encode())
+
+                            # Save/update final tool_use message
+                            if tool_use_msg_id is None and tool_invocations:
+                                tool_use_msg_id = db.append_message(
+                                    session_id=sid,
+                                    role="tool_use",
+                                    content=None,
+                                    metadata={"tool_invocations": tool_invocations}
+                                )
+                                _log.info("Created final tool_use message with %d invocations", len(tool_invocations))
+                            elif tool_use_msg_id is not None:
+                                db.update_message_metadata(tool_use_msg_id, {"tool_invocations": tool_invocations})
+                                _log.info("Updated final tool_use message, total %d invocations", len(tool_invocations))
 
                         # Get final result
                         result = await agent_task
@@ -732,51 +801,8 @@ class ChatAPIHandlers:
                         except Exception as title_error:
                             _log.warning("Failed to generate session title: %s", title_error)
 
-                        # Save skill_use message if skills were selected
-                        if selected_skills:
-                            skills_info = []
-                            hermes_home = get_hermes_home()
-                            skills_dir = hermes_home / "skills"
-
-                            for skill_name in selected_skills:
-                                skill_path = skills_dir / skill_name
-                                status = "loaded" if skill_path.exists() else "unavailable"
-
-                                # Try to read category from skill.yaml
-                                category = "other"
-                                yaml_path = skill_path / "skill.yaml"
-                                if yaml_path.exists():
-                                    try:
-                                        import yaml
-                                        with open(yaml_path) as f:
-                                            skill_yaml = yaml.safe_load(f) or {}
-                                            category = skill_yaml.get("category", "other")
-                                    except Exception:
-                                        pass
-
-                                skills_info.append({
-                                    "name": skill_name,
-                                    "status": status,
-                                    "category": category,
-                                })
-
-                            if skills_info:
-                                db.append_message(
-                                    session_id=sid,
-                                    role="skill_use",
-                                    content=None,
-                                    metadata={"skills": skills_info}
-                                )
-                                _log.info("Saved skill_use message: %s", skills_info)
-
-                        # Save tool_use message if there were tool invocations
-                        if tool_invocations:
-                            db.append_message(
-                                session_id=sid,
-                                role="tool_use",
-                                content=None,
-                                metadata={"tool_invocations": tool_invocations}
-                            )
+                        # skill_use and tool_use messages are now saved during streaming
+                        # No need to save again here
 
                         # Send done event
                         done_event = f'event: done\ndata: {json.dumps({"finish_reason": "stop"})}\n\n'

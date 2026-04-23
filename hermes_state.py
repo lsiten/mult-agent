@@ -893,6 +893,16 @@ class SessionDB:
             )
         self._execute_write(_do)
 
+    def update_message_metadata(self, message_id: int, metadata: Dict[str, Any]) -> None:
+        """Update the metadata of an existing message (for streaming tool_use updates)."""
+        def _do(conn):
+            metadata_json = json.dumps(metadata) if metadata else None
+            conn.execute(
+                "UPDATE messages SET metadata = ? WHERE id = ?",
+                (metadata_json, message_id),
+            )
+        self._execute_write(_do)
+
     def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Load all messages for a session, ordered by timestamp."""
         with self._lock:
