@@ -162,11 +162,14 @@ export function useStreamingResponse() {
       });
 
       // Listen for error event
-      eventSource.addEventListener("error_event", (event) => {
+      eventSource.addEventListener("error", (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log("[SSE] Error event received:", data);
           setError(data.error || "Unknown error");
           setIsStreaming(false);
+          setStreamingContent("");
+          setCurrentTool(null);
           eventSource.close();
           reject(new Error(data.error || "Unknown error"));
         } catch (err) {
