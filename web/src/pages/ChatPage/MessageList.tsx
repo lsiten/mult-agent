@@ -12,6 +12,7 @@ interface MessageListProps {
   isStreaming: boolean;
   toolUseMessages: SessionMessage[];
   skillUseMessages: SessionMessage[];
+  authRequestMessages: SessionMessage[];
 }
 
 type ListItem =
@@ -23,7 +24,7 @@ type ListItem =
 const INITIAL_MESSAGE_COUNT = 30;
 const LOAD_MORE_COUNT = 20;
 
-export function MessageList({ messages, streamingContent, isStreaming, toolUseMessages, skillUseMessages }: MessageListProps) {
+export function MessageList({ messages, streamingContent, isStreaming, toolUseMessages, skillUseMessages, authRequestMessages }: MessageListProps) {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [displayedMessageCount, setDisplayedMessageCount] = useState(INITIAL_MESSAGE_COUNT);
@@ -62,6 +63,11 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       items.push({ type: "message", message: msg, index: items.length });
     });
 
+    // Add authorization_request messages from streaming
+    authRequestMessages.forEach(msg => {
+      items.push({ type: "message", message: msg, index: items.length });
+    });
+
     // Add tool_use messages from streaming
     toolUseMessages.forEach(msg => {
       items.push({ type: "message", message: msg, index: items.length });
@@ -76,7 +82,7 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
     }
 
     return items;
-  }, [messages, displayedMessageCount, streamingContent, isStreaming, toolUseMessages, skillUseMessages]);
+  }, [messages, displayedMessageCount, streamingContent, isStreaming, toolUseMessages, skillUseMessages, authRequestMessages]);
 
   // Track if this is the initial render
   const isInitialMount = useRef(true);

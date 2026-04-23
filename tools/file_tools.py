@@ -759,7 +759,16 @@ def _check_file_reqs():
 
 READ_FILE_SCHEMA = {
     "name": "read_file",
-    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. NOTE: Cannot read images or binary files — use vision_analyze for images.",
+    "description": (
+        "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. "
+        "Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. "
+        "Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. "
+        "NOTE: Cannot read images or binary files — use vision_analyze for images.\n\n"
+        "IMPORTANT - Truthfulness requirement:\n"
+        "- If the file does not exist, the tool will return an error. Report this to the user explicitly - do not assume or guess the file contents.\n"
+        "- If you receive an error (file not found, permission denied, etc.), communicate the actual error to the user rather than making assumptions about what the file might contain.\n"
+        "- Only describe file contents that were actually returned by this tool, not what you expect or remember from training data."
+    ),
     "parameters": {
         "type": "object",
         "properties": {

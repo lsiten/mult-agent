@@ -412,7 +412,7 @@ export interface EnvVarInfo {
 }
 
 export interface SessionMessage {
-  role: "user" | "assistant" | "system" | "tool" | "tool_use" | "skill_use";
+  role: "user" | "assistant" | "system" | "tool" | "tool_use" | "skill_use" | "authorization_request";
   content: string | null;
   tool_calls?: Array<{
     id: string;
@@ -429,6 +429,13 @@ export interface SessionMessage {
     url: string;
   }>;
   metadata?: {
+    authorization?: {
+      type: "oauth" | "permission" | "confirmation";
+      url?: string;
+      title?: string;
+      message?: string;
+      action?: string;
+    };
     tool_invocations?: Array<{
       id: string;
       tool: string;
