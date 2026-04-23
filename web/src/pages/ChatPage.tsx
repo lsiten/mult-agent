@@ -56,6 +56,7 @@ export function ChatPage() {
   const currentSessionTitle = useMemo(() => {
     if (!currentSessionId) return null;
     const session = sessions.find(s => s.id === currentSessionId);
+    console.log("[ChatPage] Computing title for session:", currentSessionId, "found:", session?.title);
     // Use title, fallback to preview, then to "新对话"
     return session?.title || session?.preview || "新对话";
   }, [sessions, currentSessionId]);

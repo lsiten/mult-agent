@@ -59,22 +59,26 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       });
     });
 
-    // Merge and sort streaming messages by timestamp for chronological order
-    // Include textSegments (completed text before tools/skills)
-    const streamingMessages: SessionMessage[] = [
-      ...textSegments,
-      ...skillUseMessages,
-      ...authRequestMessages,
-      ...toolUseMessages,
-    ];
+    // Only show streaming messages during active streaming
+    // After streaming completes, messages are reloaded from backend
+    if (isStreaming) {
+      // Merge and sort streaming messages by timestamp for chronological order
+      // Include textSegments (completed text before tools/skills)
+      const streamingMessages: SessionMessage[] = [
+        ...textSegments,
+        ...skillUseMessages,
+        ...authRequestMessages,
+        ...toolUseMessages,
+      ];
 
-    // Sort by timestamp to interleave text and tool calls
-    streamingMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      // Sort by timestamp to interleave text and tool calls
+      streamingMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-    // Add sorted streaming messages
-    streamingMessages.forEach(msg => {
-      items.push({ type: "message", message: msg, index: items.length });
-    });
+      // Add sorted streaming messages
+      streamingMessages.forEach(msg => {
+        items.push({ type: "message", message: msg, index: items.length });
+      });
+    }
 
     if (isStreaming) {
       if (streamingContent) {
