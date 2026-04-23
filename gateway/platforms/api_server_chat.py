@@ -650,6 +650,9 @@ class ChatAPIHandlers:
                         # Poll for deltas and send SSE events
                         last_sent = 0
                         last_tool_sent = 0
+                        last_saved = 0  # Track last saved content length
+                        assistant_msg_id = None  # Track assistant message ID for updates
+
                         while not agent_task.done():
                             if len(full_response) > last_sent:
                                 # Send accumulated new content
@@ -657,6 +660,21 @@ class ChatAPIHandlers:
                                 content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
                                 await response.write(content_event.encode())
                                 last_sent = len(full_response)
+
+                                # Save/update assistant message every 10 deltas to reduce DB writes
+                                if len(full_response) - last_saved >= 10:
+                                    current_content = "".join(full_response)
+                                    if assistant_msg_id is None:
+                                        # Create initial assistant message
+                                        assistant_msg_id = db.append_message(
+                                            session_id=sid,
+                                            role="assistant",
+                                            content=current_content
+                                        )
+                                    else:
+                                        # Update existing assistant message
+                                        db.update_message_content(assistant_msg_id, current_content)
+                                    last_saved = len(full_response)
 
                             # Send tool invocation updates
                             if len(tool_invocations) > last_tool_sent:
@@ -683,8 +701,36 @@ class ChatAPIHandlers:
                         result = await agent_task
                         final_text = "".join(full_response)
 
-                        # Save assistant message
-                        db.append_message(session_id=sid, role="assistant", content=final_text)
+                        # Final save/update of assistant message
+                        if assistant_msg_id is None:
+                            # If no message was created during streaming (very short response), create it now
+                            assistant_msg_id = db.append_message(session_id=sid, role="assistant", content=final_text)
+                        elif len(full_response) > last_saved:
+                            # Update with final content if there's new content since last save
+                            db.update_message_content(assistant_msg_id, final_text)
+
+                        # Generate session title if this is the first message
+                        try:
+                            cursor = db._conn.execute(
+                                "SELECT message_count, title FROM sessions WHERE id = ?",
+                                (sid,)
+                            )
+                            row = cursor.fetchone()
+                            if row:
+                                msg_count = row["message_count"]
+                                current_title = row["title"]
+                                # Generate title if: 1) first user+assistant pair, 2) no custom title set
+                                if msg_count == 2 and (not current_title or current_title.strip() == ""):
+                                    # Use first 30 chars of user message as title
+                                    title = message[:30] + ("..." if len(message) > 30 else "")
+                                    db._conn.execute(
+                                        "UPDATE sessions SET title = ? WHERE id = ?",
+                                        (title, sid)
+                                    )
+                                    db._conn.commit()
+                                    _log.info("Generated title for session %s: %s", sid, title)
+                        except Exception as title_error:
+                            _log.warning("Failed to generate session title: %s", title_error)
 
                         # Save skill_use message if skills were selected
                         if selected_skills:

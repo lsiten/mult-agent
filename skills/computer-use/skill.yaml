@@ -17,8 +17,9 @@ triggers:
 
 capabilities:
   - Desktop screenshot capture
-  - Mouse control (move, click)
-  - Keyboard input
+  - Mouse control (move, click, scroll, drag and drop)
+  - Keyboard text input
+  - Special key and keyboard shortcut support (Enter, Escape, arrows, function keys, modifiers)
   - Application launching
   - Multi-step GUI workflows
 
@@ -39,6 +40,7 @@ tools_used:
   - computer_screenshot
   - computer_mouse
   - computer_keyboard
+  - computer_key
   - bash
 
 examples:

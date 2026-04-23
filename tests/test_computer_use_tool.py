@@ -15,9 +15,12 @@ from tools.computer_use_tool import (
     capture_screenshot,
     execute_mouse_action,
     execute_keyboard_action,
+    execute_special_key,
     computer_screenshot_handler,
     computer_mouse_handler,
     computer_keyboard_handler,
+    computer_key_handler,
+    get_display_config,
 )
 
 
@@ -217,3 +220,106 @@ class TestToolHandlers:
             result = json.loads(result_str)
 
             assert result["success"] is True
+
+
+class TestSpecialKey:
+    """Test special key functionality."""
+
+    def test_computer_key_handler_validates_params(self):
+        """Should validate required parameters."""
+        result = json.loads(computer_key_handler({}))
+        assert "error" in result
+        assert "key" in result["error"]
+
+    def test_computer_key_handler_success(self):
+        """Should execute key press successfully."""
+        with patch("tools.computer_use_tool.execute_special_key") as mock_action:
+            mock_action.return_value = {"success": True, "key": "enter"}
+
+            result_str = computer_key_handler({"key": "enter"})
+            result = json.loads(result_str)
+
+            assert result["success"] is True
+
+    @patch("platform.system", return_value="Darwin")
+    def test_execute_special_key_macos(self, mock_platform):
+        """Should handle special keys on macOS."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+
+            result = execute_special_key("enter")
+            assert result["success"] is True
+            assert result["key"] == "enter"
+
+    @patch("platform.system", return_value="Linux")
+    def test_execute_special_key_linux(self, mock_platform):
+        """Should handle special keys on Linux."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+
+            result = execute_special_key("escape")
+            assert result["success"] is True
+            assert result["key"] == "escape"
+
+    @patch("platform.system", return_value="Darwin")
+    def test_execute_special_key_with_modifier(self, mock_platform):
+        """Should handle keyboard shortcuts with modifiers."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+
+            result = execute_special_key("tab", modifiers=["ctrl"])
+            assert result["success"] is True
+
+
+class TestNewMouseActions:
+    """Test new mouse actions: scroll and drag."""
+
+    def test_scroll_action_macos(self):
+        """Should handle scroll actions."""
+        with patch("platform.system", return_value="Darwin"):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0)
+
+                result = execute_mouse_action("scroll_up", [500, 300])
+                assert result["success"] is True
+                assert result["action"] == "scroll_up"
+
+    def test_scroll_action_linux(self):
+        """Should handle scroll actions on Linux."""
+        with patch("platform.system", return_value="Linux"):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0)
+
+                result = execute_mouse_action("scroll_down", [500, 300])
+                assert result["success"] is True
+
+    def test_drag_action_requires_target_coordinate(self):
+        """Should validate target_coordinate for drag action."""
+        with patch("platform.system", return_value="Darwin"):
+            result_str = computer_mouse_handler({
+                "action": "drag",
+                "coordinate": [100, 100]
+            })
+            result = json.loads(result_str)
+            assert "error" in result
+            assert "target_coordinate" in result["error"]
+
+    def test_drag_action_success(self):
+        """Should execute drag action successfully."""
+        with patch("platform.system", return_value="Darwin"):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(returncode=0)
+
+                result = execute_mouse_action("drag", [100, 100], [200, 200])
+                assert result["success"] is True
+                assert result["action"] == "drag"
+                assert result["start_coordinate"] == [100, 100]
+                assert result["target_coordinate"] == [200, 200]
+
+    def test_display_config_auto_detect(self):
+        """Should auto-detect display configuration."""
+        config = get_display_config()
+        assert "width" in config
+        assert "height" in config
+        assert config["width"] > 0
+        assert config["height"] > 0

@@ -53,7 +53,7 @@ def _execute_steps(steps: List[Dict], context: dict) -> dict:
     """Execute a list of predefined steps.
 
     Each step is a dict with:
-        - type: "screenshot" | "click" | "type" | "bash"
+        - type: "screenshot" | "click" | "type" | "key" | "scroll" | "drag" | "bash"
         - params: parameters for the action
     """
     results = []
@@ -71,6 +71,12 @@ def _execute_steps(steps: List[Dict], context: dict) -> dict:
                 result = _click(params, context)
             elif step_type == "type":
                 result = _type_text(params, context)
+            elif step_type == "key":
+                result = _press_key(params, context)
+            elif step_type == "scroll":
+                result = _scroll(params, context)
+            elif step_type == "drag":
+                result = _drag(params, context)
             elif step_type == "bash":
                 result = _run_bash(params, context)
             else:
@@ -192,4 +198,63 @@ def _run_bash(params: dict, context: dict) -> dict:
         }
     except Exception as e:
         logger.exception("Bash command failed")
+        return {"success": False, "error": str(e)}
+
+
+def _press_key(params: dict, context: dict) -> dict:
+    """Press a special key or keyboard shortcut."""
+    try:
+        tool = context.get("tools", {}).get("computer_key")
+        if not tool:
+            return {"success": False, "error": "computer_key tool not available"}
+
+        result = tool(params)
+        return json.loads(result) if isinstance(result, str) else result
+    except Exception as e:
+        logger.exception("Key press failed")
+        return {"success": False, "error": str(e)}
+
+
+def _scroll(params: dict, context: dict) -> dict:
+    """Scroll the mouse wheel."""
+    try:
+        tool = context.get("tools", {}).get("computer_mouse")
+        if not tool:
+            return {"success": False, "error": "computer_mouse tool not available"}
+
+        direction = params.get("direction", "down")
+        coordinate = params.get("coordinate")
+        action = "scroll_down" if direction == "down" else "scroll_up"
+        params_out = {"action": action, "coordinate": coordinate}
+
+        result = tool(params_out)
+        return json.loads(result) if isinstance(result, str) else result
+    except Exception as e:
+        logger.exception("Scroll failed")
+        return {"success": False, "error": str(e)}
+
+
+def _drag(params: dict, context: dict) -> dict:
+    """Drag from start coordinate to target coordinate."""
+    try:
+        tool = context.get("tools", {}).get("computer_mouse")
+        if not tool:
+            return {"success": False, "error": "computer_mouse tool not available"}
+
+        start = params.get("start_coordinate") or params.get("start")
+        target = params.get("target_coordinate") or params.get("target")
+        
+        if not start or not target:
+            return {"success": False, "error": "drag requires start_coordinate and target_coordinate"}
+
+        params_out = {
+            "action": "drag",
+            "coordinate": start,
+            "target_coordinate": target
+        }
+
+        result = tool(params_out)
+        return json.loads(result) if isinstance(result, str) else result
+    except Exception as e:
+        logger.exception("Drag failed")
         return {"success": False, "error": str(e)}

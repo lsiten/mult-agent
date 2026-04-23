@@ -26,7 +26,6 @@ const LOAD_MORE_COUNT = 20;
 export function MessageList({ messages, streamingContent, isStreaming, toolUseMessages, skillUseMessages }: MessageListProps) {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const shouldAutoScroll = useRef(true);
   const [displayedMessageCount, setDisplayedMessageCount] = useState(INITIAL_MESSAGE_COUNT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
@@ -82,15 +81,8 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
   // Track if this is the initial render
   const isInitialMount = useRef(true);
 
-  // Auto-scroll to bottom when new messages arrive or streaming updates
-  useEffect(() => {
-    if (shouldAutoScroll.current && listItems.length > 0) {
-      virtuosoRef.current?.scrollToIndex({
-        index: listItems.length - 1,
-        behavior: "smooth",
-      });
-    }
-  }, [listItems.length, streamingContent]);
+  // Note: Auto-scroll is handled by Virtuoso's followOutput prop
+  // No manual scrolling needed
 
   const handleLoadMore = async () => {
     if (isLoadingMore) return;
@@ -133,8 +125,14 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       ref={virtuosoRef}
       style={{ height: "100%" }}
       totalCount={listItems.length}
-      initialTopMostItemIndex={Math.max(0, listItems.length - 1)}
-      followOutput="smooth"
+      alignToBottom
+      followOutput={(isAtBottom) => {
+        // Auto-scroll only when user is at bottom
+        if (isAtBottom) {
+          return "smooth";
+        }
+        return false;
+      }}
       atTopStateChange={handleAtTopStateChange}
       itemContent={(index) => {
         const item = listItems[index];
@@ -180,9 +178,6 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
             </div>
           </div>
         );
-      }}
-      atBottomStateChange={(atBottom) => {
-        shouldAutoScroll.current = atBottom;
       }}
     />
   );

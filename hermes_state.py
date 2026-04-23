@@ -884,6 +884,15 @@ class SessionDB:
 
         return self._execute_write(_do)
 
+    def update_message_content(self, message_id: int, content: str) -> None:
+        """Update the content of an existing message (for streaming updates)."""
+        def _do(conn):
+            conn.execute(
+                "UPDATE messages SET content = ? WHERE id = ?",
+                (content, message_id),
+            )
+        self._execute_write(_do)
+
     def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Load all messages for a session, ordered by timestamp."""
         with self._lock:
