@@ -253,7 +253,7 @@ export const en: Translations = {
   },
 
   config: {
-    configPath: "~/.hermes/config.yaml",
+    configPath: "Configuration File",
     exportConfig: "Export config as JSON",
     importConfig: "Import config from JSON",
     resetDefaults: "Reset to defaults",

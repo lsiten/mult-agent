@@ -81,7 +81,7 @@ export default function ConfigPage() {
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlSaving, setYamlSaving] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("");
-  const [configPath, setConfigPath] = useState<string>("~/.hermes/config.yaml"); // Dynamic path
+  const [configPath, setConfigPath] = useState<string>(""); // Dynamic path from API
   const { toast, showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();

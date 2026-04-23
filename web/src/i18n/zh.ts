@@ -253,7 +253,7 @@ export const zh: Translations = {
   },
 
   config: {
-    configPath: "~/.hermes/config.yaml",
+    configPath: "配置文件",
     exportConfig: "导出配置为 JSON",
     importConfig: "从 JSON 导入配置",
     resetDefaults: "恢复默认值",
