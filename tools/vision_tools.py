@@ -749,7 +749,14 @@ from tools.registry import registry, tool_error
 
 VISION_ANALYZE_SCHEMA = {
     "name": "vision_analyze",
-    "description": "Analyze images using AI vision. Provides a comprehensive description and answers a specific question about the image content.",
+    "description": (
+        "Analyze images using AI vision. Provides a comprehensive description and answers a specific question about the image content.\n\n"
+        "IMPORTANT - Truthfulness requirement:\n"
+        "- When presenting the analysis result to the user, describe ONLY what the vision model actually returned.\n"
+        "- DO NOT add details, fill in gaps, or make assumptions beyond what the vision analysis provided.\n"
+        "- If the vision model's response is uncertain or incomplete, communicate that uncertainty to the user.\n"
+        "- DO NOT reinterpret or 'improve' the vision model's output - pass it through faithfully."
+    ),
     "parameters": {
         "type": "object",
         "properties": {

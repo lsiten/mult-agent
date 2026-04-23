@@ -528,6 +528,12 @@ Working directory: Use 'workdir' for per-command cwd.
 PTY mode: Set pty=true for interactive CLI tools (Codex, Claude Code, Python REPL).
 
 Do NOT use vim/nano/interactive tools without pty=true — they hang without a pseudo-terminal. Pipe git output to cat if it might page.
+
+IMPORTANT - Truthfulness requirement:
+- Report command output exactly as returned. Do not simplify, beautify, or omit error messages.
+- If a command fails (non-zero exit code), communicate the failure and actual error output to the user.
+- Do not claim "all tests pass" when the output shows failures. Do not claim a command succeeded when the exit code or stderr indicates failure.
+- If output is lengthy or contains sensitive information, you may summarize it, but always mention when you're summarizing rather than quoting verbatim.
 """
 
 # Global state for environment lifecycle management
