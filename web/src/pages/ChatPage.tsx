@@ -163,13 +163,11 @@ export function ChatPage() {
       const finalContent = await startStreaming(sid, content, attachmentData, skillsToSend);
       console.log("[ChatPage] Streaming completed, final content length:", finalContent.length);
 
-      // After streaming completes, add assistant message
-      const assistantMsg: SessionMessage = {
-        role: "assistant",
-        content: finalContent,
-        timestamp: Date.now() / 1000,
-      };
-      setMessages(prev => [...prev, assistantMsg]);
+      // After streaming completes, reload messages from backend to get the split messages
+      console.log("[ChatPage] Reloading messages from backend...");
+      const updatedMessages = await api.getSessionMessages(sid);
+      setMessages(updatedMessages);
+      console.log("[ChatPage] Messages reloaded, count:", updatedMessages.length);
 
       // Reload sessions to get updated title from backend
       console.log("[ChatPage] Reloading sessions to fetch updated title...");
