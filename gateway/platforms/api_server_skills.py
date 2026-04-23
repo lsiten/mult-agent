@@ -15,6 +15,23 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class SecurityScanError(Exception):
+    """Raised when security scan blocks skill installation."""
+
+    def __init__(self, message: str, scan_result: Any, bundle_name: str):
+        super().__init__(message)
+        self.message = message
+        self.scan_result = scan_result
+        self.bundle_name = bundle_name
+        self.details = {
+            "verdict": scan_result.verdict,
+            "threats_detected": len(scan_result.threats),
+            "threats": scan_result.threats[:5],
+            "can_force_install": True,
+            "force_command": f"hermes skills install {bundle_name} --force"
+        }
+
 # Skill registry sources configuration
 SKILL_REGISTRIES = {
     "skillssh": {
@@ -251,7 +268,13 @@ class SkillsAPIHandlers:
 
                 skill_name = skill.get("name", "")
                 skill_path = skills_dir / skill_name
-                skill["installed"] = skill_path.exists() and skill_path.is_dir()
+                # Check if installed: directory exists AND contains skill definition files
+                is_installed = False
+                if skill_path.exists() and skill_path.is_dir():
+                    # Verify it contains skill.yaml or SKILL.md
+                    if (skill_path / "skill.yaml").exists() or (skill_path / "SKILL.md").exists():
+                        is_installed = True
+                skill["installed"] = is_installed
 
             return web.json_response({
                 "skills": skills,
@@ -569,7 +592,7 @@ class SkillsAPIHandlers:
 
             data = await parse_request_json(
                 request,
-                {"skill_id": str, "source": str, "category": str},
+                {"skill_id": str, "source": str, "source_id": str, "category": str},
                 required=["skill_id", "source"]
             )
 
@@ -577,30 +600,66 @@ class SkillsAPIHandlers:
                 return web.json_response({"error": "Invalid source, expected 'online'"}, status=400)
 
             skill_id = data["skill_id"]
+            source_id = data.get("source_id", "hermes")  # Which registry to use
             category = data.get("category", "")  # Optional category parameter
-            print(f"[DEBUG SkillInstallOnline] Received install request - skill_id: {skill_id}, category: '{category}'")
-            logger.info(f"[SkillInstallOnline] Received install request - skill_id: {skill_id}, category: '{category}'")
+            print(f"[DEBUG SkillInstallOnline] Received install request - skill_id: {skill_id}, source_id: {source_id}, category: '{category}'")
+            logger.info(f"[SkillInstallOnline] Received install request - skill_id: {skill_id}, source_id: {source_id}, category: '{category}'")
 
-            # Fetch registry to get download URL
-            registry = await self._fetch_registry()
-            if not registry:
-                return web.json_response({
-                    "error": "skill_registry_unavailable",
-                    "message": "Cannot install: registry unavailable"
-                }, status=503)
+            # For skills.sh, construct download URL directly from skill_id
+            # skill_id format: "owner/repo/skill-name" OR "skills-sh/owner/repo/skill-name"
+            source_config = SKILL_REGISTRIES.get(source_id, {})
+            api_type = source_config.get("api_type", "index")
 
-            # Find skill in registry
-            skill_info = None
-            for skill in registry.get("skills", []):
-                if skill.get("id") == skill_id or skill.get("name") == skill_id:
-                    skill_info = skill
-                    break
+            # Check if skill_id has skills-sh prefix (from Hermes registry indexing skills.sh)
+            actual_skill_id = skill_id
+            is_skillssh_format = False
+            if skill_id.startswith("skills-sh/"):
+                actual_skill_id = skill_id[len("skills-sh/"):]
+                is_skillssh_format = True
+                logger.info(f"[SkillInstallOnline] Detected skills-sh prefix, stripped to: {actual_skill_id}")
 
-            if not skill_info:
-                return web.json_response({
-                    "error": "skill_not_found",
-                    "message": f"Skill '{skill_id}' not found in registry"
-                }, status=404)
+            # Handle skills.sh format (either from skillssh source or Hermes registry with skills-sh prefix)
+            if (api_type == "search" and source_id == "skillssh") or is_skillssh_format:
+                # Extract GitHub repo from skill_id
+                # Format: "owner/repo/skill-name" -> repo: "owner/repo"
+                parts = actual_skill_id.split("/")
+                if len(parts) >= 2:
+                    github_repo = "/".join(parts[:2])  # owner/repo
+                    skill_name = parts[-1] if len(parts) >= 3 else parts[-1]
+
+                    skill_info = {
+                        "id": actual_skill_id,
+                        "name": skill_name,
+                        "source": github_repo,
+                        "download_url": f"https://github.com/{github_repo}/archive/refs/heads/main.zip"
+                    }
+                    logger.info(f"[SkillInstallOnline] Constructed download URL from skill_id: {skill_info['download_url']}")
+                else:
+                    return web.json_response({
+                        "error": "invalid_skill_id",
+                        "message": f"Invalid skill_id format: '{actual_skill_id}'"
+                    }, status=400)
+            elif not is_skillssh_format:
+                # For Hermes and other index-based registries, fetch from registry
+                registry = await self._fetch_registry(source_id)
+                if not registry:
+                    return web.json_response({
+                        "error": "skill_registry_unavailable",
+                        "message": "Cannot install: registry unavailable"
+                    }, status=503)
+
+                # Find skill in registry
+                skill_info = None
+                for skill in registry.get("skills", []):
+                    if skill.get("id") == skill_id or skill.get("name") == skill_id:
+                        skill_info = skill
+                        break
+
+                if not skill_info:
+                    return web.json_response({
+                        "error": "skill_not_found",
+                        "message": f"Skill '{skill_id}' not found in registry"
+                    }, status=404)
 
             # Create installation task
             task_manager = AsyncTaskManager()
@@ -646,6 +705,12 @@ class SkillsAPIHandlers:
                 download_url = skill_info.get("download_url")
                 expected_hash = skill_info.get("sha256")
 
+                # If no download_url but has repo field (skills.sh format from Hermes registry)
+                if not download_url and skill_info.get("repo"):
+                    github_repo = skill_info["repo"]
+                    download_url = f"https://github.com/{github_repo}/archive/refs/heads/main.zip"
+                    logger.info(f"[SkillInstallOnline] Constructed GitHub URL from repo field: {download_url}")
+
                 if not download_url:
                     raise ValueError("Skill download URL not found in registry")
 
@@ -655,7 +720,7 @@ class SkillsAPIHandlers:
                 temp_file = temp_dir / f"{uuid.uuid4()}.zip"
 
                 try:
-                    async with httpx.AsyncClient() as client:
+                    async with httpx.AsyncClient(follow_redirects=True) as client:
                         async with client.stream("GET", download_url, timeout=60) as response:
                             if response.status_code != 200:
                                 raise ValueError(f"Download failed: HTTP {response.status_code}")
@@ -854,10 +919,14 @@ class SkillsAPIHandlers:
             if not scan_result.is_safe:
                 if temp_zip_path:
                     temp_zip_path.unlink(missing_ok=True)
-                raise ValueError(
-                    f"Security scan failed: {scan_result.verdict}. "
-                    f"Found {len(scan_result.threats)} threats: {', '.join(scan_result.threats[:3])}"
+
+                # Create structured error with scan details
+                error = SecurityScanError(
+                    message=f"Security scan blocked installation: {scan_result.verdict}",
+                    scan_result=scan_result,
+                    bundle_name=bundle.name
                 )
+                raise error
 
             # Step 3: Check for conflicts
             await progress_callback(start_progress + 20, "Checking for conflicts...")

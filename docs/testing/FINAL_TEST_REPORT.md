@@ -65,7 +65,7 @@ npm run build
 ✓ hermes-agent-electron/  - 21 sessions, 960KB (正确)
 ✗ hermes-electron/        - 不存在
 ✓ hermes-electron/config/ - 0 sessions, 60KB (旧的错误路径)
-✓ ~/.hermes/              - 空数据库
+✓ $HERMES_HOME/              - 空数据库
 ```
 
 **结论:**

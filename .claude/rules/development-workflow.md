@@ -180,7 +180,7 @@ ANTHROPIC_API_KEY=sk-xxx          # Claude API
 ```bash
 MODEL_NAME=claude-sonnet-4-6      # 默认模型
 GATEWAY_PORT=8642                 # Gateway 端口
-HERMES_HOME=~/.hermes             # 数据目录
+# HERMES_HOME 由 Electron 自动设置，无需手动配置
 ```
 
 见 `.env.example` 完整列表

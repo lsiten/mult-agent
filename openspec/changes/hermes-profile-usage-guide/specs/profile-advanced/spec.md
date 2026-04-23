@@ -28,7 +28,7 @@
 
 #### Scenario: 导入 Profile 归档
 - **WHEN** 用户执行 `hermes profile import <archive>.tar.gz --name <new-name>`
-- **THEN** 系统解压归档到 ~/.hermes/profiles/<new-name>/
+- **THEN** 系统解压归档到 $HERMES_HOME/profiles/<new-name>/
 - **THEN** 若未指定 --name，则从归档顶层目录推断名称
 - **THEN** 导入后用户需手动配置 .env 添加 API keys
 
@@ -47,7 +47,7 @@
 #### Scenario: 拒绝导入为 Default
 - **WHEN** 用户尝试导入归档为 default Profile
 - **THEN** 系统拒绝操作并提示错误
-- **THEN** 引导用户使用命名 Profile 避免覆盖 ~/.hermes
+- **THEN** 引导用户使用命名 Profile 避免覆盖 $HERMES_HOME
 
 ### Requirement: Profile 重命名功能
 系统应当支持安全重命名 Profile，同步更新所有关联资源。
@@ -55,7 +55,7 @@
 #### Scenario: 重命名 Profile 目录
 - **WHEN** 用户执行 `hermes profile rename <old> <new>`
 - **THEN** 系统停止该 Profile 的 Gateway 进程
-- **THEN** 系统重命名目录：~/.hermes/profiles/<old>/ → <new>/
+- **THEN** 系统重命名目录：$HERMES_HOME/profiles/<old>/ → <new>/
 - **THEN** 系统更新快捷别名：~/.local/bin/<old> → <new>
 - **THEN** 若该 Profile 为 active，则更新 active_profile 文件
 

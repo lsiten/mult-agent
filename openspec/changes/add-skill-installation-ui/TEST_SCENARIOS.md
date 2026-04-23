@@ -134,13 +134,13 @@ zip -r test-skill.zip test-skill/
 2. Try to install `test-skill` again (same ZIP)
 3. Observe logs (backend):
    - ✓ "Backing up existing skill..." message
-   - ✓ Old skill moved to `~/.hermes/skills/.hub/quarantine/test-skill_backup_<timestamp>`
+   - ✓ Old skill moved to `$HERMES_HOME/skills/.hub/quarantine/test-skill_backup_<timestamp>`
 4. Observe UI:
    - ✓ Installation completes normally
    - ✓ New version replaces old
 5. Check quarantine directory:
    ```bash
-   ls ~/.hermes/skills/.hub/quarantine/
+   ls $HERMES_HOME/skills/.hub/quarantine/
    # Should see: test-skill_backup_<timestamp>
    ```
 
@@ -331,15 +331,15 @@ After testing, verify:
 - [ ] No console errors in browser DevTools
 - [ ] No Python exceptions in Gateway logs
 - [ ] SQLite databases updated correctly:
-  - `~/.hermes/.skill_cache/registry_cache.db` (registry)
-  - `~/.hermes/.skill_cache/skill_installer.db` (tasks)
-  - `~/.hermes/skills/.hub/lock.json` (installed skills)
+  - `$HERMES_HOME/.skill_cache/registry_cache.db` (registry)
+  - `$HERMES_HOME/.skill_cache/skill_installer.db` (tasks)
+  - `$HERMES_HOME/skills/.hub/lock.json` (installed skills)
 - [ ] Temporary files cleaned up:
   - `/tmp/hermes_skill_uploads/` empty or minimal
   - `/tmp/hermes_skill_downloads/` empty or minimal
-- [ ] Skills appear in `~/.hermes/skills/` directory
+- [ ] Skills appear in `$HERMES_HOME/skills/` directory
 - [ ] Quarantine directory contains backups:
-  - `~/.hermes/skills/.hub/quarantine/`
+  - `$HERMES_HOME/skills/.hub/quarantine/`
 
 ---
 
@@ -352,7 +352,7 @@ After testing, verify:
 
 ### Skills not appearing after install
 - Check Gateway logs for errors
-- Verify skill in `~/.hermes/skills/` directory
+- Verify skill in `$HERMES_HOME/skills/` directory
 - Try manual refresh (reload page)
 
 ### Progress not updating

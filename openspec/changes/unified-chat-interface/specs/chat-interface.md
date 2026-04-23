@@ -681,7 +681,7 @@ const generateThumbnail = async (file: File): Promise<string> => {
 
 **存储结构**:
 ```
-~/.hermes/data/attachments/{session_id}/
+$HERMES_HOME/data/attachments/{session_id}/
 ├── images/
 │   ├── {message_id}_original.png
 │   └── {message_id}_thumb.webp

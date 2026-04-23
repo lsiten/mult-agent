@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   Package,
   Search,
@@ -33,7 +33,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { SkillInstallModal } from "@/components/skills/SkillInstallModal";
-// import { InstallationProgressList } from "@/components/skills/InstallationProgress";
+import { InstallationProgressList } from "@/components/skills/InstallationProgress";
 import { useSkillInstallStore, type TaskState, type TaskStatus } from "@/stores/useSkillInstallStore";
 
 /* ------------------------------------------------------------------ */
@@ -105,18 +105,21 @@ export default function SkillsPage() {
 
   // Fetch skills data
   const fetchSkills = useCallback(async () => {
+    console.log('[SkillsPage] fetchSkills called');
     try {
       const [s, tsets, status] = await Promise.all([
         api.getSkills(),
         api.getToolsets(),
         api.getStatus()
       ]);
+      console.log('[SkillsPage] Fetched skills:', s.length, 'toolsets:', tsets.length);
       setSkills(s);
       setToolsets(tsets);
       if (status.hermes_home) {
         setSkillsPath(`${status.hermes_home}/skills/`);
       }
     } catch (err) {
+      console.error('[SkillsPage] Failed to fetch skills:', err);
       showToast(t.common.loading, "error");
     } finally {
       setLoading(false);
@@ -216,22 +219,33 @@ export default function SkillsPage() {
     };
   }, [tasks]);
 
-  useEffect(() => {
-    const activeTasks = Object.values(tasks);
+  // Track previous task IDs to detect new completions
+  const prevCompletedTaskIds = useRef<Set<string>>(new Set());
 
-    // Check if any task just completed
-    const hasCompletedTasks = activeTasks.some(
-      (task) => task.status === 'completed'
+  useEffect(() => {
+    const currentTasks = Object.values(tasks);
+    const currentCompletedIds = new Set(
+      currentTasks.filter((task) => task.status === 'completed').map((task) => task.task_id)
     );
 
-    if (hasCompletedTasks) {
-      // Refresh skills list after a short delay
-      const timer = setTimeout(() => {
-        fetchSkills();
-      }, 1000);
-      return () => clearTimeout(timer);
+    // Find newly completed tasks (not in previous set)
+    const newlyCompleted = Array.from(currentCompletedIds).filter(
+      (id) => !prevCompletedTaskIds.current.has(id)
+    );
+
+    if (newlyCompleted.length > 0) {
+      console.log('[SkillsPage] Detected newly completed tasks:', newlyCompleted);
+      // Update ref immediately to prevent duplicate refreshes
+      prevCompletedTaskIds.current = currentCompletedIds;
+
+      // Refresh skills list immediately
+      console.log('[SkillsPage] Refreshing skills list immediately');
+      fetchSkills();
     }
-  }, [tasks, fetchSkills]);
+
+    // Update ref even if no new completions
+    prevCompletedTaskIds.current = currentCompletedIds;
+  }, [tasks]); // fetchSkills is stable via useCallback, no need in deps
 
   /* ---- Toggle skill ---- */
   const handleToggleSkill = async (skill: SkillInfo) => {
@@ -472,6 +486,7 @@ export default function SkillsPage() {
       <SkillInstallModal
         open={installModalOpen}
         onOpenChange={setInstallModalOpen}
+        onRefresh={fetchSkills}
       />
 
       {/* Installation progress is now shown inline on skill cards */}
@@ -704,6 +719,9 @@ export default function SkillsPage() {
           )}
         </div>
       </div>
+
+      {/* Installation Progress Notifications */}
+      <InstallationProgressList />
     </div>
   );
 }

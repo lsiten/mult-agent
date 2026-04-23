@@ -97,14 +97,21 @@ def load_hermes_dotenv(
     """Load Hermes environment files with user config taking precedence.
 
     Behavior:
-    - `~/.hermes/.env` overrides stale shell-exported values when present.
+    - `$HERMES_HOME/.env` overrides stale shell-exported values when present.
     - project `.env` acts as a dev fallback and only fills missing values when
       the user env exists.
     - if no user env exists, the project `.env` also overrides stale shell vars.
     """
     loaded: list[Path] = []
 
-    home_path = Path(hermes_home or os.getenv("HERMES_HOME", Path.home() / ".hermes"))
+    # Use hermes_constants if available, otherwise require HERMES_HOME to be set
+    if hermes_home:
+        home_path = Path(hermes_home)
+    else:
+        env_home = os.getenv("HERMES_HOME")
+        if not env_home:
+            raise RuntimeError("HERMES_HOME environment variable is not set")
+        home_path = Path(env_home)
     user_env = home_path / ".env"
     project_env_path = Path(project_env) if project_env else None
 

@@ -74,7 +74,7 @@ Phase 3 (高级功能)：       ████░░░░░░░░░░░░
 #### 图片上传
 - [x] **图片选择** - 支持 PNG/JPEG/GIF/WebP
 - [x] **缩略图显示** - AttachmentPreview 组件
-- [x] **后端存储** - ~/.hermes/data/attachments/
+- [x] **后端存储** - $HERMES_HOME/data/attachments/
 
 #### 语音输入
 - [x] **MediaRecorder API** - 音频录制
@@ -257,7 +257,7 @@ providers:
 
 ### 4. 文件存储策略
 
-**位置**: `~/.hermes/data/attachments/{session_id}/`
+**位置**: `$HERMES_HOME/data/attachments/{session_id}/`
 
 **理由**:
 - ✅ 简单直接，无需额外服务

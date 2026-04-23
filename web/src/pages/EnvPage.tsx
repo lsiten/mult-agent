@@ -360,7 +360,7 @@ export default function EnvPage() {
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(true); // Show all providers by default
-  const [envPath, setEnvPath] = useState<string>("~/.hermes/.env"); // Default fallback
+  const [envPath, setEnvPath] = useState<string>(""); // Dynamic path from API
   const { toast, showToast } = useToast();
   const { t } = useI18n();
 

@@ -43,10 +43,10 @@
 每个 Profile 通过独立的 **HERMES_HOME** 目录实现完全隔离：
 
 ```
-~/.hermes/                    # default profile（默认）
-~/.hermes/profiles/work/      # work profile
-~/.hermes/profiles/personal/  # personal profile
-~/.hermes/profiles/dev/       # dev profile
+$HERMES_HOME/                    # default profile（默认）
+$HERMES_HOME/profiles/work/      # work profile
+$HERMES_HOME/profiles/personal/  # personal profile
+$HERMES_HOME/profiles/dev/       # dev profile
 ```
 
 **关键隔离机制**：
@@ -107,7 +107,7 @@ Electron 桌面应用使用固定的数据目录：
 └── logs/
 ```
 
-该目录与 CLI 模式的 `~/.hermes/` **完全独立**，两者互不干扰。
+该目录与 CLI 模式的 `$HERMES_HOME/` **完全独立**，两者互不干扰。
 
 ### 为什么 Electron 不支持 Profile？
 
@@ -133,7 +133,7 @@ hermes -p personal gateway start
 
 | 模式 | HERMES_HOME 路径 | Profile 支持 |
 |------|-----------------|-------------|
-| **CLI** | `~/.hermes/` (可通过 Profile 切换) | ✅ 完整支持 |
+| **CLI** | `$HERMES_HOME/` (可通过 Profile 切换) | ✅ 完整支持 |
 | **Electron** | `~/Library/Application Support/hermes-agent-electron/` (固定) | ❌ 暂不支持 |
 | **Docker** | 自定义路径（环境变量配置） | ✅ 支持单 Profile |
 
@@ -338,7 +338,7 @@ default Profile 受保护，无法删除：
 
 ```bash
 $ hermes profile delete default
-Error: Cannot delete the default profile (~/.hermes).
+Error: Cannot delete the default profile ($HERMES_HOME).
 To remove everything, use: hermes uninstall
 ```
 
@@ -392,7 +392,7 @@ $ hermes profile create work --clone
 
 $ work chat
 > /personality professional
-> 修改 ~/.hermes/profiles/work/SOUL.md
+> 修改 $HERMES_HOME/profiles/work/SOUL.md
   （设定为专业、简洁的工作助手）
 ```
 
@@ -404,7 +404,7 @@ $ hermes profile create personal --clone
 
 $ personal chat
 > /personality friendly
-> 修改 ~/.hermes/profiles/personal/SOUL.md
+> 修改 $HERMES_HOME/profiles/personal/SOUL.md
   （设定为友好、幽默的个人助手）
 ```
 
@@ -453,7 +453,7 @@ $ personal chat
 
 ```bash
 $ hermes profile create telegram --clone
-$ cd ~/.hermes/profiles/telegram
+$ cd $HERMES_HOME/profiles/telegram
 $ vim .env
 TELEGRAM_TOKEN=your_telegram_token
 TELEGRAM_ALLOWED_USERS=123456789
@@ -473,7 +473,7 @@ $ hermes -p telegram gateway start
 
 ```bash
 $ hermes profile create discord --clone
-$ cd ~/.hermes/profiles/discord
+$ cd $HERMES_HOME/profiles/discord
 $ vim .env
 DISCORD_TOKEN=your_discord_token
 
@@ -492,7 +492,7 @@ $ hermes -p discord gateway start
 
 ```bash
 $ hermes profile create slack --clone
-$ cd ~/.hermes/profiles/slack
+$ cd $HERMES_HOME/profiles/slack
 $ vim .env
 SLACK_BOT_TOKEN=xoxb-your-token
 SLACK_APP_TOKEN=xapp-your-token
@@ -540,7 +540,7 @@ $ hermes profile list
 
 ```bash
 $ hermes profile create dev --clone
-$ cd ~/.hermes/profiles/dev
+$ cd $HERMES_HOME/profiles/dev
 $ vim .env
 # 使用测试 API keys
 ANTHROPIC_API_KEY=sk-test-xxx
@@ -561,7 +561,7 @@ $ dev chat
 > 验证配置更改
 > 调试 Gateway 集成
 
-$ tail -f ~/.hermes/profiles/dev/logs/gateway.log
+$ tail -f $HERMES_HOME/profiles/dev/logs/gateway.log
 # 查看详细日志
 ```
 
@@ -573,7 +573,7 @@ $ tail -f ~/.hermes/profiles/dev/logs/gateway.log
 $ hermes profile create staging --clone-all --from dev
 ✓ Full clone from 'dev' completed
 
-$ cd ~/.hermes/profiles/staging
+$ cd $HERMES_HOME/profiles/staging
 $ vim .env
 # 使用接近生产的配置
 ANTHROPIC_API_KEY=sk-staging-xxx
@@ -593,7 +593,7 @@ $ hermes profile export staging -o staging.tar.gz
 $ hermes profile import staging.tar.gz --name production
 ✓ Imported profile 'production'
 
-$ cd ~/.hermes/profiles/production
+$ cd $HERMES_HOME/profiles/production
 $ vim .env
 # 配置生产 API keys
 ANTHROPIC_API_KEY=sk-prod-xxx
@@ -622,7 +622,7 @@ $ hermes -p production gateway start
 ```bash
 # GPT-4 测试
 $ hermes profile create test-gpt4 --clone
-$ cd ~/.hermes/profiles/test-gpt4
+$ cd $HERMES_HOME/profiles/test-gpt4
 $ vim config.yaml
 model:
   default: gpt-4-turbo
@@ -630,7 +630,7 @@ model:
 
 # Claude Sonnet 测试
 $ hermes profile create test-sonnet --clone
-$ cd ~/.hermes/profiles/test-sonnet
+$ cd $HERMES_HOME/profiles/test-sonnet
 $ vim config.yaml
 model:
   default: sonnet-4-6
@@ -638,7 +638,7 @@ model:
 
 # Claude Haiku 测试（低成本）
 $ hermes profile create test-haiku --clone
-$ cd ~/.hermes/profiles/test-haiku
+$ cd $HERMES_HOME/profiles/test-haiku
 $ vim config.yaml
 model:
   default: haiku-4-5
@@ -673,7 +673,7 @@ $ test-haiku chat
 
 ```bash
 # 根据测试结果更新生产配置
-$ vim ~/.hermes/config.yaml
+$ vim $HERMES_HOME/config.yaml
 model:
   default: sonnet-4-6
   provider: anthropic
@@ -700,7 +700,7 @@ model:
 $ hermes profile create skill-dev --clone-all
 ✓ Full clone from 'default' completed
 
-$ cd ~/.hermes/profiles/skill-dev/skills
+$ cd $HERMES_HOME/profiles/skill-dev/skills
 $ mkdir my-new-skill
 $ vim my-new-skill/SKILL.md
 ```
@@ -722,7 +722,7 @@ Testing new skill...
 
 ```bash
 # 修改技能代码
-$ vim ~/.hermes/profiles/skill-dev/skills/my-new-skill/skill.py
+$ vim $HERMES_HOME/profiles/skill-dev/skills/my-new-skill/skill.py
 
 # 重新加载
 $ skill-dev chat
@@ -738,8 +738,8 @@ $ skill-dev chat
 验证通过后复制到生产 Profile：
 
 ```bash
-$ cp -r ~/.hermes/profiles/skill-dev/skills/my-new-skill \
-        ~/.hermes/skills/
+$ cp -r $HERMES_HOME/profiles/skill-dev/skills/my-new-skill \
+        $HERMES_HOME/skills/
 
 $ hermes chat
 > /skills
@@ -767,7 +767,7 @@ Available skills:
 
 ```bash
 $ hermes profile create team-template --clone
-$ cd ~/.hermes/profiles/team-template
+$ cd $HERMES_HOME/profiles/team-template
 
 # 配置团队统一设置
 $ vim config.yaml
@@ -809,7 +809,7 @@ $ hermes profile import team-template.tar.gz --name my-team
 ✓ Imported profile 'my-team'
 
 # 配置个人 API keys
-$ cd ~/.hermes/profiles/my-team
+$ cd $HERMES_HOME/profiles/my-team
 $ vim .env
 ANTHROPIC_API_KEY=sk-user-xxx
 JIRA_API_TOKEN=xxx
@@ -822,7 +822,7 @@ $ my-team chat
 
 ```bash
 # 团队负责人更新配置
-$ cd ~/.hermes/profiles/team-template
+$ cd $HERMES_HOME/profiles/team-template
 $ vim config.yaml  # 添加新配置
 $ hermes -p team-template chat
 > /skills install new-team-skill
@@ -833,7 +833,7 @@ $ hermes profile export team-template -o team-template-v2.tar.gz
 # 团队成员更新
 $ hermes profile delete my-team --yes
 $ hermes profile import team-template-v2.tar.gz --name my-team
-$ cd ~/.hermes/profiles/my-team
+$ cd $HERMES_HOME/profiles/my-team
 $ vim .env  # 重新配置 API keys
 ```
 
@@ -961,7 +961,7 @@ $ scp work.tar.gz user@new-machine:~/
 $ hermes profile import work.tar.gz
 ✓ Imported profile 'work'
 
-$ cd ~/.hermes/profiles/work
+$ cd $HERMES_HOME/profiles/work
 $ vim .env
 ANTHROPIC_API_KEY=sk-xxx  # 重新配置 API keys
 
@@ -986,7 +986,7 @@ Import aborted.
 
 # 拒绝导入为 default
 $ hermes profile import backup.tar.gz --name default
-Error: Cannot import as 'default' — that is the built-in root profile (~/.hermes).
+Error: Cannot import as 'default' — that is the built-in root profile ($HERMES_HOME).
 Specify a different name: hermes profile import <archive> --name <name>
 ```
 
@@ -1008,7 +1008,7 @@ Profile renamed successfully.
 
 重命名会同步更新：
 
-1. **Profile 目录**：`~/.hermes/profiles/old-name/` → `new-name/`
+1. **Profile 目录**：`$HERMES_HOME/profiles/old-name/` → `new-name/`
 2. **快捷别名**：`~/.local/bin/old-name` → `new-name`
 3. **Active Profile 设置**：若 `old-name` 是当前 active，更新为 `new-name`
 4. **systemd/launchd 服务**：停止旧服务（需手动重新注册）
@@ -1071,7 +1071,7 @@ $ hermes profile create full-clone --clone-all --from source-profile
 
 ```bash
 # 修改新 Profile 不影响源 Profile
-$ vim ~/.hermes/profiles/new-profile/config.yaml
+$ vim $HERMES_HOME/profiles/new-profile/config.yaml
 # source-profile 不受影响
 
 # 两个 Profile 可同时运行
@@ -1085,10 +1085,10 @@ $ hermes -p new-profile gateway start     # 端口 8643
 
 ```bash
 # 生成补全脚本
-$ hermes completion bash > ~/.hermes-completion.bash
+$ hermes completion bash > $HERMES_HOME-completion.bash
 
 # 添加到 ~/.bashrc
-$ echo 'source ~/.hermes-completion.bash' >> ~/.bashrc
+$ echo 'source $HERMES_HOME-completion.bash' >> ~/.bashrc
 $ source ~/.bashrc
 
 # 测试补全
@@ -1103,10 +1103,10 @@ work   personal   dev
 
 ```bash
 # 生成补全脚本
-$ hermes completion zsh > ~/.hermes-completion.zsh
+$ hermes completion zsh > $HERMES_HOME-completion.zsh
 
 # 添加到 ~/.zshrc
-$ echo 'source ~/.hermes-completion.zsh' >> ~/.zshrc
+$ echo 'source $HERMES_HOME-completion.zsh' >> ~/.zshrc
 $ source ~/.zshrc
 
 # 测试补全
@@ -1116,7 +1116,7 @@ list     use     create   delete   show   rename   export   import
 
 #### 动态补全
 
-补全脚本自动从 `~/.hermes/profiles/` 读取可用 Profile，无需手动更新。
+补全脚本自动从 `$HERMES_HOME/profiles/` 读取可用 Profile，无需手动更新。
 
 ---
 
@@ -1272,7 +1272,7 @@ $ hermes -p work gateway start
 **方案 2：配置不同端口**：
 
 ```bash
-$ vim ~/.hermes/profiles/work/config.yaml
+$ vim $HERMES_HOME/profiles/work/config.yaml
 gateway:
   port: 8643  # 改为不同端口
 
@@ -1284,7 +1284,7 @@ $ hermes -p work gateway start
 
 ```bash
 # 如果 gateway.pid 存在但进程已死
-$ rm ~/.hermes/profiles/work/gateway.pid
+$ rm $HERMES_HOME/profiles/work/gateway.pid
 $ hermes -p work gateway start
 ✓ Gateway started
 ```
@@ -1319,7 +1319,7 @@ $ hermes -p work gateway start
 **方案 2：配置不同 Token**：
 
 ```bash
-$ vim ~/.hermes/profiles/work/.env
+$ vim $HERMES_HOME/profiles/work/.env
 TELEGRAM_TOKEN=different_telegram_token
 
 $ hermes -p work gateway start
@@ -1330,8 +1330,8 @@ $ hermes -p work gateway start
 
 ```bash
 # 仅在确认占用 Profile 的 Gateway 已停止时执行
-$ rm ~/.hermes/auth.lock  # default profile
-$ rm ~/.hermes/profiles/work/auth.lock  # work profile
+$ rm $HERMES_HOME/auth.lock  # default profile
+$ rm $HERMES_HOME/profiles/work/auth.lock  # work profile
 
 $ hermes -p work gateway start
 ✓ Gateway started
@@ -1340,7 +1340,7 @@ $ hermes -p work gateway start
 **查看 Token 占用情况**：
 
 ```bash
-$ cat ~/.hermes/auth.lock
+$ cat $HERMES_HOME/auth.lock
 {
   "telegram": "bot123456:ABC...",
   "locked_by": "default",
@@ -1451,7 +1451,7 @@ Error: database disk image is malformed
 
 ```bash
 # 1. 备份损坏的数据库
-$ cd ~/.hermes
+$ cd $HERMES_HOME
 $ cp state.db state.db.backup-$(date +%Y%m%d)
 
 # 2. 删除损坏的数据库
@@ -1476,10 +1476,10 @@ Error: YAML syntax error in config.yaml at line 42
 
 ```bash
 # 1. 备份当前配置
-$ cp ~/.hermes/config.yaml ~/.hermes/config.yaml.backup
+$ cp $HERMES_HOME/config.yaml $HERMES_HOME/config.yaml.backup
 
 # 2. 修复语法错误
-$ vim ~/.hermes/config.yaml
+$ vim $HERMES_HOME/config.yaml
 # 或从其他 Profile 复制正确配置
 
 # 3. 验证配置
@@ -1493,20 +1493,20 @@ $ hermes config show
 
 ```bash
 $ hermes chat
-Warning: Failed to load skill 'broken-skill' at ~/.hermes/skills/broken-skill/
+Warning: Failed to load skill 'broken-skill' at $HERMES_HOME/skills/broken-skill/
 ```
 
 **解决方案**：
 
 ```bash
 # 1. 查看详细错误日志
-$ tail -f ~/.hermes/logs/gateway.log
+$ tail -f $HERMES_HOME/logs/gateway.log
 
 # 2. 修复技能文件
-$ vim ~/.hermes/skills/broken-skill/skill.py
+$ vim $HERMES_HOME/skills/broken-skill/skill.py
 
 # 3. 或删除损坏的技能
-$ rm -rf ~/.hermes/skills/broken-skill
+$ rm -rf $HERMES_HOME/skills/broken-skill
 
 # 4. 重新加载技能
 $ hermes chat
@@ -1519,32 +1519,32 @@ $ hermes chat
 #### 检查 Profile 占用
 
 ```bash
-$ du -sh ~/.hermes/profiles/*/
-15G   ~/.hermes/profiles/work/
-8G    ~/.hermes/profiles/personal/
-3G    ~/.hermes/profiles/dev/
+$ du -sh $HERMES_HOME/profiles/*/
+15G   $HERMES_HOME/profiles/work/
+8G    $HERMES_HOME/profiles/personal/
+3G    $HERMES_HOME/profiles/dev/
 ```
 
 #### 清理日志
 
 ```bash
-$ rm ~/.hermes/profiles/*/logs/*.log
-$ rm ~/.hermes/logs/*.log
+$ rm $HERMES_HOME/profiles/*/logs/*.log
+$ rm $HERMES_HOME/logs/*.log
 ```
 
 #### 清理旧会话
 
 ```bash
 # 删除 30 天前的会话
-$ find ~/.hermes/profiles/*/sessions/ -name "*.json" -mtime +30 -delete
+$ find $HERMES_HOME/profiles/*/sessions/ -name "*.json" -mtime +30 -delete
 ```
 
 #### 清理缓存
 
 ```bash
-$ rm -rf ~/.hermes/image_cache/*
-$ rm -rf ~/.hermes/audio_cache/*
-$ rm -rf ~/.hermes/profiles/*/checkpoints/*
+$ rm -rf $HERMES_HOME/image_cache/*
+$ rm -rf $HERMES_HOME/audio_cache/*
+$ rm -rf $HERMES_HOME/profiles/*/checkpoints/*
 ```
 
 #### 删除不用的 Profile
@@ -1593,7 +1593,7 @@ $ hermes migrate
 $ hermes version
 Hermes Agent v0.7.0
 
-$ cat ~/.hermes/hermes-agent/docs/releases/RELEASE_v0.7.0.md
+$ cat $HERMES_HOME/hermes-agent/docs/releases/RELEASE_v0.7.0.md
 # 查看 breaking changes
 ```
 
@@ -1603,19 +1603,19 @@ $ cat ~/.hermes/hermes-agent/docs/releases/RELEASE_v0.7.0.md
 
 ```bash
 # 实时查看日志
-$ tail -f ~/.hermes/profiles/work/logs/gateway.log
+$ tail -f $HERMES_HOME/profiles/work/logs/gateway.log
 
 # 查看最近 100 行
-$ tail -n 100 ~/.hermes/profiles/work/logs/gateway.log
+$ tail -n 100 $HERMES_HOME/profiles/work/logs/gateway.log
 
 # 搜索错误
-$ grep -i error ~/.hermes/profiles/work/logs/gateway.log
+$ grep -i error $HERMES_HOME/profiles/work/logs/gateway.log
 ```
 
 #### 启用详细日志
 
 ```bash
-$ vim ~/.hermes/profiles/work/config.yaml
+$ vim $HERMES_HOME/profiles/work/config.yaml
 log_level: DEBUG  # INFO → DEBUG
 
 $ hermes -p work gateway restart
@@ -1684,7 +1684,7 @@ $ crontab -e
 
 ```bash
 # 每月清理 30 天前的日志
-$ find ~/.hermes/profiles/*/logs/ -name "*.log" -mtime +30 -delete
+$ find $HERMES_HOME/profiles/*/logs/ -name "*.log" -mtime +30 -delete
 ```
 
 **删除不用的 Profile**：
@@ -1700,8 +1700,8 @@ $ hermes profile delete unused-profile --yes
 
 ```bash
 # 每季度清理一次缓存
-$ rm -rf ~/.hermes/image_cache/*
-$ rm -rf ~/.hermes/audio_cache/*
+$ rm -rf $HERMES_HOME/image_cache/*
+$ rm -rf $HERMES_HOME/audio_cache/*
 ```
 
 ### 7.4 安全注意事项
@@ -1710,7 +1710,7 @@ $ rm -rf ~/.hermes/audio_cache/*
 
 ```bash
 # 确保 .env 文件权限正确
-$ chmod 600 ~/.hermes/profiles/*/.env
+$ chmod 600 $HERMES_HOME/profiles/*/.env
 
 # 导出 Profile 时 .env 自动排除
 $ hermes profile export work -o work.tar.gz
@@ -1719,7 +1719,7 @@ $ hermes profile export work -o work.tar.gz
 
 **不要共享包含凭据的 Profile**：
 
-- ❌ 不要直接分享 `~/.hermes/profiles/work/` 目录
+- ❌ 不要直接分享 `$HERMES_HOME/profiles/work/` 目录
 - ✅ 使用 `hermes profile export` 导出（自动排除凭据）
 - ✅ 接收方手动配置 .env
 
@@ -1727,9 +1727,9 @@ $ hermes profile export work -o work.tar.gz
 
 ```bash
 # 不同 Profile 使用不同 token
-~/.hermes/.env                  → TELEGRAM_TOKEN=bot_default
-~/.hermes/profiles/work/.env    → TELEGRAM_TOKEN=bot_work
-~/.hermes/profiles/personal/.env → TELEGRAM_TOKEN=bot_personal
+$HERMES_HOME/.env                  → TELEGRAM_TOKEN=bot_default
+$HERMES_HOME/profiles/work/.env    → TELEGRAM_TOKEN=bot_work
+$HERMES_HOME/profiles/personal/.env → TELEGRAM_TOKEN=bot_personal
 ```
 
 ### 7.5 性能优化
@@ -1755,7 +1755,7 @@ log_level: DEBUG
 
 ```bash
 # 优化数据库（减少碎片）
-$ sqlite3 ~/.hermes/profiles/work/state.db "VACUUM;"
+$ sqlite3 $HERMES_HOME/profiles/work/state.db "VACUUM;"
 ```
 
 ---
@@ -1786,8 +1786,8 @@ $ sqlite3 ~/.hermes/profiles/work/state.db "VACUUM;"
 
 | 目录/文件 | 用途 |
 |----------|------|
-| `~/.hermes/` | Default Profile |
-| `~/.hermes/profiles/<name>/` | 命名 Profile |
+| `$HERMES_HOME/` | Default Profile |
+| `$HERMES_HOME/profiles/<name>/` | 命名 Profile |
 | `config.yaml` | 配置文件 |
 | `.env` | API keys（不导出） |
 | `SOUL.md` | Agent 人格 |
@@ -1831,17 +1831,17 @@ $ hermes profile export production -o backup.tar.gz
 
 ```bash
 $ hermes profile import backup.tar.gz --name production
-$ vim ~/.hermes/profiles/production/.env  # 重新配置 API keys
+$ vim $HERMES_HOME/profiles/production/.env  # 重新配置 API keys
 ```
 
 **Q5: Profile 占用太多磁盘空间怎么办？**
 
 ```bash
 # 清理日志
-$ rm ~/.hermes/profiles/*/logs/*.log
+$ rm $HERMES_HOME/profiles/*/logs/*.log
 
 # 清理旧会话
-$ find ~/.hermes/profiles/*/sessions/ -mtime +30 -delete
+$ find $HERMES_HOME/profiles/*/sessions/ -mtime +30 -delete
 
 # 删除不用的 Profile
 $ hermes profile delete unused --yes
@@ -1851,7 +1851,7 @@ $ hermes profile delete unused --yes
 
 ```bash
 # 方案 1：配置不同端口
-$ vim ~/.hermes/profiles/work/config.yaml
+$ vim $HERMES_HOME/profiles/work/config.yaml
 gateway:
   port: 8643
 
@@ -1862,7 +1862,7 @@ $ hermes gateway stop
 **Q7: 如何查看 Gateway 日志？**
 
 ```bash
-$ tail -f ~/.hermes/profiles/work/logs/gateway.log
+$ tail -f $HERMES_HOME/profiles/work/logs/gateway.log
 ```
 
 **Q8: 快捷别名不可用怎么办？**
@@ -1881,7 +1881,7 @@ $ hermes profile export team-template -o team.tar.gz
 
 # 团队成员导入
 $ hermes profile import team.tar.gz --name my-team
-$ vim ~/.hermes/profiles/my-team/.env  # 配置个人 API keys
+$ vim $HERMES_HOME/profiles/my-team/.env  # 配置个人 API keys
 ```
 
 **Q10: 如何临时测试危险操作？**

@@ -2,10 +2,9 @@
 Loader for G0DM0D3 scripts. Handles the exec-scoping issues.
 
 Usage in execute_code:
-    exec(open(os.path.expanduser(
-        os.path.join(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes")), "skills/red-teaming/godmode/scripts/load_godmode.py")
-    )).read())
-    
+    # HERMES_HOME must be set (Electron mode only)
+    exec(open(os.path.join(os.environ["HERMES_HOME"], "skills/red-teaming/godmode/scripts/load_godmode.py")).read())
+
     # Now all functions are available:
     # - auto_jailbreak(), undo_jailbreak()
     # - race_models(), race_godmode_classic()
@@ -17,7 +16,11 @@ Usage in execute_code:
 import os, sys
 from pathlib import Path
 
-_gm_scripts_dir = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes")) / "skills" / "red-teaming" / "godmode" / "scripts"
+# HERMES_HOME must be set (no fallback)
+if not os.getenv("HERMES_HOME"):
+    raise RuntimeError("HERMES_HOME environment variable is not set. This must run through Electron.")
+
+_gm_scripts_dir = Path(os.environ["HERMES_HOME"]) / "skills" / "red-teaming" / "godmode" / "scripts"
 
 _gm_old_argv = sys.argv
 sys.argv = ["_godmode_loader"]

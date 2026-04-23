@@ -5,7 +5,7 @@
 
 #### Scenario: 创建基础 Profile
 - **WHEN** 用户执行 `hermes profile create <name>` 命令
-- **THEN** 系统在 `~/.hermes/profiles/<name>/` 创建新目录
+- **THEN** 系统在 `$HERMES_HOME/profiles/<name>/` 创建新目录
 - **THEN** 系统初始化所有必需子目录（memories、sessions、skills、skins、logs、plans、workspace、cron、home）
 - **THEN** 系统生成默认 SOUL.md 文件
 
@@ -39,7 +39,7 @@
 
 #### Scenario: 设置默认 Profile
 - **WHEN** 用户执行 `hermes profile use <name>` 命令
-- **THEN** 系统将 <name> 写入 `~/.hermes/active_profile` 文件
+- **THEN** 系统将 <name> 写入 `$HERMES_HOME/active_profile` 文件
 - **THEN** 后续所有 `hermes` 命令默认使用该 Profile
 
 #### Scenario: 通过快捷别名使用 Profile

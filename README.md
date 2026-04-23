@@ -147,7 +147,7 @@ EventSource → React 状态更新 → UI 渲染
 **三层防护**：
 
 1. **环境变量** - `HERMES_ELECTRON_MODE=1`（标识 Electron 模式）
-2. **Gateway Token** - 32 字节随机 token（存储在 `~/.hermes/.gateway-token`）
+2. **Gateway Token** - 32 字节随机 token（存储在 `$HERMES_HOME/.gateway-token`）
 3. **父进程验证** - 确保 Gateway 只能从 Electron 启动
 
 **Token 传递**：

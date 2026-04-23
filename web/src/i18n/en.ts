@@ -12,6 +12,7 @@ export const en: Translations = {
     search: "Search...",
     loading: "Loading...",
     create: "Create",
+    details: "Details",
     creating: "Creating...",
     set: "Set",
     replace: "Replace",
@@ -100,6 +101,7 @@ export const en: Translations = {
     lastUpdate: "Last update",
     platformError: "error",
     platformDisconnected: "disconnected",
+    failedToLoad: "Failed to load status",
   },
 
   sessions: {
@@ -238,6 +240,8 @@ export const en: Translations = {
         failed: "Installation failed",
         cancelled: "Installation cancelled",
       },
+      forceInstall: "Copy Force Install Command",
+      forceCopied: "Command copied to clipboard! Run it in terminal to bypass security scan.",
       errors: {
         downloadFailed: "Failed to download skill",
         validationFailed: "Skill validation failed",
@@ -249,7 +253,7 @@ export const en: Translations = {
   },
 
   config: {
-    configPath: "~/.hermes/config.yaml",
+    configPath: "Configuration File",
     exportConfig: "Export config as JSON",
     importConfig: "Import config from JSON",
     resetDefaults: "Reset to defaults",

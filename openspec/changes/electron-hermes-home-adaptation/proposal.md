@@ -1,6 +1,6 @@
 ## Why
 
-当前 Hermes Agent 代码库中存在多处硬编码 `~/.hermes` 路径，这些路径在 Electron 桌面应用模式下无法正确工作。Electron 使用 `~/Library/Application Support/hermes-agent-electron/` 作为数据目录，但部分代码仍然硬编码使用 `~/.hermes/`，导致数据存储位置不一致，可能造成配置丢失、功能异常等问题。
+当前 Hermes Agent 代码库中存在多处硬编码 `$HERMES_HOME` 路径，这些路径在 Electron 桌面应用模式下无法正确工作。Electron 使用 `~/Library/Application Support/hermes-agent-electron/` 作为数据目录，但部分代码仍然硬编码使用 `$HERMES_HOME/`，导致数据存储位置不一致，可能造成配置丢失、功能异常等问题。
 
 本次适配确保所有代码统一使用 `get_hermes_home()` 函数获取路径，完整支持 Electron 模式和 CLI 模式的双轨运行。
 
@@ -50,7 +50,7 @@
 - Docker 部署（已正确使用 HERMES_HOME 环境变量）
 
 **兼容性**：
-- ✅ CLI 模式：继续使用 `~/.hermes/`
+- ✅ CLI 模式：继续使用 `$HERMES_HOME/`
 - ✅ Electron 模式：使用 `~/Library/Application Support/hermes-agent-electron/`
 - ✅ Docker 模式：使用自定义 `HERMES_HOME`
 - ✅ Profile 功能：仅在 CLI 模式可用（文档说明限制）

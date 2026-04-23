@@ -6,7 +6,7 @@
  * 2. Upload ZIP - Upload local skill package
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { fetchJSON } from '@/lib/api';
@@ -25,14 +25,36 @@ import { useSkillInstallStore } from '@/stores/useSkillInstallStore';
 interface SkillInstallModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRefresh?: () => void; // Callback to refresh skills list
 }
 
-export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps) {
+export function SkillInstallModal({ open, onOpenChange, onRefresh }: SkillInstallModalProps) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'online' | 'upload'>('online');
+  const [refreshKey, setRefreshKey] = useState(0);
   const { setTask } = useSkillInstallStore();
 
-  const handleOnlineInstall = async (skillId: string, skillName: string, category?: string) => {
+  // Refresh search results when dialog opens
+  useEffect(() => {
+    if (open) {
+      setRefreshKey(prev => prev + 1);
+    }
+  }, [open]);
+
+  // Refresh skills list when dialog closes (if there were any installations)
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && onRefresh) {
+      // Dialog is closing, refresh the parent skills list after a short delay
+      console.log('[SkillInstallModal] Dialog closing, triggering parent refresh');
+      setTimeout(() => {
+        onRefresh();
+      }, 500);
+    }
+    onOpenChange(newOpen);
+  };
+
+  const handleOnlineInstall = async (skillId: string, skillName: string, category?: string, sourceId?: string) => {
+    console.log('[SkillInstallModal] Starting installation:', { skillId, skillName, category, sourceId });
     try {
       const data = await fetchJSON<{ task_id: string }>('/api/skills/install', {
         method: 'POST',
@@ -42,9 +64,12 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
         body: JSON.stringify({
           skill_id: skillId,
           source: 'online',
+          source_id: sourceId || 'hermes', // Pass the selected registry source
           category: category || undefined,
         }),
       });
+
+      console.log('[SkillInstallModal] Installation task created:', data.task_id);
 
       // Add task to store with real task_id from server
       setTask({
@@ -94,7 +119,7 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
@@ -127,7 +152,7 @@ export function SkillInstallModal({ open, onOpenChange }: SkillInstallModalProps
           </TabsList>
 
           <TabsContent value="online" className="flex-1 overflow-auto mt-4">
-            <OnlineSearchTab onInstall={handleOnlineInstall} />
+            <OnlineSearchTab key={refreshKey} onInstall={handleOnlineInstall} />
           </TabsContent>
 
           <TabsContent value="upload" className="flex-1 overflow-auto mt-4">

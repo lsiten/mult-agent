@@ -5,12 +5,12 @@
 
 #### Scenario: Default Profile 位置
 - **WHEN** 用户使用 default Profile
-- **THEN** HERMES_HOME 指向 ~/.hermes
+- **THEN** HERMES_HOME 指向 $HERMES_HOME
 - **THEN** 保持向后兼容，无需迁移
 
 #### Scenario: 命名 Profile 位置
 - **WHEN** 用户使用命名 Profile
-- **THEN** HERMES_HOME 指向 ~/.hermes/profiles/<name>
+- **THEN** HERMES_HOME 指向 $HERMES_HOME/profiles/<name>
 - **THEN** 所有配置和数据读写限定在该目录
 
 #### Scenario: Docker 部署中的 Profile

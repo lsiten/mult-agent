@@ -12,6 +12,7 @@ export const zh: Translations = {
     search: "搜索...",
     loading: "加载中...",
     create: "创建",
+    details: "详情",
     creating: "创建中...",
     set: "设置",
     replace: "替换",
@@ -100,6 +101,7 @@ export const zh: Translations = {
     lastUpdate: "最后更新",
     platformError: "错误",
     platformDisconnected: "已断开",
+    failedToLoad: "加载状态失败",
   },
 
   sessions: {
@@ -238,6 +240,8 @@ export const zh: Translations = {
         failed: "安装失败",
         cancelled: "安装已取消",
       },
+      forceInstall: "复制强制安装命令",
+      forceCopied: "命令已复制到剪贴板！在终端运行以绕过安全扫描。",
       errors: {
         downloadFailed: "下载技能失败",
         validationFailed: "技能验证失败",
@@ -249,7 +253,7 @@ export const zh: Translations = {
   },
 
   config: {
-    configPath: "~/.hermes/config.yaml",
+    configPath: "配置文件",
     exportConfig: "导出配置为 JSON",
     importConfig: "从 JSON 导入配置",
     resetDefaults: "恢复默认值",

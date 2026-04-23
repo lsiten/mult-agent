@@ -4,7 +4,7 @@ Hermes Plugin System
 
 Discovers, loads, and manages plugins from three sources:
 
-1. **User plugins**   – ``~/.hermes/plugins/<name>/``
+1. **User plugins**   – ``$HERMES_HOME/plugins/<name>/``
 2. **Project plugins** – ``./.hermes/plugins/<name>/`` (opt-in via
    ``HERMES_ENABLE_PROJECT_PLUGINS``)
 3. **Pip plugins**     – packages that expose the ``hermes_agent.plugins``
@@ -353,7 +353,7 @@ class PluginContext:
 
         The skill becomes resolvable as ``'<plugin_name>:<name>'`` via
         ``skill_view()``.  It does **not** enter the flat
-        ``~/.hermes/skills/`` tree and is **not** listed in the system
+        ``$HERMES_HOME/skills/`` tree and is **not** listed in the system
         prompt's ``<available_skills>`` index — plugin skills are
         opt-in explicit loads only.
 
@@ -420,7 +420,7 @@ class PluginManager:
 
         manifests: List[PluginManifest] = []
 
-        # 1. User plugins (~/.hermes/plugins/)
+        # 1. User plugins ($HERMES_HOME/plugins/)
         user_dir = get_hermes_home() / "plugins"
         manifests.extend(self._scan_directory(user_dir, source="user"))
 

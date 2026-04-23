@@ -116,13 +116,10 @@ skills 表         # 技能记录
 
 **数据库位置**:
 
-| 模式 | 位置 |
-|------|------|
-| CLI | `~/.hermes/state.db` |
-| Electron | `~/Library/Application Support/hermes-agent-electron/state.db` |
-| Docker | `$HERMES_HOME/state.db` (自定义路径) |
+此应用仅支持 Electron 模式，数据库位置：
+`~/Library/Application Support/hermes-agent-electron/state.db`
 
-所有模式都使用 `hermes_constants.get_hermes_home()` 自动解析路径。
+路径通过 `hermes_constants.get_hermes_home()` 自动解析（需要 `HERMES_HOME` 环境变量）。
 
 ### Tools 工具层
 
@@ -170,8 +167,9 @@ OPENROUTER_API_KEY=sk-or-xxx      # OpenRouter 多模型
 MODEL_NAME=claude-sonnet-4-6       # 默认模型
 FALLBACK_MODEL=claude-haiku-4-5    # 降级模型
 
-# Storage
-HERMES_HOME=~/.hermes              # 主目录
+# Storage (由 Electron 自动设置)
+# HERMES_HOME 由 electron-app/src/env-manager.ts 设置为：
+# ~/Library/Application Support/hermes-agent-electron/
 DATABASE_PATH=$HERMES_HOME/state.db # 数据库路径
 
 # Gateway

@@ -144,7 +144,7 @@ THREAT_PATTERNS = [
     (r'\$HOME/\.docker|\~/\.docker',
      "docker_dir_access", "high", "exfiltration",
      "references Docker config (may contain registry creds)"),
-    # Removed: hardcoded ~/.hermes check (wrong path in Electron mode)
+    # Removed: hardcoded $HERMES_HOME check (wrong path in Electron mode)
     # Now checking for suspicious env file access patterns instead
     (r'cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)',
      "read_secrets_file", "critical", "exfiltration",

@@ -42,12 +42,8 @@ def build_plan_path(
     slug = slug or "conversation-plan"
     timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
     # Use get_hermes_home() to respect Electron data directory
-    try:
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
-    except ImportError:
-        import os
-        hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    from hermes_constants import get_hermes_home
+    hermes_home = get_hermes_home()
     return hermes_home / "plans" / f"{timestamp}-{slug}.md"
 
 
@@ -214,7 +210,7 @@ def _build_skill_message(
 
 
 def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
-    """Scan ~/.hermes/skills/ and return a mapping of /command -> skill info.
+    """Scan $HERMES_HOME/skills/ and return a mapping of /command -> skill info.
 
     Returns:
         Dict mapping "/skill-name" to {name, description, skill_md_path, skill_dir}.

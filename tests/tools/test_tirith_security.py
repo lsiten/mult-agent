@@ -974,7 +974,7 @@ class TestDiskFailureMarker:
 
 class TestHermesHomeIsolation:
     def test_hermes_bin_dir_respects_hermes_home(self):
-        """_hermes_bin_dir must use HERMES_HOME, not hardcoded ~/.hermes."""
+        """_hermes_bin_dir must use HERMES_HOME, not hardcoded $HERMES_HOME."""
         from tools.tirith_security import _hermes_bin_dir
         import tempfile
         tmpdir = tempfile.mkdtemp()
@@ -984,7 +984,7 @@ class TestHermesHomeIsolation:
         assert os.path.isdir(result)
 
     def test_failure_marker_respects_hermes_home(self):
-        """_failure_marker_path must use HERMES_HOME, not hardcoded ~/.hermes."""
+        """_failure_marker_path must use HERMES_HOME, not hardcoded $HERMES_HOME."""
         from tools.tirith_security import _failure_marker_path
         with patch.dict(os.environ, {"HERMES_HOME": "/custom/hermes"}):
             result = _failure_marker_path()
@@ -997,7 +997,7 @@ class TestHermesHomeIsolation:
         assert "hermes_test" in hermes_home, "Should point to test temp dir"
 
     def test_get_hermes_home_fallback(self):
-        """Without HERMES_HOME set, falls back to ~/.hermes."""
+        """Without HERMES_HOME set, falls back to $HERMES_HOME."""
         from tools.tirith_security import _get_hermes_home
         with patch.dict(os.environ, {}, clear=True):
             # Remove HERMES_HOME entirely
