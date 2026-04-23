@@ -151,9 +151,11 @@ export function ChatPage() {
 
     // Update session title immediately if it's still default
     const currentSession = sessions.find(s => s.id === sid);
+    console.log("[ChatPage] Current session:", currentSession?.id, "title:", currentSession?.title);
     const isDefaultTitle = !currentSession?.title ||
                           currentSession.title.trim() === "" ||
                           currentSession.title.startsWith("新对话 ");
+    console.log("[ChatPage] isDefaultTitle:", isDefaultTitle);
 
     if (isDefaultTitle) {
       // Generate title from first 30 chars of message
@@ -167,6 +169,8 @@ export function ChatPage() {
       } catch (err) {
         console.error("[ChatPage] Failed to update title:", err);
       }
+    } else {
+      console.log("[ChatPage] Skipping title update, not default title");
     }
 
     // Add user message to display with attachments
