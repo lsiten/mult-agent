@@ -15,6 +15,23 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class SecurityScanError(Exception):
+    """Raised when security scan blocks skill installation."""
+
+    def __init__(self, message: str, scan_result: Any, bundle_name: str):
+        super().__init__(message)
+        self.message = message
+        self.scan_result = scan_result
+        self.bundle_name = bundle_name
+        self.details = {
+            "verdict": scan_result.verdict,
+            "threats_detected": len(scan_result.threats),
+            "threats": scan_result.threats[:5],
+            "can_force_install": True,
+            "force_command": f"hermes skills install {bundle_name} --force"
+        }
+
 # Skill registry sources configuration
 SKILL_REGISTRIES = {
     "skillssh": {
@@ -854,10 +871,14 @@ class SkillsAPIHandlers:
             if not scan_result.is_safe:
                 if temp_zip_path:
                     temp_zip_path.unlink(missing_ok=True)
-                raise ValueError(
-                    f"Security scan failed: {scan_result.verdict}. "
-                    f"Found {len(scan_result.threats)} threats: {', '.join(scan_result.threats[:3])}"
+
+                # Create structured error with scan details
+                error = SecurityScanError(
+                    message=f"Security scan blocked installation: {scan_result.verdict}",
+                    scan_result=scan_result,
+                    bundle_name=bundle.name
                 )
+                raise error
 
             # Step 3: Check for conflicts
             await progress_callback(start_progress + 20, "Checking for conflicts...")

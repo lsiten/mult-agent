@@ -305,12 +305,10 @@ class AsyncTaskManager:
                 state.completed_at = time.time()
                 state.updated_at = time.time()
 
-                # Parse error details if JSON available
-                try:
-                    if hasattr(e, 'details'):
-                        state.error_details = e.details
-                except:
-                    pass
+                # Extract structured error details (e.g., from SecurityScanError)
+                if hasattr(e, 'details'):
+                    state.error_details = e.details
+                    logger.warning(f"Task {task_id} failed with details: {e.details}")
 
                 self._save_state(state)
                 await self._notify_progress(state)

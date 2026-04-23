@@ -142,14 +142,34 @@ export function InstallationProgress({
               <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded">
                 <p className="text-xs text-destructive">{task.error_message}</p>
                 {task.error_details && (
-                  <details className="mt-1">
-                    <summary className="text-[10px] text-destructive/80 cursor-pointer">
-                      Details
-                    </summary>
-                    <pre className="mt-1 text-[10px] text-destructive/70 overflow-auto">
-                      {JSON.stringify(task.error_details, null, 2)}
-                    </pre>
-                  </details>
+                  <>
+                    <details className="mt-1">
+                      <summary className="text-[10px] text-destructive/80 cursor-pointer">
+                        {t.common.details}
+                      </summary>
+                      <pre className="mt-1 text-[10px] text-destructive/70 overflow-auto max-h-32">
+                        {JSON.stringify(task.error_details, null, 2)}
+                      </pre>
+                    </details>
+                    {(task.error_details as any)?.can_force_install && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const forceCmd = (task.error_details as any).force_command;
+                            if (forceCmd) {
+                              navigator.clipboard.writeText(forceCmd);
+                              alert(t.skills.install.forceCopied);
+                            }
+                          }}
+                          className="h-6 text-[10px]"
+                        >
+                          {t.skills.install.forceInstall}
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

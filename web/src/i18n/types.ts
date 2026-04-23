@@ -50,6 +50,7 @@ export interface Translations {
     messaging: string;
     optional: string;
     messages: string;
+    details: string;
   };
 
   // ── App shell ──
@@ -99,6 +100,7 @@ export interface Translations {
     lastUpdate: string;
     platformError: string;
     platformDisconnected: string;
+    failedToLoad: string;
   };
 
   // ── Sessions page ──
@@ -244,6 +246,8 @@ export interface Translations {
         failed: string;
         cancelled: string;
       };
+      forceInstall: string;
+      forceCopied: string;
       errors: {
         downloadFailed: string;
         validationFailed: string;
