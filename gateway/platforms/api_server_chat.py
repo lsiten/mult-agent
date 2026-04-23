@@ -860,26 +860,41 @@ class ChatAPIHandlers:
                             db.update_message_content(assistant_msg_id, final_text)
                             _log.info("Updated final assistant message, total %d chars", len(final_text))
 
-                        # Generate session title if this is the first message
+                        # Generate session title if this is the first assistant response
                         try:
                             cursor = db._conn.execute(
-                                "SELECT message_count, title FROM sessions WHERE id = ?",
+                                "SELECT title FROM sessions WHERE id = ?",
                                 (sid,)
                             )
                             row = cursor.fetchone()
                             if row:
-                                msg_count = row["message_count"]
                                 current_title = row["title"]
-                                # Generate title if: 1) first user+assistant pair, 2) no custom title set
-                                if msg_count == 2 and (not current_title or current_title.strip() == ""):
-                                    # Use first 30 chars of user message as title
-                                    title = message[:30] + ("..." if len(message) > 30 else "")
-                                    db._conn.execute(
-                                        "UPDATE sessions SET title = ? WHERE id = ?",
-                                        (title, sid)
-                                    )
-                                    db._conn.commit()
-                                    _log.info("Generated title for session %s: %s", sid, title)
+
+                                # Check if this is the first assistant message (title not yet set or is default)
+                                # Default title format: "新对话 MM/DD HH:MM" or empty
+                                is_default_title = (
+                                    not current_title or
+                                    current_title.strip() == "" or
+                                    current_title.startswith("新对话 ")
+                                )
+
+                                if is_default_title:
+                                    # Count existing assistant messages to see if this is the first
+                                    assistant_count = db._conn.execute(
+                                        "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'assistant'",
+                                        (sid,)
+                                    ).fetchone()[0]
+
+                                    # Generate title only for the first assistant response
+                                    if assistant_count <= 1:
+                                        # Use first 30 chars of user message as title
+                                        title = message[:30] + ("..." if len(message) > 30 else "")
+                                        db._conn.execute(
+                                            "UPDATE sessions SET title = ? WHERE id = ?",
+                                            (title, sid)
+                                        )
+                                        db._conn.commit()
+                                        _log.info("Generated title for session %s: %s", sid, title)
                         except Exception as title_error:
                             _log.warning("Failed to generate session title: %s", title_error)
 
