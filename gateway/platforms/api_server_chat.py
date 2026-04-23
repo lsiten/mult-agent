@@ -912,6 +912,7 @@ class ChatAPIHandlers:
                                 _log.info("[MESSAGE_SPLIT] Updated in-progress assistant message (%d chars)", len(final_segment_text))
 
                         # Generate session title if this is the first assistant response
+                        # Since messages are now split, check if title was already generated
                         try:
                             cursor = db._conn.execute(
                                 "SELECT title FROM sessions WHERE id = ?",
@@ -921,7 +922,7 @@ class ChatAPIHandlers:
                             if row:
                                 current_title = row["title"]
 
-                                # Check if this is the first assistant message (title not yet set or is default)
+                                # Check if title is still default (not yet generated)
                                 # Default title format: "新对话 MM/DD HH:MM" or empty
                                 is_default_title = (
                                     not current_title or
@@ -930,22 +931,14 @@ class ChatAPIHandlers:
                                 )
 
                                 if is_default_title:
-                                    # Count existing assistant messages to see if this is the first
-                                    assistant_count = db._conn.execute(
-                                        "SELECT COUNT(*) FROM messages WHERE session_id = ? AND role = 'assistant'",
-                                        (sid,)
-                                    ).fetchone()[0]
-
-                                    # Generate title only for the first assistant response
-                                    if assistant_count <= 1:
-                                        # Use first 30 chars of user message as title
-                                        title = message[:30] + ("..." if len(message) > 30 else "")
-                                        db._conn.execute(
-                                            "UPDATE sessions SET title = ? WHERE id = ?",
-                                            (title, sid)
-                                        )
-                                        db._conn.commit()
-                                        _log.info("Generated title for session %s: %s", sid, title)
+                                    # Use first 30 chars of user message as title
+                                    title = message[:30] + ("..." if len(message) > 30 else "")
+                                    db._conn.execute(
+                                        "UPDATE sessions SET title = ? WHERE id = ?",
+                                        (title, sid)
+                                    )
+                                    db._conn.commit()
+                                    _log.info("Generated title for session %s: %s", sid, title)
                         except Exception as title_error:
                             _log.warning("Failed to generate session title: %s", title_error)
 
