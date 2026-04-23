@@ -120,12 +120,13 @@ if self.valid_tool_names:
 
 ---
 
-## 阶段二：Tool Description 约束（已完成 ✅）
+## 阶段二：Tool Description 约束（已完成 ✅ 2026-04-23）
 
-### 2.1 Computer Use 工具增强
+### 2.1 Computer Use 工具增强 ✅
 
 **文件**: `tools/computer_use_tool.py`  
 **位置**: 第 641-659 行
+**状态**: 已完成
 
 ```python
 registry.register(
@@ -153,30 +154,53 @@ registry.register(
 - 用户报告的主要幻觉场景集中在截图分析
 - 双重保险（system prompt + 工具描述）
 
-### 2.2 其他需要增强的工具（待实施 ⏳）
+### 2.2 Vision Tools 增强 ✅
 
-| 工具 | 幻觉风险 | 建议约束 | 优先级 |
-|------|---------|---------|--------|
-| `vision_tools.py` | 高 | 图像分析专用警告 | P0 |
-| `file_operations.py` (read) | 中 | "如果文件不存在，明确说明" | P1 |
-| `terminal` / `bash` | 中 | "报告实际命令输出，不要美化" | P1 |
-| `web_tools.py` (search) | 中 | "仅报告搜索结果，不要推测" | P2 |
-| `mcp_tool.py` | 低 | 通用真实性约束已覆盖 | P3 |
+**文件**: `tools/vision_tools.py`  
+**位置**: VISION_ANALYZE_SCHEMA
+**状态**: 已完成（P0）
 
-**实施计划**:
-```bash
-# 2.2.1 增强 vision_tools.py（P0）
-vim tools/vision_tools.py
-# 添加类似 computer_screenshot 的警告
-
-# 2.2.2 增强 file_operations.py（P1）
-vim tools/file_operations.py
-# 在 read_file 工具描述中添加警告
-
-# 2.2.3 增强 bash 工具（P1）
-vim tools/bash_tool.py
-# 添加"如实报告输出"的警告
+```python
+"IMPORTANT - Truthfulness requirement:\n"
+"- When presenting the analysis result to the user, describe ONLY what the vision model actually returned.\n"
+"- DO NOT add details, fill in gaps, or make assumptions beyond what the vision analysis provided.\n"
+"- If the vision model's response is uncertain or incomplete, communicate that uncertainty to the user.\n"
+"- DO NOT reinterpret or 'improve' the vision model's output - pass it through faithfully."
 ```
+
+### 2.3 File Tools 增强 ✅
+
+**文件**: `tools/file_tools.py`  
+**位置**: READ_FILE_SCHEMA
+**状态**: 已完成（P1）
+
+```python
+"IMPORTANT - Truthfulness requirement:\n"
+"- If the file does not exist, the tool will return an error. Report this to the user explicitly - do not assume or guess the file contents.\n"
+"- If you receive an error (file not found, permission denied, etc.), communicate the actual error to the user rather than making assumptions about what the file might contain.\n"
+"- Only describe file contents that were actually returned by this tool, not what you expect or remember from training data."
+```
+
+### 2.4 Terminal Tool 增强 ✅
+
+**文件**: `tools/terminal_tool.py`  
+**位置**: TERMINAL_TOOL_DESCRIPTION
+**状态**: 已完成（P1）
+
+```python
+"IMPORTANT - Truthfulness requirement:\n"
+"- Report command output exactly as returned. Do not simplify, beautify, or omit error messages.\n"
+"- If a command fails (non-zero exit code), communicate the failure and actual error output to the user.\n"
+"- Do not claim \"all tests pass\" when the output shows failures. Do not claim a command succeeded when the exit code or stderr indicates failure.\n"
+"- If output is lengthy or contains sensitive information, you may summarize it, but always mention when you're summarizing rather than quoting verbatim."
+```
+
+### 2.5 其他工具（待实施 ⏳）
+
+| 工具 | 幻觉风险 | 建议约束 | 优先级 | 状态 |
+|------|---------|---------|--------|------|
+| `web_tools.py` (search) | 中 | "仅报告搜索结果，不要推测" | P2 | ⏳ 待实施 |
+| `mcp_tool.py` | 低 | 通用真实性约束已覆盖 | P3 | 可选 |
 
 ---
 
@@ -414,17 +438,18 @@ def log_hallucination_detection(
 
 ## 实施时间表
 
-| 阶段 | 任务 | 状态 | 预计时间 |
+| 阶段 | 任务 | 状态 | 完成时间 |
 |------|------|------|---------|
 | **阶段一** | System Prompt 约束 | ✅ 已完成 | 2026-04-23 |
-| **阶段二** | Tool Description 约束 | 🔄 部分完成 | |
+| **阶段二** | Tool Description 约束 | ✅ 已完成 | 2026-04-23 |
 | 2.1 | Computer Use 工具 | ✅ 已完成 | 2026-04-23 |
-| 2.2 | Vision Tools 增强 | ⏳ 待实施 | 2026-04-24 |
-| 2.3 | File Operations 增强 | ⏳ 待实施 | 2026-04-24 |
-| 2.4 | Bash Tool 增强 | ⏳ 待实施 | 2026-04-25 |
-| **阶段三** | Runtime Validation | 📅 计划中 | 2026-05-01 |
-| 3.1 | 后置检查原型 | 📅 计划中 | 2026-05-07 |
-| 3.2 | 自我纠正机制 | 📅 计划中 | 2026-05-14 |
+| 2.2 | Vision Tools 增强 | ✅ 已完成 | 2026-04-23 |
+| 2.3 | File Tools 增强 | ✅ 已完成 | 2026-04-23 |
+| 2.4 | Terminal Tool 增强 | ✅ 已完成 | 2026-04-23 |
+| 2.5 | Web Tools 增强 | ⏳ 待实施 | 可选 |
+| **阶段三** | Runtime Validation | 📅 计划中 | 待定 |
+| 3.1 | 后置检查原型 | 📅 计划中 | 待定 |
+| 3.2 | 自我纠正机制 | 📅 计划中 | 待定 |
 
 ---
 
