@@ -560,13 +560,16 @@ class ChatAPIHandlers:
                     tool_invocations = []
                     current_tool_invocation = None
 
+                    # Event queue for cross-thread communication
+                    tool_events = asyncio.Queue()
+
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
                         if text:
                             full_response.append(text)
 
-                    async def on_tool_start(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any]):
-                        """Callback when a tool invocation starts."""
+                    def on_tool_start(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any]):
+                        """Callback when a tool invocation starts (called from thread pool)."""
                         nonlocal current_tool_invocation
                         current_tool_invocation = {
                             "id": tool_call_id,
@@ -578,28 +581,32 @@ class ChatAPIHandlers:
                         tool_invocations.append(current_tool_invocation)
                         _log.info("[TOOL_CALLBACK] Tool started: %s (id=%s)", tool_name, tool_call_id)
 
-                        # Send tool progress event immediately
+                        # Queue event for async processing
                         try:
-                            progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "started", "id": tool_call_id})}\n\n'
-                            await response.write(progress_event.encode())
+                            asyncio.run_coroutine_threadsafe(
+                                tool_events.put(("start", tool_call_id, tool_name)),
+                                asyncio.get_event_loop()
+                            )
                         except Exception as e:
-                            _log.warning("Failed to send tool_progress event: %s", e)
+                            _log.warning("Failed to queue tool_start event: %s", e)
 
-                    async def on_tool_complete(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any], result: str):
-                        """Callback when a tool invocation completes."""
+                    def on_tool_complete(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any], result: str):
+                        """Callback when a tool invocation completes (called from thread pool)."""
                         nonlocal current_tool_invocation
                         if current_tool_invocation and current_tool_invocation["id"] == tool_call_id:
                             current_tool_invocation["result"] = result
-                            current_tool_invocation["status"] = "success"  # Assume success if callback is called
+                            current_tool_invocation["status"] = "success"
                             current_tool_invocation["duration"] = int((time.time() - current_tool_invocation["start_time"]) * 1000)
                             _log.info("[TOOL_CALLBACK] Tool completed: %s (id=%s, duration=%dms)", tool_name, tool_call_id, current_tool_invocation["duration"])
 
-                            # Send tool progress event
+                            # Queue event for async processing
                             try:
-                                progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "completed", "id": tool_call_id, "duration": current_tool_invocation["duration"]})}\n\n'
-                                await response.write(progress_event.encode())
+                                asyncio.run_coroutine_threadsafe(
+                                    tool_events.put(("complete", tool_call_id, tool_name, current_tool_invocation["duration"])),
+                                    asyncio.get_event_loop()
+                                )
                             except Exception as e:
-                                _log.warning("Failed to send tool_progress event: %s", e)
+                                _log.warning("Failed to queue tool_complete event: %s", e)
 
                             current_tool_invocation = None
 
@@ -729,6 +736,27 @@ class ChatAPIHandlers:
 
                         while not agent_task.done():
                             try:
+                                # Process tool events from queue (non-blocking)
+                                while not tool_events.empty():
+                                    try:
+                                        event = tool_events.get_nowait()
+                                        event_type = event[0]
+
+                                        if event_type == "start":
+                                            _, tool_call_id, tool_name = event
+                                            progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "started", "id": tool_call_id})}\n\n'
+                                            await response.write(progress_event.encode())
+                                            _log.info("[SSE] Sent tool_progress start: %s", tool_name)
+                                        elif event_type == "complete":
+                                            _, tool_call_id, tool_name, duration = event
+                                            progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "completed", "id": tool_call_id, "duration": duration})}\n\n'
+                                            await response.write(progress_event.encode())
+                                            _log.info("[SSE] Sent tool_progress complete: %s (%dms)", tool_name, duration)
+                                    except asyncio.QueueEmpty:
+                                        break
+                                    except Exception as e:
+                                        _log.warning("Failed to process tool event: %s", e)
+
                                 if len(full_response) > last_sent:
                                     # Send accumulated new content
                                     new_content = "".join(full_response[last_sent:])
