@@ -8,6 +8,7 @@
 import { useEffect, useRef } from 'react';
 import { useSkillInstallStore } from '@/stores/useSkillInstallStore';
 import type { TaskState } from '@/stores/useSkillInstallStore';
+import { fetchJSON } from '@/lib/api';
 
 export function useInstallProgress(taskId: string | null) {
   const { updateTask, tasks } = useSkillInstallStore();
@@ -27,22 +28,9 @@ export function useInstallProgress(taskId: string | null) {
     // Start polling
     const pollStatus = async () => {
       try {
-        const response = await fetch(`/api/skills/install/${taskId}`, {
-          headers: {
-            // Authorization auto-added by fetchJSON
-          },
+        const data = await fetchJSON<TaskState>(`/api/skills/install/${taskId}`, {
+          method: 'GET',
         });
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            // Task not found, stop polling
-            clearInterval(intervalRef.current!);
-            return;
-          }
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data: TaskState = await response.json();
 
         // Update store
         updateTask(taskId, {
@@ -60,9 +48,16 @@ export function useInstallProgress(taskId: string | null) {
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
           clearInterval(intervalRef.current!);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[useInstallProgress] Failed to fetch installation status:', err);
-        // Don't stop polling on error, retry next interval
+
+        // Stop polling on 404 (task not found)
+        if (err?.message?.includes('404') || err?.status === 404) {
+          clearInterval(intervalRef.current!);
+          return;
+        }
+
+        // Don't stop polling on other errors, retry next interval
       }
     };
 
