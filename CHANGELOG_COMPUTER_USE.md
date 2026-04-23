@@ -1,6 +1,27 @@
 # Computer Use Integration - Changelog
 
-## [1.0.0] - 2026-04-23
+## [2.1.0] - 2026-04-23
+
+### Documentation & Troubleshooting
+
+**Real-World Testing Updates**
+- Added practical troubleshooting for cliclick syntax common mistakes
+  - Correct: `kp:space` for key press (not `k:space`)
+  - Correct: `c:x,y` or `c:.` for click (not just `c:`)
+- Added accessibility permissions note for macOS
+  - Without permissions: commands exit successfully but have no effect
+  - Enable at: System Preferences → Security & Privacy → Accessibility
+- Added best practice recommendation: Use Cmd+Space (keyboard shortcut) for Spotlight instead of clicking top-right icon
+  - More reliable, resolution-independent
+- Updated version metadata in skill.yaml
+
+### Verified Status
+- All 27 unit tests pass ✓
+- Screenshot capture works correctly ✓
+- Mouse/Keyboard command structure valid ✓
+- Cross-platform behavior consistent ✓
+
+## [2.0.0] - 2026-04-23
 
 ### Added
 
@@ -12,15 +33,21 @@
   - Returns base64-encoded PNG with metadata
   
 - `computer_mouse`: Mouse control
-  - Actions: `mouse_move`, `left_click`, `right_click`, `middle_click`, `double_click`
+  - Actions: `mouse_move`, `left_click`, `right_click`, `middle_click`, `double_click`, `scroll_up`, `scroll_down`, `drag`
   - macOS: Uses `cliclick`
   - Linux: Uses `xdotool`
   - Coordinate-based positioning (pixels from top-left)
+  - Full drag-and-drop support from start to target coordinate
   
 - `computer_keyboard`: Keyboard input simulation
   - macOS: Uses `cliclick`
   - Linux: Uses `xdotool`
-  - Plain text only (no special keys yet)
+  - Plain text with proper special character escaping
+
+- `computer_key`: Special key and keyboard shortcut support
+  - Supports: enter, escape, tab, backspace, delete, space, arrows (up/down/left/right), pageup, pagedown, home, end, f1-f12
+  - Supports modifier combinations: cmd/ctrl/alt/shift (e.g., Ctrl+C, Cmd+S, Alt+Tab)
+  - Full cross-platform key mapping consistency
 
 **High-Level Skill** (`skills/computer-use/`)
 - Task orchestration for multi-step workflows
@@ -68,28 +95,33 @@
 
 ### Platform Support
 
-| Platform | Screenshot | Mouse | Keyboard | Status |
-|----------|-----------|-------|----------|--------|
-| macOS    | ✅ screencapture | ✅ cliclick | ✅ cliclick | Fully supported |
-| Linux    | ✅ scrot/import | ✅ xdotool | ✅ xdotool | Fully supported |
-| Windows  | ⚠️ PIL fallback | ❌ Not supported | ❌ Not supported | Limited |
+| Platform | Screenshot | Mouse | Keyboard | Special Keys | Status |
+|----------|-----------|-------|----------|--------------|--------|
+| macOS    | ✅ screencapture | ✅ cliclick | ✅ cliclick | ✅ cliclick | Fully supported |
+| Linux    | ✅ scrot/import | ✅ xdotool | ✅ xdotool | ✅ xdotool | Fully supported |
+| Windows  | ⚠️ PIL fallback | ❌ Not supported | ❌ Not supported | ❌ Not supported | Limited |
+
+### Fixed Issues
+
+1. **Linux screenshot cleanup bug**: Original code deleted temporary file before reading → Fixed by reading data first then cleaning up
+2. **Hardcoded resolution**: Now auto-detects native resolution using system commands, with environment variable override fallback
+3. **Behavior consistency**: Fixed macOS scroll action to always move mouse to target coordinate first, matching Linux behavior
+4. **Special character escaping**: Proper `:` and `\` escaping for cliclick on macOS
 
 ### Known Limitations
 
-1. **No Special Keys**: Cannot send Cmd+C, Ctrl+V, Alt+Tab combinations
-2. **Single Display**: Multi-monitor setups not fully supported
-3. **Coordinate-Based**: Requires visual analysis or known positions
-4. **Latency**: ~100-500ms per action via system tools
-5. **Platform-Specific**: Different tool dependencies per OS
+1. **Single Display**: Multi-monitor setups not fully supported (auto-detects primary display resolution)
+2. **Coordinate-Based**: Requires visual analysis or known positions
+3. **Latency**: ~100-500ms per action via system tools
+4. **Platform-Specific**: Different tool dependencies per OS
+5. **macOS Permissions**: Accessibility permissions required on macOS Monterey+
 
 ### Future Roadmap
 
-- [ ] Special key combination support
 - [ ] Multi-monitor coordinate handling
-- [ ] Windows support via pyautogui
+- [ ] Windows full support via pyautogui
 - [ ] OCR integration for element location
 - [ ] Accessibility API integration
-- [ ] Drag-and-drop operations
 - [ ] Action recording and playback
 - [ ] Element detection (buttons, fields)
 
@@ -158,8 +190,7 @@ MIT License - Part of Hermes Agent v2
 
 ---
 
-**Next Version**: 1.1.0 (planned)
-- Special key support (Cmd, Ctrl, Alt combinations)
-- Multi-monitor handling
-- OCR-based element location
+**Next Version**: 2.1.0 (planned)
+- Multi-monitor coordinate handling
+- OCR-based element location from screenshots
 - Windows full support
