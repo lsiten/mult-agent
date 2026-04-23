@@ -171,7 +171,9 @@ export function ChatPage() {
       setMessages(prev => [...prev, assistantMsg]);
 
       // Reload sessions to get updated title from backend
+      console.log("[ChatPage] Reloading sessions to fetch updated title...");
       await loadSessions();
+      console.log("[ChatPage] Sessions reloaded, current sessions:", sessions.length);
     } catch (error) {
       console.error("[ChatPage] Streaming error:", error);
 

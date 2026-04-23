@@ -19,6 +19,7 @@ export function useSessions(source: string = "electron-chat") {
     setError(null);
     try {
       const response = await api.listSessions({ limit, offset, source });
+      console.log("[useSessions] Loaded sessions:", response.sessions.map(s => ({ id: s.id, title: s.title })));
       setSessions(response.sessions);
 
       // Don't auto-select any session - let user explicitly choose
