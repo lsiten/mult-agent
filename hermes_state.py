@@ -31,7 +31,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -344,14 +344,14 @@ class SessionDB:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
                 cursor.execute("UPDATE schema_version SET version = 7")
-
-        # Unique title index — always ensure it exists (safe to run after migrations
-        # since the title column is guaranteed to exist at this point)
-        try:
-            cursor.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_title_unique "
-                "ON sessions(title) WHERE title IS NOT NULL"
-            )
+            if current_version < 8:
+                # v8: drop unique index on title — titles can be duplicate
+                # (multiple sessions can have same title like "测试消息")
+                try:
+                    cursor.execute("DROP INDEX IF EXISTS idx_sessions_title_unique")
+                except sqlite3.OperationalError:
+                    pass  # Index already dropped
+                cursor.execute("UPDATE schema_version SET version = 8")
         except sqlite3.OperationalError:
             pass  # Index already exists
 
