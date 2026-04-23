@@ -352,8 +352,6 @@ class SessionDB:
                 except sqlite3.OperationalError:
                     pass  # Index already dropped
                 cursor.execute("UPDATE schema_version SET version = 8")
-        except sqlite3.OperationalError:
-            pass  # Index already exists
 
         # FTS5 setup (separate because CREATE VIRTUAL TABLE can't be in executescript with IF NOT EXISTS reliably)
         try:
