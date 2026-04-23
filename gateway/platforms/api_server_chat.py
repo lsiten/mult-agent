@@ -893,23 +893,22 @@ class ChatAPIHandlers:
                         # Get final result
                         result = await agent_task
 
-                        # Save final text segment if any
-                        if current_text_segment:
-                            segment_text = "".join(current_text_segment)
-                            if segment_text.strip():  # Only save if not empty
+                        # Save or update final text message
+                        final_text = "".join(full_response)
+                        if final_text.strip():
+                            if assistant_msg_id is not None:
+                                # Already have a message from streaming saves, update it with final content
+                                db.update_message_content(assistant_msg_id, final_text)
+                                _log.info("[MESSAGE_SPLIT] Updated final assistant message (%d chars)", len(final_text))
+                            elif current_text_segment and not segment_saved:
+                                # Text segment was never saved (no tools called), save it now
                                 db.append_message(
                                     session_id=sid,
                                     role="assistant",
-                                    content=segment_text
+                                    content=final_text
                                 )
-                                _log.info("[MESSAGE_SPLIT] Saved final text segment (%d chars)", len(segment_text))
-                                current_text_segment.clear()
-                        # If there was an in-progress assistant message, update it with final content
-                        elif assistant_msg_id is not None:
-                            final_segment_text = "".join(current_text_segment) if current_text_segment else ""
-                            if final_segment_text.strip():
-                                db.update_message_content(assistant_msg_id, final_segment_text)
-                                _log.info("[MESSAGE_SPLIT] Updated in-progress assistant message (%d chars)", len(final_segment_text))
+                                _log.info("[MESSAGE_SPLIT] Saved final text segment (%d chars)", len(final_text))
+                            # else: text was already saved when tools were called
 
                         # Generate session title if this is the first assistant response
                         # Since messages are now split, check if title was already generated
