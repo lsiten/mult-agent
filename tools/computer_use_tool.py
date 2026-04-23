@@ -40,11 +40,15 @@ def get_display_config() -> Dict[str, int]:
     # Check environment first
     width_env = os.environ.get("COMPUTER_USE_DISPLAY_WIDTH")
     height_env = os.environ.get("COMPUTER_USE_DISPLAY_HEIGHT")
+    x_offset_env = os.environ.get("COMPUTER_USE_DISPLAY_X_OFFSET")
+    y_offset_env = os.environ.get("COMPUTER_USE_DISPLAY_Y_OFFSET")
     
     if width_env and height_env:
         return {
             "width": int(width_env),
             "height": int(height_env),
+            "x_offset": int(x_offset_env) if x_offset_env else 0,
+            "y_offset": int(y_offset_env) if y_offset_env else 0,
         }
     
     # Try to auto-detect
@@ -61,11 +65,16 @@ def get_display_config() -> Dict[str, int]:
             output = result.stdout
             # Find resolution line like "Resolution: 1920 x 1080"
             import re
-            match = re.search(r'Resolution:\s*(\d+)\s*x\s*(\d+)', output)
+            match = re.search(r'Resolution:\\s*(\\d+)\\s*x\\s*(\\d+)', output)
             if match:
                 width = int(match.group(1))
                 height = int(match.group(2))
-                return {"width": width, "height": height}
+                return {
+                    "width": width, 
+                    "height": height,
+                    "x_offset": 0,
+                    "y_offset": 0,
+                }
         elif system == "Linux":
             # Linux: try xrandr
             result = subprocess.run(
@@ -77,11 +86,16 @@ def get_display_config() -> Dict[str, int]:
             output = result.stdout
             import re
             # Find current resolution like "*1920x1080"
-            match = re.search(r'\*(\d+)x(\d+)', output)
+            match = re.search(r'\\*(\\d+)x(\\d+)', output)
             if match:
                 width = int(match.group(1))
                 height = int(match.group(2))
-                return {"width": width, "height": height}
+                return {
+                    "width": width, 
+                    "height": height,
+                    "x_offset": 0,
+                    "y_offset": 0,
+                }
     except Exception as e:
         logger.debug(f"Failed to auto-detect display: {e}")
     
@@ -90,6 +104,8 @@ def get_display_config() -> Dict[str, int]:
     return {
         "width": 1920,
         "height": 1080,
+        "x_offset": 0,
+        "y_offset": 0,
     }
 
 
@@ -213,8 +229,16 @@ def _execute_mouse_macos(action: str, coordinate: Optional[List[int]], target_co
         raise RuntimeError(
             "cliclick not installed. Install: brew install cliclick"
         )
+    
+    # Get display offset and apply to coordinates
+    config = get_display_config()
+    x_offset = config.get("x_offset", 0)
+    y_offset = config.get("y_offset", 0)
 
     x, y = coordinate if coordinate else [0, 0]
+    # Apply display offset
+    x += x_offset
+    y += y_offset
 
     action_map = {
         "mouse_move": f"m:{x},{y}",
@@ -231,6 +255,9 @@ def _execute_mouse_macos(action: str, coordinate: Optional[List[int]], target_co
         if not target_coordinate:
             raise ValueError("drag requires target_coordinate")
         tx, ty = target_coordinate
+        # Apply display offset to target
+        tx += x_offset
+        ty += y_offset
         # cliclick: d for down at start, m to move to end, u to up
         cmd = ["cliclick", f"d:{x},{y}", f"m:{tx},{ty}", f"u:{tx},{ty}"]
         subprocess.run(cmd, check=True, capture_output=True, timeout=2)
@@ -243,7 +270,7 @@ def _execute_mouse_macos(action: str, coordinate: Optional[List[int]], target_co
     cmd = ["cliclick", f"m:{x},{y}", action_map[action]]
     subprocess.run(cmd, check=True, capture_output=True, timeout=2)
 
-    return {"success": True, "action": action, "coordinate": [x, y]}
+    return {"success": True, "action": action, "coordinate": [x - x_offset, y - y_offset], "actual_coordinate": [x, y]}
 
 
 def _execute_mouse_linux(action: str, coordinate: Optional[List[int]], target_coordinate: Optional[List[int]]) -> Dict:
@@ -255,11 +282,18 @@ def _execute_mouse_linux(action: str, coordinate: Optional[List[int]], target_co
             "xdotool not installed. Install: sudo apt-get install xdotool"
         )
 
+    # Get display offset and apply to coordinates
+    config = get_display_config()
+    x_offset = config.get("x_offset", 0)
+    y_offset = config.get("y_offset", 0)
+
     x, y = coordinate if coordinate else [0, 0]
+    # Apply display offset
+    x += x_offset
+    y += y_offset
 
     if coordinate:
         subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
-
     if action == "mouse_move":
         pass
     elif action == "left_click":
@@ -279,14 +313,17 @@ def _execute_mouse_linux(action: str, coordinate: Optional[List[int]], target_co
         if not target_coordinate:
             raise ValueError("drag requires target_coordinate")
         tx, ty = target_coordinate
+        # Apply display offset to target
+        tx += x_offset
+        ty += y_offset
         # xdotool: mousedown 1, mousemove, mouseup 1
         subprocess.run(["xdotool", "mousedown", "1"], check=True)
         subprocess.run(["xdotool", "mousemove", str(tx), str(ty)], check=True)
         subprocess.run(["xdotool", "mouseup", "1"], check=True)
-        return {"success": True, "action": action, "start_coordinate": [x, y], "target_coordinate": [tx, ty]}
+        return {"success": True, "action": action, "start_coordinate": [x - x_offset, y - y_offset], "target_coordinate": [tx - x_offset, ty - y_offset], "actual_start": [x, y], "actual_target": [tx, ty]}
     else:
         raise ValueError(f"Unsupported action: {action}")
-    return {"success": True, "action": action, "coordinate": [x, y]}
+    return {"success": True, "action": action, "coordinate": [x - x_offset, y - y_offset], "actual_coordinate": [x, y]}
 
 
 def execute_keyboard_action(text: str) -> Dict:
@@ -402,24 +439,28 @@ def _execute_special_key_macos(key: str, modifiers: List[str]) -> Dict:
     
     mapped_key = CLICLICK_KEY_MAP[key_lower]
     
-    # Build modifier chain
-    modifier_parts = []
+    # cliclick doesn't support modifier-key in a single 'k:' command properly
+    # Correct approach: kd: (key down) for modifiers, kp: (key press) for main key, ku: (key up) for modifiers
+    cmds = []
+    # Press modifiers down
     for mod in modifiers:
         mod_lower = mod.lower()
         if mod_lower in CLICLICK_MODIFIER_MAP:
-            modifier_parts.append(CLICLICK_MODIFIER_MAP[mod_lower])
+            mapped_mod = CLICLICK_MODIFIER_MAP[mod_lower]
+            cmds.append(f"kd:{mapped_mod}")
+    # Press and release the actual key
+    cmds.append(f"kp:{mapped_key}")
+    # Release modifiers
+    for mod in modifiers:
+        mod_lower = mod.lower()
+        if mod_lower in CLICLICK_MODIFIER_MAP:
+            mapped_mod = CLICLICK_MODIFIER_MAP[mod_lower]
+            cmds.append(f"ku:{mapped_mod}")
     
-    # cliclick format: mod-key(shift-a) or just key(return)
-    if modifier_parts:
-        modifiers_str = "-".join(modifier_parts)
-        # Actually cliclick uses 'k' for press with modifiers: e.g. 'k:cmd-s'
-        modifiers_joined = "-".join(modifier_parts)
-        click_arg = f"k:{modifiers_joined}-{mapped_key}"
-    else:
-        click_arg = f"k:{mapped_key}"
-    
-    cmd = ["cliclick", click_arg]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=2)
+    # Execute all commands in sequence
+    for cmd_arg in cmds:
+        cmd = ["cliclick", cmd_arg]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=2)
 
     return {"success": True, "key": key, "modifiers": modifiers}
 

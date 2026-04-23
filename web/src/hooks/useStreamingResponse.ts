@@ -15,6 +15,7 @@ export function useStreamingResponse() {
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [toolUseMessages, setToolUseMessages] = useState<SessionMessage[]>([]);
   const [skillUseMessages, setSkillUseMessages] = useState<SessionMessage[]>([]);
+  const [authRequestMessages, setAuthRequestMessages] = useState<SessionMessage[]>([]);
   const [currentTool, setCurrentTool] = useState<{ name: string; startTime: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -38,6 +39,7 @@ export function useStreamingResponse() {
     setToolCalls([]);
     setToolUseMessages([]);
     setSkillUseMessages([]);
+    setAuthRequestMessages([]);
     setCurrentTool(null);
     setError(null);
 
@@ -122,6 +124,26 @@ export function useStreamingResponse() {
           setSkillUseMessages(prev => [...prev, message]);
         } catch (err) {
           console.error("Failed to parse skill_loaded event:", err);
+        }
+      });
+
+      // Listen for authorization_request events
+      eventSource.addEventListener("authorization_request", (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log("[SSE] authorization_request event received:", data);
+
+          const message: SessionMessage = {
+            role: "authorization_request",
+            content: null,
+            timestamp: Date.now() / 1000,
+            metadata: {
+              authorization: data.authorization || {},
+            },
+          };
+          setAuthRequestMessages(prev => [...prev, message]);
+        } catch (err) {
+          console.error("Failed to parse authorization_request event:", err);
         }
       });
 
@@ -235,6 +257,7 @@ export function useStreamingResponse() {
     toolCalls,
     toolUseMessages,
     skillUseMessages,
+    authRequestMessages,
     currentTool,
     error,
     startStreaming,

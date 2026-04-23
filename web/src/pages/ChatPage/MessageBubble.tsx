@@ -5,6 +5,7 @@ import { AttachmentDisplay } from "./AttachmentDisplay";
 import { ToolCallDisplay } from "./ToolCallDisplay";
 import { ToolInvocationGroup } from "@/components/chat/ToolInvocationMessage";
 import { SkillInvocationMessage } from "@/components/chat/SkillInvocationMessage";
+import { AuthorizationRequestMessage } from "@/components/chat/AuthorizationRequestMessage";
 import { useChatSettingsStore } from "@/stores/useChatSettingsStore";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -24,8 +25,18 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
   const isAssistant = message.role === "assistant";
   const isToolUse = message.role === "tool_use";
   const isSkillUse = message.role === "skill_use";
+  const isAuthRequest = message.role === "authorization_request";
 
   const timestamp = message.timestamp ? formatDateTime(message.timestamp, locale) : null;
+
+  // Handle authorization_request message type (always show)
+  if (isAuthRequest && message.metadata?.authorization) {
+    return (
+      <div className="flex justify-start">
+        <AuthorizationRequestMessage authorization={message.metadata.authorization} className="max-w-[80%]" />
+      </div>
+    );
+  }
 
   // Handle tool_use message type
   if (isToolUse && message.metadata?.tool_invocations) {

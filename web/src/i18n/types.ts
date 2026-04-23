@@ -432,6 +432,19 @@ export interface Translations {
       tools: string;
       usedTimes: string;
     };
+    authorizationRequest: {
+      title: string;
+      oauthTitle: string;
+      permissionTitle: string;
+      confirmationTitle: string;
+      openUrl: string;
+      copyUrl: string;
+      urlCopied: string;
+      instructions: string;
+      grantPermission: string;
+      cancel: string;
+      waiting: string;
+    };
   };
 
   // ── Language switcher ──
