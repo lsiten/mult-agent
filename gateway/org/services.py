@@ -135,14 +135,156 @@ class SoulRenderService:
             经理 Agent 记录，如果不存在返回 None
         """
         try:
-            with self.store.connect() as conn:
-                manager = self.store.query_one(
-                    "SELECT id, name, display_name FROM agents WHERE id = ?",
-                    (manager_id,),
-                    conn
-                )
-                return manager
+            manager = self.store.query_one(
+                "SELECT id, name, display_name FROM agents WHERE id = ?",
+                (manager_id,),
+            )
+            return manager
         except Exception:
+            return None
+
+    def _find_manager_by_hierarchy(
+        self,
+        agent: dict[str, Any],
+        position: dict[str, Any],
+        department: dict[str, Any],
+        company: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """根据组织架构智能查找经理
+
+        查找优先级：
+        1. 同部门的管理岗位（岗位名称包含"负责人"、"经理"、"主管"、"总监"等关键词）
+        2. 上级部门（parent_id）的管理岗位
+        3. 递归向上查找，直到找到或到达公司层级
+        4. 如果都没有，返回公司层级的第一个 Agent（如果有）
+
+        Args:
+            agent: 当前 Agent 信息
+            position: 当前岗位信息
+            department: 当前部门信息
+            company: 公司信息
+
+        Returns:
+            经理 Agent 记录，如果找不到返回 None
+        """
+        try:
+            # 1. 在同部门查找管理岗位（排除自己）
+            manager_keywords = ["负责人", "经理", "主管", "总监", "领导", "manager", "director", "supervisor", "lead"]
+
+            # 构建关键词查询条件
+            keyword_conditions = " OR ".join([f"p.name LIKE '%{kw}%'" for kw in manager_keywords])
+
+            same_dept_manager = self.store.query_one(
+                    f"""
+                    SELECT a.id, a.name, a.display_name
+                    FROM agents a
+                    JOIN positions p ON a.position_id = p.id
+                    WHERE a.department_id = ?
+                      AND a.id != ?
+                      AND ({keyword_conditions})
+                      AND a.status = 'active'
+                      AND a.enabled = 1
+                    ORDER BY
+                      CASE
+                        WHEN p.name LIKE '%负责人%' THEN 1
+                        WHEN p.name LIKE '%总监%' THEN 2
+                        WHEN p.name LIKE '%经理%' THEN 3
+                        WHEN p.name LIKE '%主管%' THEN 4
+                        ELSE 5
+                      END,
+                      a.id
+                    LIMIT 1
+                    """,
+                    (department["id"], agent["id"]),
+                )
+
+            if same_dept_manager:
+                return same_dept_manager
+
+            # 2. 递归向上查找上级部门的管理岗位
+            current_dept_id = department.get("parent_id")
+            while current_dept_id:
+                parent_dept_manager = self.store.query_one(
+                        f"""
+                        SELECT a.id, a.name, a.display_name
+                        FROM agents a
+                        JOIN positions p ON a.position_id = p.id
+                        WHERE a.department_id = ?
+                          AND ({keyword_conditions})
+                          AND a.status = 'active'
+                          AND a.enabled = 1
+                        ORDER BY
+                          CASE
+                            WHEN p.name LIKE '%负责人%' THEN 1
+                            WHEN p.name LIKE '%总监%' THEN 2
+                            WHEN p.name LIKE '%经理%' THEN 3
+                            WHEN p.name LIKE '%主管%' THEN 4
+                            ELSE 5
+                          END,
+                          a.id
+                        LIMIT 1
+                        """,
+                        (current_dept_id,),
+                    )
+
+                if parent_dept_manager:
+                    return parent_dept_manager
+
+                # 继续向上查找
+                parent_dept = self.store.query_one(
+                    "SELECT parent_id FROM departments WHERE id = ?",
+                    (current_dept_id,),
+                )
+                current_dept_id = parent_dept.get("parent_id") if parent_dept else None
+
+            # 3. 公司层级：查找公司级别的管理 Agent（排除自己）
+            company_manager = self.store.query_one(
+                    f"""
+                    SELECT a.id, a.name, a.display_name
+                    FROM agents a
+                    JOIN positions p ON a.position_id = p.id
+                    WHERE a.company_id = ?
+                      AND a.id != ?
+                      AND ({keyword_conditions})
+                      AND a.status = 'active'
+                      AND a.enabled = 1
+                    ORDER BY
+                      CASE
+                        WHEN p.name LIKE '%CEO%' OR p.name LIKE '%总裁%' OR p.name LIKE '%董事%' THEN 1
+                        WHEN p.name LIKE '%负责人%' THEN 2
+                        WHEN p.name LIKE '%总监%' THEN 3
+                        ELSE 4
+                      END,
+                      a.id
+                    LIMIT 1
+                    """,
+                    (company["id"], agent["id"]),
+                )
+
+            if company_manager:
+                return company_manager
+
+            # 4. 最后尝试：公司中的任何其他 Agent（作为兜底）
+            any_agent = self.store.query_one(
+                """
+                SELECT a.id, a.name, a.display_name
+                FROM agents a
+                WHERE a.company_id = ?
+                  AND a.id != ?
+                  AND a.status = 'active'
+                  AND a.enabled = 1
+                ORDER BY a.id
+                LIMIT 1
+                """,
+                (company["id"], agent["id"]),
+            )
+
+            return any_agent
+
+        except Exception as e:
+            import hermes_logging
+            logger = hermes_logging.get_logger(__name__)
+            logger.warning(f"Failed to find manager by hierarchy: {e}")
             return None
 
     def render(
@@ -172,15 +314,20 @@ class SoulRenderService:
         tpl = template or {}
         workspaces = workspaces or {}
 
-        # 构建经理信息（如果有）
+        # 构建经理信息（智能查找）
         manager_info = ""
         manager_id = agent.get("manager_agent_id")
+
         if manager_id:
-            # 查询经理信息
+            # 1. 优先使用指定的 manager_agent_id
             manager = self._query_manager(manager_id)
-            if manager:
-                manager_display = manager.get("display_name") or manager.get("name", "")
-                manager_info = f"- **直属负责人**: {manager_display}\n"
+        else:
+            # 2. 如果没有指定，根据组织架构智能查找
+            manager = self._find_manager_by_hierarchy(agent, position, department, company)
+
+        if manager:
+            manager_display = manager.get("display_name") or manager.get("name", "")
+            manager_info = f"- **直属负责人**: {manager_display}\n"
 
         context = {
             "agent_id": agent.get("id", ""),
