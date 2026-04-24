@@ -38,6 +38,23 @@ OUTPUT_DIR = CRON_DIR / "output"
 ONESHOT_GRACE_SECONDS = 120
 
 
+def _get_cron_paths(home: Optional[Path] = None) -> tuple[Path, Path, Path]:
+    """返回 (cron_dir, jobs_file, output_dir)，支持自定义 home。
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+              为 None 时使用默认的 HERMES_HOME。
+
+    Returns:
+        (cron_dir, jobs_file, output_dir) 三元组
+    """
+    hermes_home = home if home is not None else get_hermes_home()
+    cron_dir = hermes_home / "cron"
+    jobs_file = cron_dir / "jobs.json"
+    output_dir = cron_dir / "output"
+    return cron_dir, jobs_file, output_dir
+
+
 def _normalize_skill_list(skill: Optional[str] = None, skills: Optional[Any] = None) -> List[str]:
     """Normalize legacy/single-skill and multi-skill inputs into a unique ordered list."""
     if skills is None:
@@ -81,12 +98,18 @@ def _secure_file(path: Path):
         pass
 
 
-def ensure_dirs():
-    """Ensure cron directories exist with secure permissions."""
-    CRON_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _secure_dir(CRON_DIR)
-    _secure_dir(OUTPUT_DIR)
+def ensure_dirs(home: Optional[Path] = None):
+    """Ensure cron directories exist with secure permissions.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+              为 None 时使用默认的 HERMES_HOME。
+    """
+    cron_dir, _, output_dir = _get_cron_paths(home)
+    cron_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _secure_dir(cron_dir)
+    _secure_dir(output_dir)
 
 
 # =============================================================================
@@ -317,25 +340,31 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
 # Job CRUD Operations
 # =============================================================================
 
-def load_jobs() -> List[Dict[str, Any]]:
-    """Load all jobs from storage."""
-    ensure_dirs()
-    if not JOBS_FILE.exists():
+def load_jobs(home: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Load all jobs from storage.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+              为 None 时使用默认的 HERMES_HOME。
+    """
+    ensure_dirs(home)
+    _, jobs_file, _ = _get_cron_paths(home)
+    if not jobs_file.exists():
         return []
     
     try:
-        with open(JOBS_FILE, 'r', encoding='utf-8') as f:
+        with open(jobs_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return data.get("jobs", [])
     except json.JSONDecodeError:
         # Retry with strict=False to handle bare control chars in string values
         try:
-            with open(JOBS_FILE, 'r', encoding='utf-8') as f:
+            with open(jobs_file, 'r', encoding='utf-8') as f:
                 data = json.loads(f.read(), strict=False)
                 jobs = data.get("jobs", [])
                 if jobs:
                     # Auto-repair: rewrite with proper escaping
-                    save_jobs(jobs)
+                    save_jobs(jobs, home)
                     logger.warning("Auto-repaired jobs.json (had invalid control characters)")
                 return jobs
         except Exception as e:
@@ -346,17 +375,24 @@ def load_jobs() -> List[Dict[str, Any]]:
         raise RuntimeError(f"Failed to read cron database: {e}") from e
 
 
-def save_jobs(jobs: List[Dict[str, Any]]):
-    """Save all jobs to storage."""
-    ensure_dirs()
-    fd, tmp_path = tempfile.mkstemp(dir=str(JOBS_FILE.parent), suffix='.tmp', prefix='.jobs_')
+def save_jobs(jobs: List[Dict[str, Any]], home: Optional[Path] = None):
+    """Save all jobs to storage.
+
+    Args:
+        jobs: 任务列表
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+              为 None 时使用默认的 HERMES_HOME。
+    """
+    ensure_dirs(home)
+    _, jobs_file, _ = _get_cron_paths(home)
+    fd, tmp_path = tempfile.mkstemp(dir=str(jobs_file.parent), suffix='.tmp', prefix='.jobs_')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump({"jobs": jobs, "updated_at": _hermes_now().isoformat()}, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, JOBS_FILE)
-        _secure_file(JOBS_FILE)
+        os.replace(tmp_path, jobs_file)
+        _secure_file(jobs_file)
     except BaseException:
         try:
             os.unlink(tmp_path)
@@ -378,6 +414,7 @@ def create_job(
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
     script: Optional[str] = None,
+    home: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -397,6 +434,7 @@ def create_job(
         script: Optional path to a Python script whose stdout is injected into the
                 prompt each run.  The script runs before the agent turn, and its output
                 is prepended as context.  Useful for data collection / change detection.
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
 
     Returns:
         The created job dict
@@ -460,33 +498,49 @@ def create_job(
         "origin": origin,  # Tracks where job was created for "origin" delivery
     }
 
-    jobs = load_jobs()
+    jobs = load_jobs(home)
     jobs.append(job)
-    save_jobs(jobs)
+    save_jobs(jobs, home)
 
     return job
 
 
-def get_job(job_id: str) -> Optional[Dict[str, Any]]:
-    """Get a job by ID."""
-    jobs = load_jobs()
+def get_job(job_id: str, home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Get a job by ID.
+
+    Args:
+        job_id: 任务 ID
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    jobs = load_jobs(home)
     for job in jobs:
         if job["id"] == job_id:
             return _apply_skill_fields(job)
     return None
 
 
-def list_jobs(include_disabled: bool = False) -> List[Dict[str, Any]]:
-    """List all jobs, optionally including disabled ones."""
-    jobs = [_apply_skill_fields(j) for j in load_jobs()]
+def list_jobs(home: Optional[Path] = None, include_disabled: bool = False) -> List[Dict[str, Any]]:
+    """List all jobs, optionally including disabled ones.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+        include_disabled: 是否包含禁用的任务。
+    """
+    jobs = [_apply_skill_fields(j) for j in load_jobs(home)]
     if not include_disabled:
         jobs = [j for j in jobs if j.get("enabled", True)]
     return jobs
 
 
-def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Update a job by ID, refreshing derived schedule fields when needed."""
-    jobs = load_jobs()
+def update_job(job_id: str, updates: Dict[str, Any], home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Update a job by ID, refreshing derived schedule fields when needed.
+
+    Args:
+        job_id: 任务 ID
+        updates: 更新字段
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    jobs = load_jobs(home)
     for i, job in enumerate(jobs):
         if job["id"] != job_id:
             continue
@@ -518,13 +572,19 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
             updated["next_run_at"] = compute_next_run(updated["schedule"])
 
         jobs[i] = updated
-        save_jobs(jobs)
+        save_jobs(jobs, home)
         return _apply_skill_fields(jobs[i])
     return None
 
 
-def pause_job(job_id: str, reason: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Pause a job without deleting it."""
+def pause_job(job_id: str, reason: Optional[str] = None, home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Pause a job without deleting it.
+
+    Args:
+        job_id: 任务 ID
+        reason: 暂停原因
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
     return update_job(
         job_id,
         {
@@ -533,12 +593,18 @@ def pause_job(job_id: str, reason: Optional[str] = None) -> Optional[Dict[str, A
             "paused_at": _hermes_now().isoformat(),
             "paused_reason": reason,
         },
+        home,
     )
 
 
-def resume_job(job_id: str) -> Optional[Dict[str, Any]]:
-    """Resume a paused job and compute the next future run from now."""
-    job = get_job(job_id)
+def resume_job(job_id: str, home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Resume a paused job and compute the next future run from now.
+
+    Args:
+        job_id: 任务 ID
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    job = get_job(job_id, home)
     if not job:
         return None
 
@@ -552,12 +618,18 @@ def resume_job(job_id: str) -> Optional[Dict[str, Any]]:
             "paused_reason": None,
             "next_run_at": next_run_at,
         },
+        home,
     )
 
 
-def trigger_job(job_id: str) -> Optional[Dict[str, Any]]:
-    """Schedule a job to run on the next scheduler tick."""
-    job = get_job(job_id)
+def trigger_job(job_id: str, home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Schedule a job to run on the next scheduler tick.
+
+    Args:
+        job_id: 任务 ID
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    job = get_job(job_id, home)
     if not job:
         return None
     return update_job(
@@ -569,32 +641,45 @@ def trigger_job(job_id: str) -> Optional[Dict[str, Any]]:
             "paused_reason": None,
             "next_run_at": _hermes_now().isoformat(),
         },
+        home,
     )
 
 
-def remove_job(job_id: str) -> bool:
-    """Remove a job by ID."""
-    jobs = load_jobs()
+def remove_job(job_id: str, home: Optional[Path] = None) -> bool:
+    """Remove a job by ID.
+
+    Args:
+        job_id: 任务 ID
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    jobs = load_jobs(home)
     original_len = len(jobs)
     jobs = [j for j in jobs if j["id"] != job_id]
     if len(jobs) < original_len:
-        save_jobs(jobs)
+        save_jobs(jobs, home)
         return True
     return False
 
 
 def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
-                 delivery_error: Optional[str] = None):
+                 delivery_error: Optional[str] = None, home: Optional[Path] = None):
     """
     Mark a job as having been run.
-    
+
     Updates last_run_at, last_status, increments completed count,
     computes next_run_at, and auto-deletes if repeat limit reached.
 
     ``delivery_error`` is tracked separately from the agent error — a job
     can succeed (agent produced output) but fail delivery (platform down).
+
+    Args:
+        job_id: 任务 ID
+        success: 是否成功执行
+        error: 错误信息（如果失败）
+        delivery_error: 投递错误信息
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
     """
-    jobs = load_jobs()
+    jobs = load_jobs(home)
     for i, job in enumerate(jobs):
         if job["id"] == job_id:
             now = _hermes_now().isoformat()
@@ -603,20 +688,20 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
             job["last_error"] = error if not success else None
             # Track delivery failures separately — cleared on successful delivery
             job["last_delivery_error"] = delivery_error
-            
+
             # Increment completed count
             if job.get("repeat"):
                 job["repeat"]["completed"] = job["repeat"].get("completed", 0) + 1
-                
+
                 # Check if we've hit the repeat limit
                 times = job["repeat"].get("times")
                 completed = job["repeat"]["completed"]
                 if times is not None and times > 0 and completed >= times:
                     # Remove the job (limit reached)
                     jobs.pop(i)
-                    save_jobs(jobs)
+                    save_jobs(jobs, home)
                     return
-            
+
             # Compute next run
             job["next_run_at"] = compute_next_run(job["schedule"], now)
 
@@ -627,13 +712,13 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
             elif job.get("state") != "paused":
                 job["state"] = "scheduled"
 
-            save_jobs(jobs)
+            save_jobs(jobs, home)
             return
 
     logger.warning("mark_job_run: job_id %s not found, skipping save", job_id)
 
 
-def advance_next_run(job_id: str) -> bool:
+def advance_next_run(job_id: str, home: Optional[Path] = None) -> bool:
     """Preemptively advance next_run_at for a recurring job before execution.
 
     Call this BEFORE run_job() so that if the process crashes mid-execution,
@@ -643,9 +728,13 @@ def advance_next_run(job_id: str) -> bool:
 
     One-shot jobs are left unchanged so they can still retry on restart.
 
+    Args:
+        job_id: 任务 ID
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+
     Returns True if next_run_at was advanced, False otherwise.
     """
-    jobs = load_jobs()
+    jobs = load_jobs(home)
     for job in jobs:
         if job["id"] == job_id:
             kind = job.get("schedule", {}).get("kind")
@@ -655,22 +744,25 @@ def advance_next_run(job_id: str) -> bool:
             new_next = compute_next_run(job["schedule"], now)
             if new_next and new_next != job.get("next_run_at"):
                 job["next_run_at"] = new_next
-                save_jobs(jobs)
+                save_jobs(jobs, home)
                 return True
             return False
     return False
 
 
-def get_due_jobs() -> List[Dict[str, Any]]:
+def get_due_jobs(home: Optional[Path] = None) -> List[Dict[str, Any]]:
     """Get all jobs that are due to run now.
 
     For recurring jobs (cron/interval), if the scheduled time is stale
     (more than one period in the past, e.g. because the gateway was down),
     the job is fast-forwarded to the next future run instead of firing
     immediately.  This prevents a burst of missed jobs on gateway restart.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
     """
     now = _hermes_now()
-    raw_jobs = load_jobs()
+    raw_jobs = load_jobs(home)
     jobs = [_apply_skill_fields(j) for j in copy.deepcopy(raw_jobs)]
     due = []
     needs_save = False
@@ -735,21 +827,28 @@ def get_due_jobs() -> List[Dict[str, Any]]:
             due.append(job)
 
     if needs_save:
-        save_jobs(raw_jobs)
+        save_jobs(raw_jobs, home)
 
     return due
 
 
-def save_job_output(job_id: str, output: str):
-    """Save job output to file."""
-    ensure_dirs()
-    job_output_dir = OUTPUT_DIR / job_id
+def save_job_output(job_id: str, output: str, home: Optional[Path] = None):
+    """Save job output to file.
+
+    Args:
+        job_id: 任务 ID
+        output: 输出内容
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。
+    """
+    ensure_dirs(home)
+    _, _, output_dir = _get_cron_paths(home)
+    job_output_dir = output_dir / job_id
     job_output_dir.mkdir(parents=True, exist_ok=True)
     _secure_dir(job_output_dir)
-    
+
     timestamp = _hermes_now().strftime("%Y-%m-%d_%H-%M-%S")
     output_file = job_output_dir / f"{timestamp}.md"
-    
+
     fd, tmp_path = tempfile.mkstemp(dir=str(job_output_dir), suffix='.tmp', prefix='.output_')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -764,5 +863,5 @@ def save_job_output(job_id: str, output: str):
         except OSError:
             pass
         raise
-    
+
     return output_file

@@ -5,6 +5,8 @@ Cron jobs API handlers for Gateway Dashboard.
 import hmac
 import logging
 import os
+from pathlib import Path
+from typing import Optional
 from aiohttp import web
 
 logger = logging.getLogger(__name__)
@@ -25,14 +27,25 @@ class CronAPIHandlers:
         expected = f"Bearer {self._session_token}"
         return hmac.compare_digest(auth.encode(), expected.encode())
 
+    def _resolve_profile_home(self, request: web.Request) -> Optional[Path]:
+        """从 request 解析 Sub Agent 的 profile_home，失败则返回 None（使用主 Agent）"""
+        from gateway.org.runtime import resolve_request_profile
+        profile = resolve_request_profile(request)
+        if profile is None:
+            return None
+        if not profile.is_ready():
+            return None
+        return profile.profile_home
+
     async def handle_list_jobs(self, request: web.Request) -> web.Response:
         """GET /api/cron/jobs - List all cron jobs."""
         if not self._check_auth(request):
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         try:
+            profile_home = self._resolve_profile_home(request)
             from cron.jobs import list_jobs
-            jobs = list_jobs(include_disabled=True)
+            jobs = list_jobs(home=profile_home, include_disabled=True)
             return web.json_response(jobs)
 
         except Exception as e:
@@ -46,9 +59,10 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from cron.jobs import get_job
-            job = get_job(job_id)
+            job = get_job(job_id, home=profile_home)
 
             if not job:
                 return web.json_response(
@@ -75,12 +89,14 @@ class CronAPIHandlers:
                 required=["prompt", "schedule"]
             )
 
+            profile_home = self._resolve_profile_home(request)
             from cron.jobs import create_job
             job = create_job(
                 prompt=data["prompt"],
                 schedule=data["schedule"],
                 name=data.get("name"),
-                deliver=data.get("deliver")
+                deliver=data.get("deliver"),
+                home=profile_home
             )
 
             return web.json_response(job)
@@ -98,12 +114,13 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from gateway.platforms.api_server_validation import parse_request_json
             data = await parse_request_json(request, {"updates": dict}, required=["updates"])
 
             from cron.jobs import update_job
-            job = update_job(job_id, data["updates"])
+            job = update_job(job_id, data["updates"], home=profile_home)
 
             if not job:
                 return web.json_response(
@@ -126,9 +143,10 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from cron.jobs import pause_job
-            job = pause_job(job_id)
+            job = pause_job(job_id, home=profile_home)
 
             if not job:
                 return web.json_response(
@@ -149,9 +167,10 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from cron.jobs import resume_job
-            job = resume_job(job_id)
+            job = resume_job(job_id, home=profile_home)
 
             if not job:
                 return web.json_response(
@@ -172,9 +191,10 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from cron.jobs import trigger_job
-            job = trigger_job(job_id)
+            job = trigger_job(job_id, home=profile_home)
 
             if not job:
                 return web.json_response(
@@ -195,9 +215,10 @@ class CronAPIHandlers:
 
         try:
             job_id = request.match_info["job_id"]
+            profile_home = self._resolve_profile_home(request)
 
             from cron.jobs import remove_job
-            success = remove_job(job_id)
+            success = remove_job(job_id, home=profile_home)
 
             if not success:
                 return web.json_response(

@@ -70,6 +70,16 @@ class SkillsAPIHandlers:
         expected = f"Bearer {self._session_token}"
         return hmac.compare_digest(auth.encode(), expected.encode())
 
+    def _resolve_profile_home(self, request: web.Request) -> Optional[Path]:
+        """从 request 解析 Sub Agent 的 profile_home，失败则返回 None（使用主 Agent）"""
+        from gateway.org.runtime import resolve_request_profile
+        profile = resolve_request_profile(request)
+        if profile is None:
+            return None
+        if not profile.is_ready():
+            return None
+        return profile.profile_home
+
     def _init_cache_db(self):
         """Initialize registry cache database."""
         from hermes_constants import get_hermes_home
@@ -295,7 +305,8 @@ class SkillsAPIHandlers:
             from hermes_cli.config import get_hermes_home
             import yaml
 
-            skills_dir = get_hermes_home() / "skills"
+            profile_home = self._resolve_profile_home(request)
+            skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             if not skills_dir.exists():
                 return web.json_response([])
 
@@ -405,7 +416,8 @@ class SkillsAPIHandlers:
             if not skill_name:
                 return web.json_response({"error": "Missing skill name"}, status=400)
 
-            skills_dir = get_hermes_home() / "skills"
+            profile_home = self._resolve_profile_home(request)
+            skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             skill_path = skills_dir / skill_name
 
             if not skill_path.exists():
@@ -433,6 +445,10 @@ class SkillsAPIHandlers:
             from hermes_constants import get_hermes_home
             import tempfile
             import shutil
+
+            # 解析 profile_home（在处理请求开始时）
+            profile_home = self._resolve_profile_home(request)
+            target_skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
 
             # Read multipart form data
             reader = await request.multipart()
@@ -554,7 +570,8 @@ class SkillsAPIHandlers:
                             temp_zip_path=bundle_file_path,
                             progress_callback=progress_callback,
                             start_progress=10,
-                            category=category
+                            category=category,
+                            skills_dir=target_skills_dir  # 传递目标 skills 目录
                         )
                     except Exception as e:
                         # Cleanup on error
@@ -589,6 +606,10 @@ class SkillsAPIHandlers:
             import hashlib
             import tempfile
             import uuid
+
+            # 解析 profile_home（在处理请求开始时）
+            profile_home = self._resolve_profile_home(request)
+            target_skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
 
             data = await parse_request_json(
                 request,
@@ -695,7 +716,8 @@ class SkillsAPIHandlers:
                         temp_zip_path=None,  # No ZIP file for official skills
                         progress_callback=progress_callback,
                         start_progress=30,
-                        category=category
+                        category=category,
+                        skills_dir=target_skills_dir  # 传递目标 skills 目录
                     )
                     return
 
@@ -758,7 +780,8 @@ class SkillsAPIHandlers:
                         temp_zip_path=temp_file,
                         progress_callback=progress_callback,
                         start_progress=50,
-                        category=category
+                        category=category,
+                        skills_dir=target_skills_dir  # 传递目标 skills 目录
                     )
 
                 except Exception as e:
@@ -882,7 +905,8 @@ class SkillsAPIHandlers:
         temp_zip_path: Path | None,
         progress_callback,
         start_progress: int = 50,
-        category: str = ""
+        category: str = "",
+        skills_dir: Optional[Path] = None
     ):
         """
         Shared installation logic for both upload and online installs.
@@ -895,17 +919,28 @@ class SkillsAPIHandlers:
             progress_callback: async callback(progress_pct, step_text)
             start_progress: Starting progress percentage (default 50)
             category: Optional category subdirectory for installation
+            skills_dir: 目标 skills 目录（如 Sub Agent 的 profile_home/skills/），None 使用默认
         """
+        import tools.skills_hub
         from tools.skills_hub import (
             quarantine_bundle,
             install_from_quarantine,
             HubLockFile,
-            SKILLS_DIR,
             QUARANTINE_DIR
         )
         from tools.skills_guard import scan_skill
         import shutil
         from datetime import datetime
+
+        # 临时替换全局 SKILLS_DIR（如果提供了 skills_dir）
+        original_skills_dir = tools.skills_hub.SKILLS_DIR
+        if skills_dir:
+            tools.skills_hub.SKILLS_DIR = skills_dir
+            # 确保目标目录存在
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            # 确保 .hub 子目录存在
+            hub_dir = skills_dir / ".hub"
+            hub_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             # Step 1: Quarantine bundle
@@ -935,7 +970,8 @@ class SkillsAPIHandlers:
 
             if existing:
                 # Backup existing skill to quarantine
-                existing_path = SKILLS_DIR / bundle.name
+                current_skills_dir = tools.skills_hub.SKILLS_DIR
+                existing_path = current_skills_dir / bundle.name
                 if existing_path.exists():
                     backup_name = f"{bundle.name}_backup_{int(datetime.now().timestamp())}"
                     backup_path = QUARANTINE_DIR / backup_name
@@ -971,6 +1007,10 @@ class SkillsAPIHandlers:
             if temp_zip_path and temp_zip_path.exists():
                 temp_zip_path.unlink(missing_ok=True)
             raise
+        finally:
+            # 恢复全局 SKILLS_DIR
+            if skills_dir:
+                tools.skills_hub.SKILLS_DIR = original_skills_dir
 
     async def handle_open_directory(self, request: web.Request) -> web.Response:
         """POST /api/skills/open-directory - Open skill directory in file explorer."""
@@ -1023,7 +1063,8 @@ class SkillsAPIHandlers:
             from hermes_constants import get_hermes_home
             import yaml
 
-            skills_dir = get_hermes_home() / "skills"
+            profile_home = self._resolve_profile_home(request)
+            skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             skill_dir = skills_dir / skill_name
             skill_yaml_path = skill_dir / "skill.yaml"
 

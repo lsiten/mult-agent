@@ -2809,8 +2809,11 @@ def _normalize_max_turns_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def read_raw_config() -> Dict[str, Any]:
-    """Read $HERMES_HOME/config.yaml as-is, without merging defaults or migrating.
+def read_raw_config(home: Optional[Path] = None) -> Dict[str, Any]:
+    """Read config.yaml as-is, without merging defaults or migrating.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。None 使用 HERMES_HOME。
 
     Returns the raw YAML dict, or ``{}`` if the file doesn't exist or can't
     be parsed.  Use this for lightweight config reads where you just need a
@@ -2818,7 +2821,10 @@ def read_raw_config() -> Dict[str, Any]:
     + migration pipeline.
     """
     try:
-        config_path = get_config_path()
+        if home is None:
+            config_path = get_config_path()
+        else:
+            config_path = home / "config.yaml"
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
@@ -2827,13 +2833,20 @@ def read_raw_config() -> Dict[str, Any]:
     return {}
 
 
-def load_config() -> Dict[str, Any]:
-    """Load configuration from $HERMES_HOME/config.yaml."""
-    ensure_hermes_home()
-    config_path = get_config_path()
-    
+def load_config(home: Optional[Path] = None) -> Dict[str, Any]:
+    """Load configuration from config.yaml.
+
+    Args:
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。None 使用 HERMES_HOME。
+    """
+    if home is None:
+        ensure_hermes_home()
+        config_path = get_config_path()
+    else:
+        config_path = home / "config.yaml"
+
     config = copy.deepcopy(DEFAULT_CONFIG)
-    
+
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
@@ -2953,18 +2966,27 @@ _COMMENTED_SECTIONS = """
 """
 
 
-def save_config(config: Dict[str, Any]):
-    """Save configuration to $HERMES_HOME/config.yaml."""
+def save_config(config: Dict[str, Any], home: Optional[Path] = None):
+    """Save configuration to config.yaml.
+
+    Args:
+        config: 配置字典
+        home: 自定义 home 目录（如 Sub Agent 的 profile_home）。None 使用 HERMES_HOME。
+    """
     if is_managed():
         managed_error("save configuration")
         return
     from utils import atomic_yaml_write
 
-    ensure_hermes_home()
-    config_path = get_config_path()
+    if home is None:
+        ensure_hermes_home()
+        config_path = get_config_path()
+    else:
+        config_path = home / "config.yaml"
+
     current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
     normalized = current_normalized
-    raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config()))
+    raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config(home=home)))
     if raw_existing:
         normalized = _preserve_env_ref_templates(
             normalized,

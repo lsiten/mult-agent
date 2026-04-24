@@ -14,7 +14,8 @@ import hmac
 import json
 import logging
 import os
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 from aiohttp import web
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,25 @@ class ConfigAPIHandlers:
         expected = f"Bearer {self._session_token}"
         return hmac.compare_digest(auth.encode(), expected.encode())
 
+    def _resolve_profile_home(self, request: web.Request) -> Optional[Path]:
+        """从 request 解析 Sub Agent 的 profile_home，失败则返回 None（使用主 Agent）"""
+        from gateway.org.runtime import resolve_request_profile
+        profile = resolve_request_profile(request)
+        if profile is None:
+            return None
+        if not profile.is_ready():
+            return None
+        return profile.profile_home
+
     async def handle_get_config(self, request: web.Request) -> web.Response:
         """GET /api/config - Return current configuration."""
         if not self._check_auth(request):
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         try:
+            profile_home = self._resolve_profile_home(request)
             from hermes_cli.config import load_config
-            config = load_config()
+            config = load_config(home=profile_home)
 
             # Strip internal keys (starting with _)
             config = {k: v for k, v in config.items() if not k.startswith("_")}
@@ -104,11 +116,12 @@ class ConfigAPIHandlers:
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         try:
+            profile_home = self._resolve_profile_home(request)
             from gateway.platforms.api_server_validation import parse_request_json
             data = await parse_request_json(request, {"config": dict}, required=["config"])
 
             from hermes_cli.config import save_config
-            save_config(data["config"])
+            save_config(data["config"], home=profile_home)
 
             return web.json_response({"ok": True})
 
@@ -124,8 +137,12 @@ class ConfigAPIHandlers:
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         try:
+            profile_home = self._resolve_profile_home(request)
             from hermes_cli.config import get_config_path
-            config_path = get_config_path()
+            if profile_home:
+                config_path = profile_home / "config.yaml"
+            else:
+                config_path = get_config_path()
 
             if not config_path.exists():
                 return web.json_response({"yaml": ""})
@@ -143,11 +160,15 @@ class ConfigAPIHandlers:
             return web.json_response({"error": "Unauthorized"}, status=401)
 
         try:
+            profile_home = self._resolve_profile_home(request)
             from gateway.platforms.api_server_validation import parse_request_json
             data = await parse_request_json(request, {"yaml_text": str}, required=["yaml_text"])
 
             from hermes_cli.config import get_config_path
-            config_path = get_config_path()
+            if profile_home:
+                config_path = profile_home / "config.yaml"
+            else:
+                config_path = get_config_path()
 
             # Validate YAML before writing
             import yaml
@@ -171,9 +192,10 @@ class ConfigAPIHandlers:
     async def handle_get_model_info(self, request: web.Request) -> web.Response:
         """GET /api/model/info - Return model metadata."""
         try:
+            profile_home = self._resolve_profile_home(request)
             from hermes_cli.config import load_config
 
-            cfg = load_config()
+            cfg = load_config(home=profile_home)
             model_cfg = cfg.get("model", "")
 
             # Extract model name and provider
