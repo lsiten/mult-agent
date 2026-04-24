@@ -41,7 +41,7 @@ export function ToolCallDisplay({ toolCalls }: ToolCallDisplayProps) {
       {expanded && (
         <div className="mt-2 space-y-2">
           {toolCalls.map((toolCall, idx) => {
-            let args: Record<string, any> = {};
+            let args: Record<string, unknown> = {};
             try {
               args = JSON.parse(toolCall.function.arguments);
             } catch {
