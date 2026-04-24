@@ -154,8 +154,14 @@ export function AgentNode({
     }
   }
 
-  const currentManagerName = agent.manager_agent_id
-    ? availableManagers.find((m) => m.id === agent.manager_agent_id)?.name || `Agent #${agent.manager_agent_id}`
+  const currentManager = agent.manager_agent_id
+    ? availableManagers.find((m) => m.id === agent.manager_agent_id)
+    : null;
+
+  const currentManagerDisplay = currentManager
+    ? `${currentManager.name}-${currentManager.id}`
+    : agent.manager_agent_id
+    ? `Agent-${agent.manager_agent_id}`
     : null;
 
   const leadershipBadge = agent.leadership_role === 'primary' ? (
@@ -205,14 +211,14 @@ export function AgentNode({
                     <SelectItem value="none">{t.common.none}</SelectItem>
                     {availableManagers.map((m) => (
                       <SelectItem key={m.id} value={m.id.toString()}>
-                        {m.name} ({m.category})
+                        {m.name}-{m.id} ({m.category})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {currentManagerName && (
+                {currentManagerDisplay && (
                   <Badge variant="outline" className="text-xs">
-                    {t.organization.currentManager}: {currentManagerName}
+                    {t.organization.currentManager}: {currentManagerDisplay}
                   </Badge>
                 )}
                 {availableManagers.length === 0 && (
