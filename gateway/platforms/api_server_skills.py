@@ -214,6 +214,7 @@ class SkillsAPIHandlers:
             logger.error(f"Failed to delete skill: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_open_directory(self, request: web.Request) -> web.Response:
         """POST /api/skills/open-directory - Open skill directory in file explorer."""
         if not self._check_auth(request):
             return web.json_response({"error": "Unauthorized"}, status=401)
