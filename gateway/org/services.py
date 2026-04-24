@@ -122,6 +122,29 @@ class SoulRenderService:
         ),
     }
 
+    def __init__(self, store: OrganizationStore):
+        self.store = store
+
+    def _query_manager(self, manager_id: int) -> dict[str, Any] | None:
+        """查询经理 Agent 信息
+
+        Args:
+            manager_id: 经理 Agent ID
+
+        Returns:
+            经理 Agent 记录，如果不存在返回 None
+        """
+        try:
+            with self.store.connect() as conn:
+                manager = self.store.query_one(
+                    "SELECT id, name, display_name FROM agents WHERE id = ?",
+                    (manager_id,),
+                    conn
+                )
+                return manager
+        except Exception:
+            return None
+
     def render(
         self,
         company: dict[str, Any],
@@ -149,6 +172,16 @@ class SoulRenderService:
         tpl = template or {}
         workspaces = workspaces or {}
 
+        # 构建经理信息（如果有）
+        manager_info = ""
+        manager_id = agent.get("manager_agent_id")
+        if manager_id:
+            # 查询经理信息
+            manager = self._query_manager(manager_id)
+            if manager:
+                manager_display = manager.get("display_name") or manager.get("name", "")
+                manager_info = f"- **直属负责人**: {manager_display}\n"
+
         context = {
             "agent_id": agent.get("id", ""),
             "agent_name": agent.get("display_name") or agent.get("name", ""),
@@ -160,6 +193,7 @@ class SoulRenderService:
             "position_goal": position.get("goal") or "Follow the position responsibilities.",
             "position_responsibilities": position.get("responsibilities", ""),
             "agent_goal": agent.get("service_goal") or "Support the assigned position.",
+            "manager_info": manager_info,
             "profile_home": profile_home,
             "agent_workspace": workspaces.get("agent", ""),
             "position_workspace": workspaces.get("position", ""),
@@ -199,6 +233,7 @@ class SoulRenderService:
             "- **岗位**: {{position_name}}\n"
             "- **部门**: {{department_name}}\n"
             "- **公司**: {{company_name}}\n"
+            "{{manager_info}}"
             "\n"
             "## 职责描述\n"
             "{{position_responsibilities}}\n"
@@ -589,7 +624,7 @@ class OrganizationService:
         self.profile_service = ProfileProvisionService(
             self.store,
             self.profile_agents,
-            SoulRenderService(),
+            SoulRenderService(self.store),
             templates=self.profile_templates,
             assets=self.master_assets,
             validator=self.validator,
