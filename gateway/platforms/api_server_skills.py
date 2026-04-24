@@ -8,12 +8,39 @@ import logging
 import os
 import time
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from aiohttp import web
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _with_skills_dir(skills_dir: Optional[Path]):
+    """上下文管理器：临时替换 tools.skills_hub.SKILLS_DIR。
+
+    Args:
+        skills_dir: 目标 skills 目录（None 则不替换）
+
+    Yields:
+        None
+    """
+    import tools.skills_hub
+
+    original = tools.skills_hub.SKILLS_DIR
+    if skills_dir:
+        tools.skills_hub.SKILLS_DIR = skills_dir
+        # 确保目标目录和 .hub 子目录存在
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        (skills_dir / ".hub").mkdir(parents=True, exist_ok=True)
+
+    try:
+        yield
+    finally:
+        if skills_dir:
+            tools.skills_hub.SKILLS_DIR = original
 
 
 class SecurityScanError(Exception):
@@ -69,16 +96,6 @@ class SkillsAPIHandlers:
         auth = request.headers.get("Authorization", "")
         expected = f"Bearer {self._session_token}"
         return hmac.compare_digest(auth.encode(), expected.encode())
-
-    def _resolve_profile_home(self, request: web.Request) -> Optional[Path]:
-        """从 request 解析 Sub Agent 的 profile_home，失败则返回 None（使用主 Agent）"""
-        from gateway.org.runtime import resolve_request_profile
-        profile = resolve_request_profile(request)
-        if profile is None:
-            return None
-        if not profile.is_ready():
-            return None
-        return profile.profile_home
 
     def _init_cache_db(self):
         """Initialize registry cache database."""
@@ -305,7 +322,8 @@ class SkillsAPIHandlers:
             from hermes_cli.config import get_hermes_home
             import yaml
 
-            profile_home = self._resolve_profile_home(request)
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
             skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             if not skills_dir.exists():
                 return web.json_response([])
@@ -416,7 +434,8 @@ class SkillsAPIHandlers:
             if not skill_name:
                 return web.json_response({"error": "Missing skill name"}, status=400)
 
-            profile_home = self._resolve_profile_home(request)
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
             skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             skill_path = skills_dir / skill_name
 
@@ -447,7 +466,8 @@ class SkillsAPIHandlers:
             import shutil
 
             # 解析 profile_home（在处理请求开始时）
-            profile_home = self._resolve_profile_home(request)
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
             target_skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
 
             # Read multipart form data
@@ -608,7 +628,8 @@ class SkillsAPIHandlers:
             import uuid
 
             # 解析 profile_home（在处理请求开始时）
-            profile_home = self._resolve_profile_home(request)
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
             target_skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
 
             data = await parse_request_json(
@@ -932,17 +953,7 @@ class SkillsAPIHandlers:
         import shutil
         from datetime import datetime
 
-        # 临时替换全局 SKILLS_DIR（如果提供了 skills_dir）
-        original_skills_dir = tools.skills_hub.SKILLS_DIR
-        if skills_dir:
-            tools.skills_hub.SKILLS_DIR = skills_dir
-            # 确保目标目录存在
-            skills_dir.mkdir(parents=True, exist_ok=True)
-            # 确保 .hub 子目录存在
-            hub_dir = skills_dir / ".hub"
-            hub_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
+        with _with_skills_dir(skills_dir):
             # Step 1: Quarantine bundle
             await progress_callback(start_progress, "Quarantining skill package...")
             quarantine_path = quarantine_bundle(bundle)
@@ -1002,15 +1013,9 @@ class SkillsAPIHandlers:
             await progress_callback(100, f"Successfully installed {bundle.name}")
             logger.info(f"Successfully installed skill: {bundle.name} at {install_path}")
 
-        except Exception as e:
-            # Cleanup temp file on error
-            if temp_zip_path and temp_zip_path.exists():
+            # Cleanup temp file after success
+            if temp_zip_path:
                 temp_zip_path.unlink(missing_ok=True)
-            raise
-        finally:
-            # 恢复全局 SKILLS_DIR
-            if skills_dir:
-                tools.skills_hub.SKILLS_DIR = original_skills_dir
 
     async def handle_open_directory(self, request: web.Request) -> web.Response:
         """POST /api/skills/open-directory - Open skill directory in file explorer."""
@@ -1063,7 +1068,8 @@ class SkillsAPIHandlers:
             from hermes_constants import get_hermes_home
             import yaml
 
-            profile_home = self._resolve_profile_home(request)
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
             skills_dir = (profile_home / "skills") if profile_home else (get_hermes_home() / "skills")
             skill_dir = skills_dir / skill_name
             skill_yaml_path = skill_dir / "skill.yaml"

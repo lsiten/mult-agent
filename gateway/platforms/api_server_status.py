@@ -56,7 +56,11 @@ class StatusAPIHandlers:
         self._check_auth(request)
 
         try:
-            hermes_home = get_hermes_home()
+            # 解析 profile_home（Sub Agent）或使用主 Agent 的 HERMES_HOME
+            from gateway.org.runtime import resolve_request_profile_home
+            profile_home = resolve_request_profile_home(request)
+            hermes_home = profile_home if profile_home is not None else get_hermes_home()
+
             config_path = hermes_home / "config.yaml"
             env_path = hermes_home / ".env"
 

@@ -194,6 +194,26 @@ def resolve_request_profile(request: Any) -> Optional[ChatProfile]:
     return resolve_chat_profile(agent_id)
 
 
+def resolve_request_profile_home(request: Any) -> Optional[Path]:
+    """从 request 解析 Sub Agent 的 profile_home，失败则返回 None（使用主 Agent）。
+
+    这是一个便捷辅助函数，供 Gateway API handlers 使用。返回 None 时，调用方应
+    使用主 Agent 的 HERMES_HOME。
+
+    Args:
+        request: aiohttp.web.Request 对象
+
+    Returns:
+        Sub Agent 的 profile_home（Path 对象），失败时返回 None
+    """
+    profile = resolve_request_profile(request)
+    if profile is None:
+        return None
+    if not profile.is_ready():
+        return None
+    return profile.profile_home
+
+
 def _display_from_agent(agent: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": agent.get("id"),
