@@ -365,6 +365,7 @@ export const en: Translations = {
     positionLeader: "Position Leader",
     departmentLeader: "Department Leader",
     managingDepartmentLeader: "Managing Department Leader",
+    otherDepartmentLeader: "Other Department Leader",
   },
 
   config: {

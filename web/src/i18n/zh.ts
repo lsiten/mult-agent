@@ -365,6 +365,7 @@ export const zh: Translations = {
     positionLeader: "岗位负责人",
     departmentLeader: "部门负责人",
     managingDepartmentLeader: "管理部门负责人",
+    otherDepartmentLeader: "其他部门负责人",
   },
 
   config: {

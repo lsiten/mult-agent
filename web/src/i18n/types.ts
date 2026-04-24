@@ -606,6 +606,7 @@ export interface Translations {
     positionLeader: string;
     departmentLeader: string;
     managingDepartmentLeader: string;
+    otherDepartmentLeader: string;
   };
 
   // ── Language switcher ──

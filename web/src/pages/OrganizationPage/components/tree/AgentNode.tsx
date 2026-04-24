@@ -154,6 +154,51 @@ export function AgentNode({
     }
   }
 
+  // 如果当前负责人不在可选列表中，尝试从本岗位、本部门、所有部门中查找并添加
+  if (agent.manager_agent_id && !availableManagers.find((m) => m.id === agent.manager_agent_id)) {
+    // 搜索范围：本岗位所有 agents
+    let foundManager = (position.agents ?? []).find((a) => a.id === agent.manager_agent_id);
+    let category = t.organization.positionLeader;
+
+    // 搜索范围：本部门所有岗位的 agents
+    if (!foundManager) {
+      for (const pos of department.positions ?? []) {
+        foundManager = (pos.agents ?? []).find((a) => a.id === agent.manager_agent_id);
+        if (foundManager) {
+          category = pos.is_management_position
+            ? t.organization.departmentLeader
+            : t.organization.positionLeader;
+          break;
+        }
+      }
+    }
+
+    // 搜索范围：所有部门的所有岗位的 agents
+    if (!foundManager) {
+      for (const dept of allDepartments) {
+        for (const pos of dept.positions ?? []) {
+          foundManager = (pos.agents ?? []).find((a) => a.id === agent.manager_agent_id);
+          if (foundManager) {
+            category = dept.id === department.managing_department_id
+              ? t.organization.managingDepartmentLeader
+              : t.organization.otherDepartmentLeader;
+            break;
+          }
+        }
+        if (foundManager) break;
+      }
+    }
+
+    // 如果找到了，添加到列表顶部
+    if (foundManager) {
+      availableManagers.unshift({
+        id: foundManager.id,
+        name: foundManager.display_name || foundManager.name,
+        category: `${category} (${t.organization.currentManager})`,
+      });
+    }
+  }
+
   const currentManager = agent.manager_agent_id
     ? availableManagers.find((m) => m.id === agent.manager_agent_id)
     : null;
