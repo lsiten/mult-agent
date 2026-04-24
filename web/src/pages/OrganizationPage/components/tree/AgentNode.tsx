@@ -254,17 +254,13 @@ export function AgentNode({
                   disabled={loading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={t.organization.selectManager}>
-                      {agent.manager_agent_id
-                        ? currentManagerDisplay
-                        : t.common.none}
-                    </SelectValue>
+                    <SelectValue placeholder={t.organization.selectManager} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{t.common.none}</SelectItem>
                     {availableManagers.map((m) => (
                       <SelectItem key={m.id} value={m.id.toString()}>
-                        {m.name}-{m.id} ({m.category})
+                        {`${m.name}-${m.id} (${m.category})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
