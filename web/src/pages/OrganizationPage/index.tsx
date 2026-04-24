@@ -23,6 +23,7 @@ export default function OrganizationPage() {
         onCreate={page.openCreate}
         onEdit={page.openEdit}
         onMoveCompany={page.moveCompany}
+        onRefresh={page.refreshSelectedCompany}
       />
 
       {page.dialog ? (

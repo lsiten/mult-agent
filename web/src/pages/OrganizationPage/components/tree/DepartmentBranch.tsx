@@ -1,5 +1,10 @@
+import { Building2 } from "lucide-react";
+import { useState } from "react";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
 import type { Translations } from "@/i18n/types";
-import type { OrgCompany, OrgDepartment } from "@/lib/api";
+import { api, type OrgCompany, type OrgDepartment } from "@/lib/api";
 import { getPositionTreeWidth } from "../../orgLayout";
 import type { OrgCreateHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
@@ -13,6 +18,8 @@ interface DepartmentBranchProps {
   t: Translations;
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
+  onRefresh: () => void;
+  allDepartments?: OrgDepartment[];
 }
 
 export function DepartmentBranch({
@@ -21,13 +28,50 @@ export function DepartmentBranch({
   t,
   onCreate,
   onEdit,
+  onRefresh,
+  allDepartments,
 }: DepartmentBranchProps) {
   const color = nodeColor(department.accent_color, company.accent_color);
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+
+  const handleToggleManagement = async (checked: boolean) => {
+    setLoading(true);
+    try {
+      await api.setDepartmentAsManagement(department.id, checked);
+      toast({
+        title: t.organization.managementDepartmentUpdated,
+        variant: "default",
+      });
+      onRefresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        title: t.common.operationFailed,
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const managementBadge = department.is_management_department ? (
+    <Tooltip content={t.organization.managementDepartment} side="top" delay={150}>
+      <Building2 className="h-4 w-4 text-blue-500" />
+    </Tooltip>
+  ) : null;
+
   return (
     <div className="flex flex-col items-center">
       <OrgNodeCard
         type="department"
-        name={department.name}
+        name={
+          <div className="flex items-center gap-2">
+            <span>{department.name}</span>
+            {managementBadge}
+          </div>
+        }
         subtitle={department.description || department.goal}
         icon={department.icon}
         color={color}
@@ -35,6 +79,15 @@ export function DepartmentBranch({
           [t.organization.positions, department.position_count ?? department.positions?.length ?? 0],
           [t.organization.agents, department.agent_count ?? 0],
         ]}
+        actions={
+          <Tooltip content={t.organization.setManagementDepartment} side="left" delay={150}>
+            <Switch
+              checked={Boolean(department.is_management_department)}
+              onCheckedChange={handleToggleManagement}
+              disabled={loading}
+            />
+          </Tooltip>
+        }
         onEdit={() => onEdit("department", department, { company, department })}
       />
 
@@ -52,6 +105,8 @@ export function DepartmentBranch({
             t={t}
             onCreate={onCreate}
             onEdit={onEdit}
+            onRefresh={onRefresh}
+            allDepartments={allDepartments}
           />
         )}
       />

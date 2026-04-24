@@ -113,6 +113,53 @@ class OrganizationAPIHandlers:
         owner_id = int(request.match_info["ownerId"])
         return await self._handle(request, lambda: self._service.get_workspace(owner_type, owner_id))
 
+    # ------------------------------ Quick Actions (快捷操作) ------------------------------
+
+    async def handle_get_recommended_manager(self, request: web.Request) -> web.Response:
+        """获取 Agent 的推荐经理"""
+        agent_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.get_recommended_manager(agent_id))
+
+    async def handle_set_agent_as_leader(self, request: web.Request) -> web.Response:
+        """设置 Agent 为负责人（主/副/无）"""
+        agent_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        leadership_role = data.get("leadership_role", "none")
+        return await self._handle(
+            request,
+            lambda: self._service.set_agent_as_leader(agent_id, leadership_role),
+        )
+
+    async def handle_set_position_as_management(self, request: web.Request) -> web.Response:
+        """设置岗位为管理岗位"""
+        position_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        is_management = data.get("is_management", True)
+        return await self._handle(
+            request,
+            lambda: self._service.set_position_as_management(position_id, is_management),
+        )
+
+    async def handle_set_department_as_management(self, request: web.Request) -> web.Response:
+        """设置部门为管理部门"""
+        department_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        is_management = data.get("is_management", True)
+        return await self._handle(
+            request,
+            lambda: self._service.set_department_as_management(department_id, is_management),
+        )
+
+    async def handle_set_managing_department(self, request: web.Request) -> web.Response:
+        """设置部门的管理部门"""
+        department_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        managing_department_id = data.get("managing_department_id")
+        return await self._handle(
+            request,
+            lambda: self._service.set_managing_department(department_id, managing_department_id),
+        )
+
     # ------------------------------ master_agent_assets ------------------------------
 
     async def handle_refresh_master_assets(self, request: web.Request) -> web.Response:

@@ -12,9 +12,10 @@ interface CompanyChartProps {
   t: Translations;
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
+  onRefresh: () => void;
 }
 
-export function CompanyChart({ company, t, onCreate, onEdit }: CompanyChartProps) {
+export function CompanyChart({ company, t, onCreate, onEdit, onRefresh }: CompanyChartProps) {
   return (
     <div className="mx-auto flex w-max min-w-full flex-col items-center">
       <OrgNodeCard
@@ -44,6 +45,8 @@ export function CompanyChart({ company, t, onCreate, onEdit }: CompanyChartProps
             t={t}
             onCreate={onCreate}
             onEdit={onEdit}
+            onRefresh={onRefresh}
+            allDepartments={company.departments}
           />
         )}
       />

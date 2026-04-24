@@ -2691,6 +2691,15 @@ class APIServerAdapter(BasePlatformAdapter):
         self._app.router.add_get("/api/agents/{id}", org_h.handle_get_agent)
         self._app.router.add_patch("/api/agents/{id}", org_h.handle_update_agent)
         self._app.router.add_post("/api/agents/{id}/provision-profile", org_h.handle_provision_profile)
+        # Quick actions for agents
+        self._app.router.add_get("/api/agents/{id}/recommended-manager", org_h.handle_get_recommended_manager)
+        self._app.router.add_post("/api/agents/{id}/set-leader", org_h.handle_set_agent_as_leader)
+        # Quick actions for positions
+        self._app.router.add_post("/api/positions/{id}/set-management", org_h.handle_set_position_as_management)
+        # Quick actions for departments
+        self._app.router.add_post("/api/departments/{id}/set-management-department", org_h.handle_set_department_as_management)
+        self._app.router.add_post("/api/departments/{id}/set-managing-department", org_h.handle_set_managing_department)
+        # Workspaces
         self._app.router.add_get("/api/workspaces/{ownerType}/{ownerId}", org_h.handle_get_workspace)
         # Master-agent asset inheritance
         self._app.router.add_post("/api/org/assets/refresh", org_h.handle_refresh_master_assets)
