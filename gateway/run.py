@@ -83,21 +83,25 @@ def _check_electron_mode():
     # ============================================================
     # 检查 3: 父进程验证（辅助检查，需 psutil）
     # ============================================================
-    try:
-        import psutil
-        parent = psutil.Process(os.getppid())
-        parent_name = parent.name().lower()
+    # Sub Agent subprocesses can skip this check (parent is main Gateway, not Electron)
+    if os.environ.get("HERMES_SKIP_PARENT_CHECK") == "1":
+        print("[Electron-only Check] Skipping parent process check (subprocess mode)", file=sys.stderr, flush=True)
+    else:
+        try:
+            import psutil
+            parent = psutil.Process(os.getppid())
+            parent_name = parent.name().lower()
 
-        # 记录父进程名称用于调试
-        print(f"[Electron-only Check] Parent process: {parent_name}", file=sys.stderr, flush=True)
+            # 记录父进程名称用于调试
+            print(f"[Electron-only Check] Parent process: {parent_name}", file=sys.stderr, flush=True)
 
-        # v2.1: 仅允许 electron，移除 bash/sh/python
-        if 'electron' not in parent_name:
-            _exit_with_error(f"Parent process is not Electron (got: {parent_name})")
-    except ImportError:
-        _exit_with_error("psutil not installed (required for parent process verification)")
-    except Exception as e:
-        _exit_with_error(f"Error checking parent process: {e}")
+            # v2.1: 仅允许 electron，移除 bash/sh/python
+            if 'electron' not in parent_name:
+                _exit_with_error(f"Parent process is not Electron (got: {parent_name})")
+        except ImportError:
+            _exit_with_error("psutil not installed (required for parent process verification)")
+        except Exception as e:
+            _exit_with_error(f"Error checking parent process: {e}")
 
 
 # ⚠️ Electron-only 模式检查（立即执行）
@@ -10660,6 +10664,28 @@ def main():
     import argparse
 
     # ============================================================
+    # Shutdown Handler: Cleanup Sub Agent Subprocesses
+    # ============================================================
+    def shutdown_handler(signum, frame):
+        """Cleanup sub agent subprocesses on shutdown."""
+        logger = logging.getLogger(__name__)
+        logger.info("Received signal %s, shutting down Gateway...", signum)
+
+        # Cleanup sub agent processes
+        try:
+            from gateway.org.subprocess_manager import get_manager
+            manager = get_manager()
+            manager.cleanup()
+        except Exception as e:
+            logger.warning("Failed to cleanup sub agent processes: %s", e)
+
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # ============================================================
     # v2.1.1: Gateway Token 长度验证（Phase 0.3 要求）
     # ============================================================
     gateway_token = os.environ.get("HERMES_GATEWAY_TOKEN", "")
@@ -10671,6 +10697,12 @@ def main():
     parser = argparse.ArgumentParser(description="Hermes Gateway - Multi-platform messaging")
     parser.add_argument("--config", "-c", help="Path to gateway config file")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--mode",
+        choices=["http", "pipe"],
+        default="http",
+        help="Communication mode: http (TCP socket) or pipe (stdin/stdout)"
+    )
 
     args = parser.parse_args()
 
@@ -10681,11 +10713,18 @@ def main():
             data = yaml.safe_load(f)
             config = GatewayConfig.from_dict(data)
 
-    # Run the gateway - exit with code 1 if no platforms connected,
-    # so systemd Restart=on-failure will retry on transient errors (e.g. DNS)
-    success = asyncio.run(start_gateway(config))
-    if not success:
-        sys.exit(1)
+    # 根据模式选择启动方式
+    if args.mode == "pipe":
+        # stdin/stdout 管道模式
+        from gateway.pipe_server import run_pipe_server
+        asyncio.run(run_pipe_server())
+    else:
+        # 传统 HTTP 模式
+        # Run the gateway - exit with code 1 if no platforms connected,
+        # so systemd Restart=on-failure will retry on transient errors (e.g. DNS)
+        success = asyncio.run(start_gateway(config))
+        if not success:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

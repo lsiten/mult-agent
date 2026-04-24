@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Bot, ChevronDown, UserCircle2 } from "lucide-react";
+import { Bot, ChevronDown, UserCircle2, AlertCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n";
@@ -13,6 +13,7 @@ interface AgentIdentitySwitcherProps {
   onLoadAgents: () => void;
   onSwitchAgent: (agentId: number | null) => void;
   className?: string;
+  hasError?: boolean; // 新增：是否处于错误状态
 }
 
 const MASTER_ACCENT = "#6366f1";
@@ -32,17 +33,19 @@ export function AgentIdentitySwitcher({
   onLoadAgents,
   onSwitchAgent,
   className,
+  hasError = false,
 }: AgentIdentitySwitcherProps) {
   const { t } = useI18n();
 
-  const accent = activeAgent?.accent_color || MASTER_ACCENT;
-  const displayName = activeAgent
-    ? activeAgent.display_name || activeAgent.name
-    : t.chat.masterAgent;
-  const subtitle = activeAgent
-    ? activeAgent.role_summary || t.chat.subAgentBadge
-    : t.chat.masterAgentSubtitle;
-  const isMaster = activeAgent == null;
+  // 错误状态优先：hasError=true时显示主Agent但标红
+  const accent = hasError ? "#ef4444" : (activeAgent?.accent_color || MASTER_ACCENT);
+  const displayName = hasError
+    ? `${t.chat.masterAgent} (启动失败)`
+    : (activeAgent ? (activeAgent.display_name || activeAgent.name) : t.chat.masterAgent);
+  const subtitle = hasError
+    ? "Sub Agent 启动失败"
+    : (activeAgent ? (activeAgent.role_summary || t.chat.subAgentBadge) : t.chat.masterAgentSubtitle);
+  const isMaster = activeAgent == null && !hasError;
 
   const groupedAgents = useMemo(() => availableAgents, [availableAgents]);
   const profileStatus = activeAgent?.profile_agent?.profile_status ?? "n/a";
@@ -60,12 +63,17 @@ export function AgentIdentitySwitcher({
           type="button"
           title={t.chat.switchAgent}
           className={cn(
-            "group relative inline-flex h-8 max-w-[220px] items-center gap-2 rounded-md border border-border/70 bg-background/70 pl-1.5 pr-2 text-left transition-colors",
-            "hover:border-border hover:bg-muted/50",
+            "group relative inline-flex h-8 max-w-[220px] items-center gap-2 rounded-md border transition-colors",
+            hasError
+              ? "border-red-500/50 bg-red-500/10"
+              : "border-border/70 bg-background/70 hover:border-border hover:bg-muted/50",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
         >
+          {hasError && (
+            <AlertCircle className="absolute -top-1 -right-1 h-3 w-3 text-red-500 animate-pulse" />
+          )}
           <AvatarBubble agent={activeAgent} accent={accent} size={22} />
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="truncate text-[11px] font-semibold tracking-tight">

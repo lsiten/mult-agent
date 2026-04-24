@@ -10,6 +10,8 @@ import {
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { AgentIdentitySwitcher } from "@/components/AgentIdentitySwitcher";
 import { useAgentSwitcher } from "@/hooks/useAgentSwitcher";
+import { SubAgentErrorModal } from "@/components/SubAgentErrorModal";
+import { AgentProvider } from "@/contexts/AgentContext";
 // import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OnboardingModal } from "@/components/OnboardingModal";
@@ -138,6 +140,10 @@ export default function App() {
     agentsLoaded,
     loadAgents,
     switchToAgent,
+    startupError,
+    retryStartup,
+    clearError,
+    isReady,
   } = useAgentSwitcher();
 
   const isSubAgent = activeAgentId != null;
@@ -209,6 +215,13 @@ export default function App() {
   useEffect(() => {
     const checkConfiguration = async () => {
       try {
+        // ⛔ 等待 Agent 就绪后再检查配置
+        // 防止 Sub Agent 启动中时检查到错误配置
+        if (!isReady) {
+          console.log('[App] Agent not ready, skipping config check');
+          return;
+        }
+
         const [envResult, modelResult] = await Promise.allSettled([
           api.getEnvVars(),
           api.getModelInfo(),
@@ -261,6 +274,7 @@ export default function App() {
         }
 
         setShowConfigWarning(!hasConfiguredProvider);
+        console.log(`[App] Config check complete (Agent ${activeAgentId ?? 'master'}): hasConfiguredProvider=${hasConfiguredProvider}`);
       } catch (error) {
         // Don't show warning if API fails
         console.error("Failed to check configuration:", error);
@@ -271,7 +285,7 @@ export default function App() {
     if (!showOnboarding) {
       checkConfiguration();
     }
-  }, [showOnboarding]);
+  }, [showOnboarding, activeAgentId, isReady]);
 
   const handleOnboardingComplete = async () => {
     if (window.electronAPI?.markOnboardingComplete) {
@@ -302,9 +316,10 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground overflow-x-hidden">
-      <div className="noise-overlay" />
-      <div className="warm-glow" />
+    <AgentProvider value={{ isReady, activeAgentId }}>
+      <div className="flex h-screen flex-col bg-background text-foreground overflow-x-hidden">
+        <div className="noise-overlay" />
+        <div className="warm-glow" />
 
       <header className="fixed top-0 left-0 right-0 z-40 border-b border-border bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex h-12 max-w-[1400px] items-stretch">
@@ -359,6 +374,7 @@ export default function App() {
               agentsLoaded={agentsLoaded}
               onLoadAgents={loadAgents}
               onSwitchAgent={switchToAgent}
+              hasError={!!startupError}
             />
             <span className="hidden h-5 w-px bg-border/70 sm:block" />
             <LanguageSwitcher />
@@ -483,6 +499,17 @@ export default function App() {
           onSkip={handleOnboardingSkip}
         />
       </ErrorBoundary>
-    </div>
+
+      {/* Sub Agent Error Modal */}
+      {startupError && (
+        <SubAgentErrorModal
+          agentId={startupError.agentId}
+          error={startupError.error}
+          onRetry={retryStartup}
+          onCancel={clearError}
+        />
+      )}
+      </div>
+    </AgentProvider>
   );
 }

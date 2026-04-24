@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -15,32 +15,24 @@ import { timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n";
+import { useAgentData } from "@/hooks/useAgentData";
 
 export default function StatusPage() {
-  const [status, setStatus] = useState<StatusResponse | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const { t } = useI18n();
 
-  useEffect(() => {
-    const load = () => {
-      api.getStatus()
-        .then(setStatus)
-        .catch((error) => {
-          console.error('[StatusPage] Failed to load status:', error);
-        })
-        .finally(() => setIsLoading(false));
-
-      api.getSessions(50)
-        .then((resp) => setSessions(resp.sessions))
-        .catch((error) => {
-          console.error('[StatusPage] Failed to load sessions:', error);
-        });
-    };
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Auto-reload status every 5s, respecting Agent readiness
+  const { data: status, isLoading } = useAgentData(
+    async () => {
+      const [statusData, sessionsData] = await Promise.all([
+        api.getStatus(),
+        api.getSessions(50),
+      ]);
+      setSessions(sessionsData.sessions);
+      return statusData;
+    },
+    { autoReload: 5000 }
+  );
 
   if (isLoading && !status) {
     return (

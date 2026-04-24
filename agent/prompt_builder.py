@@ -944,14 +944,19 @@ def load_soul_md(home: Optional[Path] = None) -> Optional[str]:
         root = Path(home)
 
     soul_path = root / "SOUL.md"
+    logger.info("[SOUL_MD] Looking for SOUL.md at: %s (home=%s)", soul_path, home)
     if not soul_path.exists():
+        logger.info("[SOUL_MD] SOUL.md not found at %s", soul_path)
         return None
     try:
         content = soul_path.read_text(encoding="utf-8").strip()
         if not content:
+            logger.warning("[SOUL_MD] SOUL.md at %s is empty", soul_path)
             return None
         content = _scan_context_content(content, "SOUL.md")
         content = _truncate_content(content, "SOUL.md")
+        logger.info("[SOUL_MD] Successfully loaded SOUL.md from %s, length=%d, preview: %s",
+                   soul_path, len(content), content[:100])
         return content
     except Exception as e:
         logger.debug("Could not read SOUL.md from %s: %s", soul_path, e)

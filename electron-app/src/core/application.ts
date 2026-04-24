@@ -75,6 +75,13 @@ export class Application {
   }
 
   /**
+   * 获取所有服务的元数据
+   */
+  getAllMetadata(): ServiceMetadata[] {
+    return Array.from(this.services.values());
+  }
+
+  /**
    * 获取服务元数据
    *
    * @param id 服务 ID

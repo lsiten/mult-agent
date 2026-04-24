@@ -17,10 +17,12 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
-import { api } from '@/lib/api';
+import { api, type OrgAgent, setActiveAgentId as apiSetActiveAgentId, getActiveAgentId as apiGetActiveAgentId } from '@/lib/api';
+import { useAgent } from '@/contexts/AgentContext';
 import StatusPage from './StatusPage';
 import PerformancePage from './PerformancePage';
 import AnalyticsPage from './AnalyticsPage';
+import { AgentIdentitySwitcher } from '@/components/AgentIdentitySwitcher';
 
 interface ServiceStatus {
   id: string;
@@ -86,9 +88,62 @@ function SidebarItem<T extends string>({
 
 export default function DevToolsPage() {
   const { t } = useI18n();
+  const { activeAgentId } = useAgent();
   const [activeTab, setActiveTab] = useState("status");
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [ipcHandlers, setIPCHandlers] = useState<IPCHandler[]>([]);
+
+  // Agent switcher state
+  const [devToolsAgentId, setDevToolsAgentId] = useState<number | null>(activeAgentId);
+  const [availableAgents, setAvailableAgents] = useState<OrgAgent[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const [activeAgent, setActiveAgent] = useState<OrgAgent | null>(null);
+
+  // Sync devToolsAgentId with current active Agent on mount
+  useEffect(() => {
+    setDevToolsAgentId(activeAgentId);
+  }, [activeAgentId]);
+
+  // Override global API activeAgentId when viewing different Agent in DevTools
+  // This makes all API calls in child pages (StatusPage, PerformancePage, etc.) use the selected Agent
+  useEffect(() => {
+    console.log(`[DevToolsPage] Setting API activeAgentId to ${devToolsAgentId} for DevTools view`);
+    const previousAgentId = apiGetActiveAgentId();
+    apiSetActiveAgentId(devToolsAgentId);
+
+    // Restore original activeAgentId when unmounting
+    return () => {
+      console.log(`[DevToolsPage] Restoring API activeAgentId to ${previousAgentId}`);
+      apiSetActiveAgentId(previousAgentId);
+    };
+  }, [devToolsAgentId]);
+
+  const loadAvailableAgents = useCallback(async () => {
+    try {
+      const tree = await api.getOrgTree();
+      const agents: OrgAgent[] = [];
+      tree.companies?.forEach((company) => {
+        company.departments?.forEach((dept) => {
+          dept.positions?.forEach((pos) => {
+            pos.agents?.forEach((agent) => agents.push(agent));
+          });
+        });
+      });
+      setAvailableAgents(agents);
+      setAgentsLoaded(true);
+    } catch (err) {
+      console.error('[DevToolsPage] Failed to load agents:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (devToolsAgentId == null) {
+      setActiveAgent(null);
+      return;
+    }
+    const agent = availableAgents.find((a) => a.id === devToolsAgentId);
+    setActiveAgent(agent || null);
+  }, [devToolsAgentId, availableAgents]);
 
   // Log state
   const [file, setFile] = useState<(typeof FILES)[number]>("agent");
@@ -107,64 +162,39 @@ export default function DevToolsPage() {
   }, []);
 
   const loadServices = async () => {
-    // Mock data
-    const mockServices: ServiceStatus[] = [
-      {
-        id: 'env',
-        name: 'Environment Service',
-        status: 'running',
-        dependencies: [],
-      },
-      {
-        id: 'config',
-        name: 'Configuration Service',
-        status: 'running',
-        dependencies: ['env'],
-      },
-      {
-        id: 'gateway',
-        name: 'Gateway Service',
-        status: 'running',
-        dependencies: ['env', 'config'],
-      },
-      {
-        id: 'vite-dev',
-        name: 'Vite Dev Server',
-        status: 'running',
-        dependencies: [],
-      },
-      {
-        id: 'window',
-        name: 'Window Service',
-        status: 'running',
-        dependencies: ['vite-dev'],
-      },
-    ];
-    setServices(mockServices);
+    if (!window.electronAPI?.electron?.getServices) {
+      console.warn('[DevToolsPage] electron.getServices not available');
+      return;
+    }
+
+    try {
+      const response = await window.electronAPI.electron.getServices();
+      if (response.ok && response.data) {
+        setServices(response.data.services as ServiceStatus[]);
+      }
+    } catch (error) {
+      console.error('[DevToolsPage] Failed to load services:', error);
+    }
   };
 
-  const loadIPCHandlers = () => {
-    const handlers: IPCHandler[] = [
-      { channel: 'shell:openExternal', description: 'Open external URL' },
-      { channel: 'python:getStatus', description: 'Get Gateway status' },
-      { channel: 'python:restart', description: 'Restart Gateway' },
-      { channel: 'gateway:getAuthToken', description: 'Get auth token' },
-      { channel: 'vite:getStatus', description: 'Get Vite server status' },
-      { channel: 'window:minimize', description: 'Minimize window' },
-      { channel: 'window:close', description: 'Close window' },
-      { channel: 'onboarding:getStatus', description: 'Get onboarding status' },
-      { channel: 'onboarding:markComplete', description: 'Mark onboarding complete' },
-      { channel: 'onboarding:reset', description: 'Reset onboarding' },
-      { channel: 'app:getPath', description: 'Get app path' },
-      { channel: 'diagnostic:getDependencies', description: 'Get dependencies' },
-      { channel: 'diagnostic:getLogs', description: 'Get logs' },
-      { channel: 'diagnostic:getLogsPath', description: 'Get logs path' },
-      { channel: 'diagnostic:retry', description: 'Retry startup' },
-    ];
-    setIPCHandlers(handlers);
+  const loadIPCHandlers = async () => {
+    if (!window.electronAPI?.electron?.getIPCHandlers) {
+      console.warn('[DevToolsPage] electron.getIPCHandlers not available');
+      return;
+    }
+
+    try {
+      const response = await window.electronAPI.electron.getIPCHandlers();
+      if (response.ok && response.data) {
+        setIPCHandlers(response.data.handlers as IPCHandler[]);
+      }
+    } catch (error) {
+      console.error('[DevToolsPage] Failed to load IPC handlers:', error);
+    }
   };
 
   const fetchLogs = useCallback(() => {
+    console.log(`[DevToolsPage] Fetching logs for agentId=${devToolsAgentId}, file=${file}`);
     setLoading(true);
     setError(null);
     api
@@ -179,7 +209,7 @@ export default function DevToolsPage() {
       })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
-  }, [file, lineCount, level, component]);
+  }, [file, lineCount, level, component, devToolsAgentId]);
 
   useEffect(() => {
     fetchLogs();
@@ -209,10 +239,19 @@ export default function DevToolsPage() {
           <h1 className="text-3xl font-bold">{t.devTools.title}</h1>
           <p className="text-muted-foreground">{t.devTools.subtitle}</p>
         </div>
-        <Button onClick={loadServices} variant="outline">
-          <RefreshCw className="w-4 h-4 mr-2" />
-          {t.devTools.refresh}
-        </Button>
+        <div className="flex items-center gap-2">
+          <AgentIdentitySwitcher
+            activeAgent={activeAgent}
+            availableAgents={availableAgents}
+            agentsLoaded={agentsLoaded}
+            onLoadAgents={loadAvailableAgents}
+            onSwitchAgent={setDevToolsAgentId}
+          />
+          <Button onClick={loadServices} variant="outline">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            {t.devTools.refresh}
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -244,19 +283,19 @@ export default function DevToolsPage() {
         </TabsList>
 
         {activeTab === "status" && (
-              <div className="mt-4">
+              <div className="mt-4" key={`status-${devToolsAgentId}`}>
                 <StatusPage />
               </div>
             )}
 
             {activeTab === "performance" && (
-              <div className="mt-4">
+              <div className="mt-4" key={`performance-${devToolsAgentId}`}>
                 <PerformancePage />
               </div>
             )}
 
             {activeTab === "analytics" && (
-              <div className="mt-4">
+              <div className="mt-4" key={`analytics-${devToolsAgentId}`}>
                 <AnalyticsPage />
               </div>
             )}

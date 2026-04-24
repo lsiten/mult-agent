@@ -184,3 +184,50 @@ export type AppGetPathInput = z.infer<typeof AppGetPathSchema>;
 export type DiagnosticGetDependenciesInput = z.infer<typeof DiagnosticGetDependenciesSchema>;
 export type DiagnosticGetLogsInput = z.infer<typeof DiagnosticGetLogsSchema>;
 export type DiagnosticGetLogsPathInput = z.infer<typeof DiagnosticGetLogsPathSchema>;
+
+/**
+ * sub-agent:getOrStart
+ * 获取或启动 Sub Agent Gateway
+ */
+export const SubAgentGetOrStartSchema = z.object({
+  agentId: z.number().int().positive('Agent ID must be positive'),
+});
+
+/**
+ * sub-agent:stop
+ * 停止 Sub Agent Gateway
+ */
+export const SubAgentStopSchema = z.object({
+  agentId: z.number().int().positive('Agent ID must be positive'),
+});
+
+/**
+ * sub-agent:getPort
+ * 获取 Sub Agent Gateway 端口
+ */
+export const SubAgentGetPortSchema = z.object({
+  agentId: z.number().int().positive('Agent ID must be positive'),
+});
+
+/**
+ * sub-agent:getAllMetrics
+ * 获取所有 Sub Agent Gateway 指标
+ */
+export const SubAgentGetAllMetricsSchema = z.object({});
+
+/**
+ * electron:getServices
+ * 获取 Electron 服务状态
+ */
+export const ElectronGetServicesSchema = z.object({});
+
+/**
+ * electron:getIPCHandlers
+ * 获取已注册的 IPC 处理器列表
+ */
+export const ElectronGetIPCHandlersSchema = z.object({});
+
+export type SubAgentGetOrStartInput = z.infer<typeof SubAgentGetOrStartSchema>;
+export type SubAgentStopInput = z.infer<typeof SubAgentStopSchema>;
+export type SubAgentGetPortInput = z.infer<typeof SubAgentGetPortSchema>;
+export type SubAgentGetAllMetricsInput = z.infer<typeof SubAgentGetAllMetricsSchema>;

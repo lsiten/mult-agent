@@ -13,6 +13,7 @@ import { GatewayService } from './services/gateway.service';
 import { ViteDevService } from './services/vite-dev.service';
 import { WindowService } from './services/window.service';
 import { DevWatcherService } from './services/dev-watcher.service';
+import { SubAgentManagerService } from './services/sub-agent-manager.service';
 import { DataMigration } from './data-migration';
 import { EnvironmentDetector, AppEnvironment } from './env-detector';
 import { DependencyChecker, CheckResult } from './dependency-checker';
@@ -111,6 +112,18 @@ async function initializeApplication(): Promise<void> {
     environment: env,
   });
 
+  const subAgentManagerService = new SubAgentManagerService({
+    pythonPath: path.join(EnvironmentDetector.getPythonRuntimePath(), 'bin', 'python3'),
+    pythonRuntimePath: EnvironmentDetector.getPythonPath(),
+    environment: env,
+    mainHermesHome: app.getPath('userData'),
+    orgProfilesDir: path.join(app.getPath('userData'), 'org', 'profiles'),
+    gatewayToken: '', // Will be populated after Gateway starts
+  });
+
+  // Set Gateway token getter for sub-agent manager (called lazily when starting sub-agents)
+  subAgentManagerService.setGatewayTokenGetter(() => gatewayService.getAuthToken());
+
   // 设置 Gateway 日志回调
   gatewayService.setLogCallback((log: string) => {
     const windowService = application?.get<WindowService>('window');
@@ -135,10 +148,26 @@ async function initializeApplication(): Promise<void> {
     }
   });
 
+  // 设置 SubAgentManager 日志回调
+  subAgentManagerService.setLogCallback((log: string) => {
+    // 输出到控制台（调试用）
+    console.log(log);
+
+    // 发送到前端
+    const windowService = application?.get<WindowService>('window');
+    if (windowService) {
+      const mainWindow = windowService.getWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('python:log', log);
+      }
+    }
+  });
+
   // 注册服务
   application.register(envService);
   application.register(configService);
   application.register(gatewayService);
+  application.register(subAgentManagerService);
   application.register(viteDevService);
   application.register(windowService);
   application.register(devWatcherService);

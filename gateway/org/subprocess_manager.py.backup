@@ -1,0 +1,292 @@
+"""
+Sub Agent Subprocess Manager
+
+Manages isolated Python subprocesses for Org Profile Agents. Each subprocess
+runs a full Gateway instance with HERMES_HOME set to the profile directory,
+achieving complete isolation (CLI Profile equivalent).
+
+Architecture:
+  Main Gateway (8642) → SubAgentProcessManager → Subprocess Gateways (9000+)
+    Each subprocess: HERMES_HOME=profile_home, independent state.db/skills/logs
+
+Process lifecycle:
+  1. First request with agent_id → start subprocess
+  2. Health check every 30s
+  3. Reuse healthy subprocess for subsequent requests
+  4. Restart if dead
+  5. Cleanup on main Gateway shutdown
+"""
+
+import logging
+import os
+import socket
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class SubAgentProcess:
+    """Represents a running subprocess Gateway for a Sub Agent."""
+    agent_id: int
+    profile_home: Path
+    port: int
+    process: subprocess.Popen
+    started_at: float
+
+    def is_healthy(self) -> bool:
+        """Check if subprocess is alive and responding."""
+        if self.process.poll() is not None:
+            return False  # Process exited
+
+        # Check HTTP health endpoint
+        try:
+            import requests
+            resp = requests.get(
+                f"http://127.0.0.1:{self.port}/health",
+                timeout=2
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def terminate(self):
+        """Gracefully terminate subprocess."""
+        if self.process.poll() is None:
+            logger.info("Terminating sub agent process (agent_id=%s, port=%s)",
+                       self.agent_id, self.port)
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.warning("Sub agent process did not exit, killing (agent_id=%s)",
+                             self.agent_id)
+                self.process.kill()
+                self.process.wait()
+
+
+class SubAgentProcessManager:
+    """Manages subprocess lifecycle for all Sub Agents."""
+
+    def __init__(self):
+        self._processes: Dict[int, SubAgentProcess] = {}
+        self._next_port = 9000  # Dynamic port range: 9000-65535
+        self._project_root = Path(__file__).parent.parent.parent.resolve()
+
+    def get_or_start(self, agent_id: int, profile_home: Path) -> SubAgentProcess:
+        """
+        Get existing subprocess or start a new one.
+
+        Returns:
+            SubAgentProcess with port and process handle
+
+        Raises:
+            RuntimeError: If subprocess fails to start
+        """
+        # Check existing process
+        if agent_id in self._processes:
+            proc = self._processes[agent_id]
+            if proc.is_healthy():
+                logger.debug("Reusing sub agent process (agent_id=%s, port=%s)",
+                           agent_id, proc.port)
+                return proc
+            else:
+                # Dead process, cleanup
+                logger.warning("Sub agent process is dead, restarting (agent_id=%s)",
+                             agent_id)
+                proc.terminate()
+                del self._processes[agent_id]
+
+        # Start new subprocess
+        logger.info("Starting sub agent subprocess (agent_id=%s, profile_home=%s)",
+                   agent_id, profile_home)
+        port = self._allocate_port()
+        proc = self._start_subprocess(agent_id, profile_home, port)
+        self._processes[agent_id] = proc
+        logger.info("Sub agent subprocess started (agent_id=%s, port=%s, pid=%s)",
+                   agent_id, port, proc.process.pid)
+        return proc
+
+    def _allocate_port(self) -> int:
+        """Find an available port in range 9000-65535."""
+        attempts = 0
+        max_attempts = 100
+
+        while attempts < max_attempts:
+            port = self._next_port
+            self._next_port += 1
+            if self._next_port > 65535:
+                self._next_port = 9000  # Wrap around
+
+            # Test if port is available
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("127.0.0.1", port))
+                    return port
+            except OSError:
+                attempts += 1
+                continue
+
+        raise RuntimeError(f"Failed to allocate port after {max_attempts} attempts")
+
+    def _start_subprocess(
+        self,
+        agent_id: int,
+        profile_home: Path,
+        port: int
+    ) -> SubAgentProcess:
+        """
+        Start subprocess Gateway with HERMES_HOME override.
+
+        Equivalent to CLI Profile: `HERMES_HOME=<profile_home> python -m gateway.run`
+        """
+        # Prepare environment
+        env = os.environ.copy()
+        env["HERMES_HOME"] = str(profile_home)
+        # Set API server port (APIServerAdapter reads API_SERVER_PORT, not GATEWAY_PORT)
+        env["API_SERVER_PORT"] = str(port)
+        env["API_SERVER_HOST"] = "127.0.0.1"
+        # Mark as subprocess to skip config.yaml port override
+        env["HERMES_SUB_AGENT_MODE"] = "1"
+
+        # Copy runtime token from main Gateway to bypass Electron auth check
+        # (Subprocess doesn't need independent auth, only main Gateway does)
+        from hermes_constants import get_hermes_home as _get_main_home
+        main_home = _get_main_home()
+        runtime_token_path = main_home / ".runtime_token"
+        if runtime_token_path.exists():
+            profile_token_path = profile_home / ".runtime_token"
+            profile_token_path.parent.mkdir(parents=True, exist_ok=True)
+            profile_token_path.write_bytes(runtime_token_path.read_bytes())
+            logger.debug("Copied runtime token to profile: %s", profile_token_path)
+
+            # Set HERMES_AUDIT_TOKEN environment variable for subprocess
+            audit_token = runtime_token_path.read_text().strip()
+            env["HERMES_AUDIT_TOKEN"] = audit_token
+
+        # Ensure Electron mode flag is set (inherited from main Gateway)
+        env["HERMES_ELECTRON_MODE"] = os.environ.get("HERMES_ELECTRON_MODE", "1")
+
+        # Skip parent process check for subprocesses
+        # (Parent is main Gateway, not Electron, which is expected)
+        env["HERMES_SKIP_PARENT_CHECK"] = "1"
+
+        # Create log directory in profile
+        log_dir = profile_home / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create log files for subprocess stdout/stderr
+        subprocess_log = log_dir / f"subprocess-agent{agent_id}.log"
+        log_file = open(subprocess_log, "w")
+
+        # Start subprocess
+        process = subprocess.Popen(
+            [sys.executable, "-m", "gateway.run"],
+            env=env,
+            cwd=str(self._project_root),
+            stdout=log_file,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
+        )
+
+        logger.info("Subprocess stdout/stderr redirected to: %s", subprocess_log)
+
+        # Wait for Gateway to be ready (health check)
+        start_time = time.time()
+        timeout = 30  # 30s startup timeout
+
+        while time.time() - start_time < timeout:
+            if process.poll() is not None:
+                # Process exited early - read from log file
+                log_file.close()
+                try:
+                    log_content = subprocess_log.read_text()
+                except Exception:
+                    log_content = "<failed to read log>"
+                logger.error("Sub agent subprocess exited early (agent_id=%s).\n"
+                           "Log file: %s\n"
+                           "Content:\n%s",
+                           agent_id, subprocess_log, log_content[-2000:])  # Last 2000 chars
+                raise RuntimeError(f"Sub agent subprocess exited early (agent_id={agent_id})")
+
+            # Check health endpoint
+            try:
+                import requests
+                resp = requests.get(f"http://127.0.0.1:{port}/health", timeout=2)
+                if resp.status_code == 200:
+                    logger.info("Sub agent subprocess healthy (agent_id=%s, port=%s)",
+                               agent_id, port)
+                    break
+            except requests.exceptions.RequestException:
+                pass
+
+            time.sleep(0.5)
+        else:
+            # Timeout
+            process.kill()
+            process.wait()
+            log_file.close()
+            try:
+                log_content = subprocess_log.read_text()
+            except Exception:
+                log_content = "<failed to read log>"
+            logger.error("Sub agent subprocess failed to start (agent_id=%s, timeout=%ss).\n"
+                        "Log file: %s\n"
+                        "Content:\n%s",
+                        agent_id, timeout, subprocess_log, log_content[-2000:])
+            raise RuntimeError(
+                f"Sub agent subprocess failed to start within {timeout}s (agent_id={agent_id})"
+            )
+
+        return SubAgentProcess(
+            agent_id=agent_id,
+            profile_home=profile_home,
+            port=port,
+            process=process,
+            started_at=time.time(),
+        )
+
+    def cleanup(self):
+        """Terminate all subprocesses (called on shutdown)."""
+        if not self._processes:
+            return
+
+        logger.info("Cleaning up %d sub agent subprocesses", len(self._processes))
+        for agent_id, proc in list(self._processes.items()):
+            try:
+                proc.terminate()
+            except Exception as e:
+                logger.warning("Failed to terminate sub agent %s: %s", agent_id, e)
+
+        self._processes.clear()
+
+    def get_stats(self) -> dict:
+        """Get runtime statistics for monitoring."""
+        return {
+            "active_subprocesses": len(self._processes),
+            "subprocesses": [
+                {
+                    "agent_id": proc.agent_id,
+                    "port": proc.port,
+                    "pid": proc.process.pid,
+                    "uptime_seconds": time.time() - proc.started_at,
+                    "healthy": proc.is_healthy(),
+                }
+                for proc in self._processes.values()
+            ]
+        }
+
+
+# Global singleton instance
+_manager: Optional[SubAgentProcessManager] = None
+
+def get_manager() -> SubAgentProcessManager:
+    """Get the global SubAgentProcessManager instance."""
+    global _manager
+    if _manager is None:
+        _manager = SubAgentProcessManager()
+        logger.info("SubAgentProcessManager initialized")
+    return _manager

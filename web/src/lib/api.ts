@@ -9,11 +9,18 @@ declare global {
     __HERMES_SESSION_TOKEN__?: string;
     electronAPI?: {
       getGatewayAuthToken?: () => Promise<{ data?: { token?: string }; token?: string } | null>;
+      subAgent?: {
+        getOrStart?: (agentId: number) => Promise<{ data?: { port?: number; success?: boolean }; error?: string }>;
+        getPort?: (agentId: number) => Promise<{ data?: { port?: number | null; found?: boolean }; error?: string }>;
+      };
     };
   }
 }
 let _sessionToken: string | null = null;
 let _gatewayAuthToken: string | null = null;
+let _subAgentPorts: Map<number, number> = new Map(); // Cache sub-agent ports
+let _cachedRequestBase: string | null = null; // Cache computed request base
+let _cachedRequestBaseAgentId: number | null = null; // Track which agentId the cache is for
 /**
  * Tracks the currently active sub-agent id (mirrors the ``agentId`` URL
  * query parameter).  Populated by ``useAgentSwitcher`` and consumed by
@@ -24,7 +31,14 @@ let _gatewayAuthToken: string | null = null;
 let _activeAgentId: number | null = null;
 
 export function setActiveAgentId(id: number | null): void {
+  // Clear request base cache when agentId changes
+  if (_activeAgentId !== id) {
+    console.log(`[API] Clearing request base cache (${_activeAgentId} → ${id})`);
+    _cachedRequestBase = null;
+    _cachedRequestBaseAgentId = null;
+  }
   _activeAgentId = id;
+  console.log(`[API] activeAgentId set to ${id}`);
 }
 
 export function getActiveAgentId(): number | null {
@@ -35,8 +49,80 @@ function isElectronRuntime(): boolean {
   return typeof window !== 'undefined' && Boolean(window.electronAPI);
 }
 
-function getRequestBase(): string {
-  return isElectronRuntime() ? GATEWAY_BASE : '';
+/**
+ * Get Sub Agent Gateway port via IPC
+ */
+async function getSubAgentPort(agentId: number): Promise<number | null> {
+  // Check cache
+  if (_subAgentPorts.has(agentId)) {
+    console.log(`[API] Using cached port for Sub Agent ${agentId}: ${_subAgentPorts.get(agentId)}`);
+    return _subAgentPorts.get(agentId)!;
+  }
+
+  // Get or start sub-agent via IPC
+  if (typeof window !== 'undefined' && window.electronAPI?.subAgent?.getOrStart) {
+    try {
+      const startTime = performance.now();
+      console.log(`[API] IPC call: subAgent.getOrStart(${agentId}) starting...`);
+
+      const result = await window.electronAPI.subAgent.getOrStart(agentId);
+
+      const elapsed = performance.now() - startTime;
+      console.log(`[API] IPC call completed in ${elapsed.toFixed(2)}ms`);
+
+      const port = result?.data?.port;
+      if (port && typeof port === 'number') {
+        _subAgentPorts.set(agentId, port);
+        console.log(`[API] Sub Agent ${agentId} port: ${port}`);
+        return port;
+      } else {
+        console.error('[API] IPC returned invalid sub-agent port:', result);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[API] Failed to get sub-agent ${agentId} port:`, error);
+      // 抛出错误而不是返回 null，让上层处理
+      throw new Error(`Sub Agent ${agentId} 启动失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return null;
+}
+
+async function getRequestBase(): Promise<string> {
+  // Return cached result if agentId hasn't changed
+  if (_cachedRequestBase !== null && _cachedRequestBaseAgentId === _activeAgentId) {
+    console.log(`[API] Using cached request base: ${_cachedRequestBase} (agentId: ${_activeAgentId})`);
+    return _cachedRequestBase;
+  }
+
+  console.log(`[API] Computing request base for agentId: ${_activeAgentId}`);
+  let result: string;
+
+  // If sub-agent is active, use sub-agent port
+  if (_activeAgentId !== null && isElectronRuntime()) {
+    try {
+      const port = await getSubAgentPort(_activeAgentId);
+      if (port) {
+        result = `http://127.0.0.1:${port}`;
+      } else {
+        // 不再回退到主 Gateway，抛出错误
+        throw new Error(`Sub Agent ${_activeAgentId} 端口获取失败`);
+      }
+    } catch (error) {
+      // 抛出错误，不再静默回退
+      console.error(`[API] Sub Agent ${_activeAgentId} 不可用:`, error);
+      throw error;
+    }
+  } else {
+    result = isElectronRuntime() ? GATEWAY_BASE : '';
+  }
+
+  // Cache the result
+  _cachedRequestBase = result;
+  _cachedRequestBaseAgentId = _activeAgentId;
+
+  return result;
 }
 
 async function getGatewayAuthToken(): Promise<string | null> {
@@ -70,12 +156,46 @@ async function getGatewayAuthToken(): Promise<string | null> {
   return _gatewayAuthToken;
 }
 
+/**
+ * 判断URL是否属于组织架构相关的API（不随Agent切换）
+ */
+function isOrgRelatedAPI(url: string): boolean {
+  const orgAPIPrefixes = [
+    '/api/org/',
+    '/api/agents',
+    '/api/companies',
+    '/api/departments',
+    '/api/positions',
+    '/api/workspaces',
+  ];
+  return orgAPIPrefixes.some(prefix => url.startsWith(prefix));
+}
+
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  const requestBase = getRequestBase();
+
+  // ⛔ 路由策略：
+  // 1. 组织架构API（/api/org/、/api/agents/等）始终走主Gateway
+  // 2. 会话数据API（/api/chat/、/api/sessions/等）根据activeAgentId路由
+  let requestBase: string;
+  if (isOrgRelatedAPI(url)) {
+    // 组织架构API：强制使用主Gateway（8642）
+    requestBase = isElectronRuntime() ? GATEWAY_BASE : '';
+    console.log(`[API] Org-related request routed to main Gateway: ${url}`);
+  } else {
+    // 会话数据API：根据activeAgentId路由
+    requestBase = await getRequestBase().catch((error) => {
+      console.error("[API] Failed to get request base:", error);
+      // Sub Agent 端口获取失败时，清空缓存并抛出错误（不回退到主 Gateway）
+      _cachedRequestBase = null;
+      _cachedRequestBaseAgentId = null;
+      throw new Error(`Sub Agent 不可用: ${error.message}`);
+    });
+  }
 
   // 1. Inject Gateway auth token for all Gateway requests (Electron only)
-  if (!headers.has("Authorization") && requestBase.includes('8642')) {
+  // Applies to both main Gateway (8642) and Sub Agent Gateways (9000+)
+  if (!headers.has("Authorization") && (requestBase.includes('127.0.0.1') || requestBase.includes('localhost'))) {
     const gatewayToken = await getGatewayAuthToken();
     if (gatewayToken) {
       headers.set("Authorization", `Bearer ${gatewayToken}`);
@@ -226,7 +346,7 @@ export const api = {
     fetchJSON<SessionSearchResponse>(`/api/sessions/search?q=${encodeURIComponent(q)}`),
 
   // Unified chat interface APIs
-  createSession: (data: { source: string; user_id: string; title?: string }) =>
+  createSession: (data: { source: string; user_id: string; title?: string; agent_id?: number }) =>
     fetchJSON<CreateSessionResponse>("/api/chat/sessions/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -275,7 +395,8 @@ export const api = {
       params.append('token', gatewayToken);
     }
 
-    return `${getRequestBase()}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
+    const requestBase = await getRequestBase();
+    return `${requestBase}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>
     fetchJSON<{ ok: boolean; message: string }>(`/api/sessions/${encodeURIComponent(sessionId)}/stop`, {

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { api, type SessionInfo } from "@/lib/api";
+import { useAgent } from "@/contexts/AgentContext";
 
 export interface GroupedSessions {
   today: SessionInfo[];
@@ -13,6 +14,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { isReady } = useAgent();
 
   const loadSessions = useCallback(async (limit = 20, offset = 0) => {
     setIsLoading(true);
@@ -45,6 +47,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
         source,
         user_id: "local-user",
         title: defaultTitle,
+        agent_id: agentId || undefined,  // Pass agent_id for Sub Agent isolation
       });
 
       const newSession: SessionInfo = {
@@ -74,7 +77,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
     } finally {
       setIsLoading(false);
     }
-  }, [source]);
+  }, [source, agentId]);
 
   const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
@@ -138,6 +141,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
   // master/sub-agent switches.  ``loadSessions`` is invoked right after so
   // the new scope's list is fetched with the correct ``X-Hermes-Agent-Id``.
   useEffect(() => {
+    console.log(`[useSessions] Agent changed to ${agentId}, isReady=${isReady}`);
     setSessions([]);
     setCurrentSessionId(null);
     try {
@@ -145,8 +149,17 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
     } catch {
       // ignore storage errors (Safari private mode, quota, etc.)
     }
+
+    // ⛔ 等待 Agent 就绪后再加载会话列表
+    // 防止 Sub Agent 切换时过早发起请求导致加载主 Agent 数据
+    if (!isReady) {
+      console.log("[useSessions] Agent not ready, skipping loadSessions");
+      return;
+    }
+
+    console.log(`[useSessions] Loading sessions for agentId=${agentId}`);
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, isReady, agentId]);
 
   return {
     sessions,

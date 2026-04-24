@@ -36,6 +36,21 @@ export interface ElectronAPI {
   getLogs?: () => Promise<string>;
   getLogsPath?: () => Promise<string>;
   retryStartup?: () => Promise<void>;
+
+  // Sub Agent 管理
+  subAgent?: {
+    getOrStart: (agentId: number) => Promise<{ ok: boolean; data?: { success: boolean; port: number; agentId: number }; error?: string }>;
+    stop: (agentId: number) => Promise<{ ok: boolean; data?: { success: boolean }; error?: string }>;
+    getPort: (agentId: number) => Promise<{ ok: boolean; data?: { found: boolean; port: number | null }; error?: string }>;
+    getAllMetrics: () => Promise<{ ok: boolean; data?: { metrics: any[] }; error?: string }>;
+    syncFromMaster: (agentId: number) => Promise<{ ok: boolean; data?: { success: boolean; message: string; port: number }; error?: string }>;
+  };
+
+  // Electron 内部状态
+  electron?: {
+    getServices: () => Promise<{ ok: boolean; data?: { services: Array<{ id: string; name: string; status: string; dependencies: string[] }> }; error?: string }>;
+    getIPCHandlers: () => Promise<{ ok: boolean; data?: { handlers: Array<{ channel: string; description: string | null }> }; error?: string }>;
+  };
 }
 
 // 暴露安全的 API 到渲染进程
@@ -79,7 +94,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogs: (options?: { lines?: number; offset?: number }) =>
     ipcRenderer.invoke('diagnostic:getLogs', options || {}),
   getLogsPath: () => ipcRenderer.invoke('diagnostic:getLogsPath', {}),
-  retryStartup: () => ipcRenderer.invoke('diagnostic:retry', {})
+  retryStartup: () => ipcRenderer.invoke('diagnostic:retry', {}),
+
+  // Sub Agent 管理
+  subAgent: {
+    getOrStart: (agentId: number) => ipcRenderer.invoke('sub-agent:getOrStart', { agentId }),
+    stop: (agentId: number) => ipcRenderer.invoke('sub-agent:stop', { agentId }),
+    getPort: (agentId: number) => ipcRenderer.invoke('sub-agent:getPort', { agentId }),
+    getAllMetrics: () => ipcRenderer.invoke('sub-agent:getAllMetrics', {}),
+    syncFromMaster: (agentId: number) => ipcRenderer.invoke('sub-agent:syncFromMaster', { agentId }),
+  },
+
+  // Electron 内部状态
+  electron: {
+    getServices: () => ipcRenderer.invoke('electron:getServices', {}),
+    getIPCHandlers: () => ipcRenderer.invoke('electron:getIPCHandlers', {}),
+  },
 } as ElectronAPI);
 
 console.log('[Preload] electronAPI injected successfully');

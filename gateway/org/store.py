@@ -16,6 +16,29 @@ SCHEMA_VERSION = 3
 
 
 def default_org_db_path() -> Path:
+    """
+    返回组织架构数据库路径。
+
+    ⚠️ org.db 应该全局共享，不随 HERMES_HOME 变化。
+    主 Agent 和所有 Sub Agent 都应该访问同一个 org.db，
+    以确保组织架构数据（companies, departments, positions, agents）一致。
+
+    Sub Agent 的隔离仅限于 state.db（sessions, messages）。
+    """
+    import os
+
+    # 检查是否在 Sub Agent 模式下
+    if os.getenv("HERMES_SUB_AGENT_MODE") == "1":
+        # Sub Agent：使用主 Agent 的 org.db（通过去除 profile 路径前缀）
+        hermes_home = get_hermes_home()
+        # 路径格式：.../hermes-agent-electron/org/profiles/org-N
+        # 需要回退到：.../hermes-agent-electron
+        hermes_home_str = str(hermes_home)
+        if "/org/profiles/" in hermes_home_str:
+            main_hermes_home = Path(hermes_home_str.split("/org/profiles/")[0])
+            return main_hermes_home / "org" / "org.db"
+
+    # 主 Agent：使用 HERMES_HOME 下的 org.db
     return get_hermes_home() / "org" / "org.db"
 
 

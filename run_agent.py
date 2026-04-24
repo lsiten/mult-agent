@@ -1295,9 +1295,18 @@ class AIAgent:
                 self._memory_flush_min_turns = int(mem_config.get("flush_min_turns", 6))
                 if self._memory_enabled or self._user_profile_enabled:
                     from tools.memory_tool import MemoryStore
+                    # Use profile-scoped memories directory for org sub-agents
+                    _memory_dir = None
+                    if self.profile_home:
+                        _memory_dir = self.profile_home / "memories"
+                        logger.info(
+                            "[MEMORY_BUILTIN] Using profile-scoped memory dir: %s",
+                            _memory_dir
+                        )
                     self._memory_store = MemoryStore(
                         memory_char_limit=mem_config.get("memory_char_limit", 2200),
                         user_char_limit=mem_config.get("user_char_limit", 1375),
+                        memory_dir=_memory_dir,
                     )
                     self._memory_store.load_from_disk()
             except Exception:
@@ -1346,12 +1355,16 @@ class AIAgent:
                         self._memory_manager.add_provider(_mp)
                     if self._memory_manager.providers:
                         from hermes_constants import get_hermes_home as _ghh
+                        # When profile_home is set (org sub-agent), use it for memory isolation
+                        _effective_home = str(self.profile_home) if self.profile_home else str(_ghh())
                         _init_kwargs = {
                             "session_id": self.session_id,
                             "platform": platform or "cli",
-                            "hermes_home": str(_ghh()),
+                            "hermes_home": _effective_home,
                             "agent_context": "primary",
                         }
+                        logger.info("[MEMORY_INIT] Initializing memory with hermes_home=%s (profile_home=%s)",
+                                   _effective_home, self.profile_home)
                         # Thread session title for memory provider scoping
                         # (e.g. honcho uses this to derive chat-scoped session keys)
                         if self._session_db:
@@ -3690,10 +3703,14 @@ class AIAgent:
             if _soul_content:
                 prompt_parts = [_soul_content]
                 _soul_loaded = True
+                logger.info("[SYSTEM_PROMPT] Using SOUL.md from profile_home=%s, preview: %s",
+                           self.profile_home, _soul_content[:150])
 
         if not _soul_loaded:
             # Fallback to hardcoded identity
             prompt_parts = [DEFAULT_AGENT_IDENTITY]
+            logger.info("[SYSTEM_PROMPT] No SOUL.md, using default identity: %s",
+                       DEFAULT_AGENT_IDENTITY[:150])
 
         # Tool-aware behavioral guidance: only inject when the tools are loaded
         tool_guidance = []

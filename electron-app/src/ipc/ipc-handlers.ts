@@ -10,6 +10,7 @@ import { GatewayService } from '../services/gateway.service';
 import { ViteDevService } from '../services/vite-dev.service';
 import { WindowService } from '../services/window.service';
 import { ConfigService } from '../services/config.service';
+import { SubAgentManagerService } from '../services/sub-agent-manager.service';
 import { IpcHandlerConfig } from './ipc-registry';
 import * as schemas from './ipc-schemas';
 
@@ -369,6 +370,150 @@ export function createIpcHandlers(
           return { success: true };
         }
         return { success: false };
+      },
+    },
+
+    // ============================================================
+    // Sub Agent Gateway 相关
+    // ============================================================
+    {
+      channel: 'sub-agent:getOrStart',
+      schema: schemas.SubAgentGetOrStartSchema,
+      handler: async (_event, input) => {
+        const startTime = Date.now();
+        console.log(`[IPC] sub-agent:getOrStart(${input.agentId}) called`);
+
+        const subAgentManager = application.get<SubAgentManagerService>('sub-agent-manager');
+        if (!subAgentManager) {
+          throw new Error('SubAgentManagerService not initialized');
+        }
+
+        try {
+          const service = await subAgentManager.getOrStart(input.agentId);
+          const elapsed = Date.now() - startTime;
+          console.log(`[IPC] sub-agent:getOrStart completed in ${elapsed}ms (port=${service.getPort()})`);
+
+          return {
+            success: true,
+            port: service.getPort(),
+            agentId: service.getAgentId(),
+          };
+        } catch (error) {
+          const elapsed = Date.now() - startTime;
+          console.error(`[IPC] Failed to start sub-agent ${input.agentId} after ${elapsed}ms:`, error);
+          throw error;
+        }
+      },
+    },
+
+    {
+      channel: 'sub-agent:stop',
+      schema: schemas.SubAgentStopSchema,
+      handler: async (_event, input) => {
+        const subAgentManager = application.get<SubAgentManagerService>('sub-agent-manager');
+        if (!subAgentManager) {
+          throw new Error('SubAgentManagerService not initialized');
+        }
+
+        await subAgentManager.stopSubAgent(input.agentId);
+        return { success: true };
+      },
+    },
+
+    {
+      channel: 'sub-agent:getPort',
+      schema: schemas.SubAgentGetPortSchema,
+      handler: (_event, input) => {
+        const subAgentManager = application.get<SubAgentManagerService>('sub-agent-manager');
+        if (!subAgentManager) {
+          throw new Error('SubAgentManagerService not initialized');
+        }
+
+        const port = subAgentManager.getPort(input.agentId);
+        if (port === null) {
+          return { found: false, port: null };
+        }
+        return { found: true, port };
+      },
+    },
+
+    {
+      channel: 'sub-agent:getAllMetrics',
+      schema: schemas.SubAgentGetAllMetricsSchema,
+      handler: () => {
+        const subAgentManager = application.get<SubAgentManagerService>('sub-agent-manager');
+        if (!subAgentManager) {
+          throw new Error('SubAgentManagerService not initialized');
+        }
+
+        const metrics = subAgentManager.getAllMetrics();
+        return { metrics };
+      },
+    },
+
+    // ====================================================================
+    // Sub Agent: 同步主 Agent 配置
+    // ====================================================================
+    {
+      channel: 'sub-agent:syncFromMaster',
+      schema: schemas.SubAgentStopSchema, // 复用 { agentId: number } schema
+      handler: async (_event, input) => {
+        console.log(`[IPC] sub-agent:syncFromMaster(${input.agentId}) called`);
+
+        const subAgentManager = application.get<SubAgentManagerService>('sub-agent-manager');
+        if (!subAgentManager) {
+          throw new Error('SubAgentManagerService not initialized');
+        }
+
+        // 获取 Sub Agent 服务（通过 getPort 检查存在性）
+        const port = subAgentManager.getPort(input.agentId);
+        if (port === null) {
+          throw new Error(`Sub Agent ${input.agentId} not found or not running. Please start it first.`);
+        }
+
+        // 停止 → 重启（重启时会自动同步 config.yaml + .env + .runtime_token）
+        console.log(`[IPC] Restarting Sub Agent ${input.agentId} to sync config...`);
+        await subAgentManager.stopSubAgent(input.agentId);
+        const service = await subAgentManager.getOrStart(input.agentId);
+
+        return {
+          success: true,
+          message: 'Configuration synced successfully. Sub Agent restarted with latest config.',
+          port: service.getPort(),
+        };
+      },
+    },
+
+    // ====================================================================
+    // Electron: 服务状态和 IPC 信息
+    // ====================================================================
+    {
+      channel: 'electron:getServices',
+      schema: schemas.ElectronGetServicesSchema,
+      handler: () => {
+        const allMetadata = application.getAllMetadata();
+        const services = allMetadata.map((meta) => ({
+          id: meta.service.id,
+          name: meta.service.id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ' Service',
+          status: meta.state === 'started' ? 'running' :
+                  meta.state === 'stopped' ? 'stopped' :
+                  meta.state === 'failed' ? 'error' : 'stopped',
+          dependencies: meta.service.dependencies || [],
+        }));
+        return { services };
+      },
+    },
+
+    {
+      channel: 'electron:getIPCHandlers',
+      schema: schemas.ElectronGetIPCHandlersSchema,
+      handler: () => {
+        // 返回当前注册的所有 IPC handlers
+        const handlers = createIpcHandlers(application).map((h) => ({
+          channel: h.channel,
+          description: h.schema?.description || null,
+        }));
+        return { handlers };
       },
     },
   ];
