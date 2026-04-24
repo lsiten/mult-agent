@@ -156,32 +156,29 @@ export function AgentNode({
 
   // 如果当前负责人不在可选列表中，尝试从本岗位、本部门、所有部门中查找并添加
   if (agent.manager_agent_id && !availableManagers.find((m) => m.id === agent.manager_agent_id)) {
-    // 搜索范围：本岗位所有 agents
-    let foundManager = (position.agents ?? []).find((a) => a.id === agent.manager_agent_id);
-    let category = t.organization.positionLeader;
+    let foundManager: OrgAgent | undefined;
+    let category = t.organization.currentManager;
 
-    // 搜索范围：本部门所有岗位的 agents
+    // 搜索范围 1：本岗位所有 agents
+    foundManager = (position.agents ?? []).find((a) => a.id === agent.manager_agent_id);
+
+    // 搜索范围 2：本部门所有岗位的 agents
     if (!foundManager) {
       for (const pos of department.positions ?? []) {
         foundManager = (pos.agents ?? []).find((a) => a.id === agent.manager_agent_id);
         if (foundManager) {
-          category = pos.is_management_position
-            ? t.organization.departmentLeader
-            : t.organization.positionLeader;
           break;
         }
       }
     }
 
-    // 搜索范围：所有部门的所有岗位的 agents
-    if (!foundManager) {
-      for (const dept of allDepartments) {
-        for (const pos of dept.positions ?? []) {
+    // 搜索范围 3：所有部门的所有岗位的 agents（公司层级）
+    if (!foundManager && company.departments) {
+      for (const dept of company.departments) {
+        if (!dept.positions) continue;
+        for (const pos of dept.positions) {
           foundManager = (pos.agents ?? []).find((a) => a.id === agent.manager_agent_id);
           if (foundManager) {
-            category = dept.id === department.managing_department_id
-              ? t.organization.managingDepartmentLeader
-              : t.organization.otherDepartmentLeader;
             break;
           }
         }
@@ -194,7 +191,14 @@ export function AgentNode({
       availableManagers.unshift({
         id: foundManager.id,
         name: foundManager.display_name || foundManager.name,
-        category: `${category} (${t.organization.currentManager})`,
+        category: category,
+      });
+    } else {
+      // 如果还是没找到，添加一个占位项（显示 id）
+      availableManagers.unshift({
+        id: agent.manager_agent_id,
+        name: `Agent ${agent.manager_agent_id}`,
+        category: t.organization.currentManager,
       });
     }
   }
