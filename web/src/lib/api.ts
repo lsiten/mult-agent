@@ -812,6 +812,8 @@ export interface AgentPayload {
   display_name?: string;
   avatar_url?: string;
   accent_color?: string;
+  manager_agent_id?: number | null;
+  leadership_role?: 'primary' | 'deputy' | 'none';
 }
 
 export interface PlatformStatus {

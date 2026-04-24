@@ -352,6 +352,15 @@ export const zh: Translations = {
     leaderRoleUpdated: "负责人角色已更新",
     managementPositionUpdated: "管理岗位已更新",
     managingDepartmentUpdated: "管理部门已更新",
+    setDirectManager: "设置直属负责人",
+    setLeadershipRole: "设置负责人角色",
+    selectManager: "选择负责人",
+    currentManager: "当前负责人",
+    noAvailableManagers: "无可选负责人",
+    directManagerUpdated: "直属负责人已更新",
+    positionLeader: "岗位负责人",
+    departmentLeader: "部门负责人",
+    managingDepartmentLeader: "管理部门负责人",
   },
 
   config: {

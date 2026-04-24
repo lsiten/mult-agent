@@ -593,6 +593,15 @@ export interface Translations {
     leaderRoleUpdated: string;
     managementPositionUpdated: string;
     managingDepartmentUpdated: string;
+    setDirectManager: string;
+    setLeadershipRole: string;
+    selectManager: string;
+    currentManager: string;
+    noAvailableManagers: string;
+    directManagerUpdated: string;
+    positionLeader: string;
+    departmentLeader: string;
+    managingDepartmentLeader: string;
   };
 
   // ── Language switcher ──

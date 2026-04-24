@@ -15,6 +15,7 @@ interface PositionBranchProps {
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
   onRefresh: () => void;
+  allDepartments?: OrgDepartment[];
 }
 
 export function PositionBranch({
@@ -25,6 +26,7 @@ export function PositionBranch({
   onCreate,
   onEdit,
   onRefresh,
+  allDepartments,
 }: PositionBranchProps) {
   const color = nodeColor(position.accent_color, department.accent_color);
   return (
@@ -54,6 +56,7 @@ export function PositionBranch({
             t={t}
             onEdit={onEdit}
             onRefresh={onRefresh}
+            allDepartments={allDepartments}
           />
         )}
       />

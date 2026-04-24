@@ -46,6 +46,7 @@ export function CompanyChart({ company, t, onCreate, onEdit, onRefresh }: Compan
             onCreate={onCreate}
             onEdit={onEdit}
             onRefresh={onRefresh}
+            allDepartments={company.departments}
           />
         )}
       />

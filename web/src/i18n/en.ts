@@ -352,6 +352,15 @@ export const en: Translations = {
     leaderRoleUpdated: "Leadership role updated",
     managementPositionUpdated: "Management position updated",
     managingDepartmentUpdated: "Managing department updated",
+    setDirectManager: "Set Direct Manager",
+    setLeadershipRole: "Set Leadership Role",
+    selectManager: "Select Manager",
+    currentManager: "Current Manager",
+    noAvailableManagers: "No available managers",
+    directManagerUpdated: "Direct manager updated",
+    positionLeader: "Position Leader",
+    departmentLeader: "Department Leader",
+    managingDepartmentLeader: "Managing Department Leader",
   },
 
   config: {
