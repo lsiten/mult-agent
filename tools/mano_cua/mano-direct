@@ -1,0 +1,14 @@
+#!/bin/bash
+# Mano-CUA Direct Control Launcher
+# Usage: mano-direct <action> [options]
+
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Use mano-cua's own venv from Homebrew (has all dependencies installed)
+MANO_CUA_PREFIX=$(brew --prefix mano-cua)
+if [ -d "$MANO_CUA_PREFIX/libexec/venv/bin" ]; then
+    source "$MANO_CUA_PREFIX/libexec/venv/bin/activate"
+fi
+
+python3 "${SCRIPT_DIR}/direct_cli.py" "$@"

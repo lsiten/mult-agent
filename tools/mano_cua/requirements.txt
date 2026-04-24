@@ -1,0 +1,8 @@
+# Mano-CUA Direct Control Dependencies
+# These should already be installed with mano-cua
+
+mss>=6.1.0
+pynput>=1.7.6
+customtkinter>=5.2.0
+Pillow>=10.0.0
+pyobjc; sys_platform == "darwin"

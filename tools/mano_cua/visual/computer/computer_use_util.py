@@ -7,7 +7,7 @@ import mss
 import mss.tools
 from pynput import mouse
 
-from tools.mano_cua.visual.config.visual_config import AUTOMATION_CONFIG
+from visual.config.visual_config import AUTOMATION_CONFIG
 
 def screenshot_to_bytes():
     """Capture primary screen and return PNG bytes"""

@@ -3,12 +3,7 @@ import platform
 import traceback
 
 import customtkinter as ctk
-from tools.mano_cua.visual.config.visual_config import (
-    ANIMATION_CONFIG,
-    TASK_STATUS,
-    TEXT_CONSTANTS,
-    WINDOW_CONFIG,
-)
+from visual.config.visual_config import WINDOW_CONFIG, ANIMATION_CONFIG, TEXT_CONSTANTS, TASK_STATUS
 
 # Pre-initialize CustomTkinter (global level, ensure UI rendering foundation)
 ctk.set_appearance_mode("dark")
@@ -390,7 +385,11 @@ class TaskOverlayView:
         """Update status UI (title + button + animation)"""
         if not self._ui_initialized:
             return
-
+        
+        # SHOW the window when status is updated (it was withdrawn initially)
+        if self.root:
+            self.root.deiconify()
+        
         # Stop blinking animation
         self._stop_blink()
 
@@ -413,8 +412,8 @@ class TaskOverlayView:
                 command=self.on_close_command,
                 state="normal"
             )
-            # Auto close after 5 seconds
-            self.root.after(5000, self._auto_close)
+            # Auto close after 10 seconds to give user time to see the result
+            self.root.after(10000, self._auto_close)
         elif status == TASK_STATUS["STOPPED"]:
             self.status_label.configure(text=TEXT_CONSTANTS["STOPPED_TEXT"])
             # Restore to single button (close button)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from tools.mano_cua.visual.model.task_progress import TaskProgress
+from visual.model.task_progress import TaskProgress
 
 
 @dataclass

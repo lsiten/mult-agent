@@ -9,7 +9,7 @@ from pynput import mouse, keyboard
 from pynput.keyboard import Key
 from pynput.mouse import Button
 
-from tools.mano_cua.visual.config.visual_config import AUTOMATION_CONFIG
+from visual.config.visual_config import AUTOMATION_CONFIG
 
 
 class ComputerActionExecutor:

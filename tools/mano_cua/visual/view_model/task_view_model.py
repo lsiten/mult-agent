@@ -1,0 +1,229 @@
+import threading
+from typing import Optional
+import requests  # New: import requests library for API calls
+
+from visual.config.visual_config import ANIMATION_CONFIG, TASK_STATUS, AUTOMATION_CONFIG
+from visual.model.task_model import TaskModel
+from visual.view.task_overlay_view import TaskOverlayView
+
+
+class TaskViewModel:
+    """ViewModel layer: connects Model and View"""
+
+    def __init__(self):
+        # Initialize Model and View
+        self.model = TaskModel()
+        self.view = TaskOverlayView()
+
+        # Bind View commands to ViewModel
+        self.view.on_stop_command = self.on_stop_command
+        self.view.on_close_command = self.on_close_command
+        self.view.on_continue_command = self.on_continue_command  # Bind agree and continue command
+
+        # Bind Model state changes to View updates
+        self.model.set_state_changed_callback(self.on_model_state_changed)
+
+        # Background thread reference
+        self._task_thread = None
+        self._is_running = False
+
+    # ========== Model State Change Callback ==========
+    def on_model_state_changed(self, task_state):
+        """Update View when Model state changes"""
+        self.view.root.after(0, lambda: self.view.update_task_state(task_state))
+
+    # ========== View Command Handling ==========
+    def on_stop_command(self):
+        """Handle stop command"""
+        if self._is_running:
+            self.view.root.after(0, lambda: self.view.stop_button.configure(
+                text="Stopping…",
+                state="disabled"
+            ))
+            self.view.root.after(ANIMATION_CONFIG["STOP_DELAY"], self.model.stop_task)
+
+    def on_close_command(self):
+        """Handle close command"""
+        self._is_running = False
+        self.model.stop_task()
+        self.view.close()
+
+    # ========== Core Change: Ensure API call succeeds before resuming thread ==========
+    def on_continue_command(self):
+        """Handle user click 'agree and continue' business logic (call go_no API)"""
+        # Quick failure: task not running, return directly
+        if not self._is_running:
+            print("❌ Task not running, cannot continue")
+            self.view.root.after(0, lambda: self.view.continue_button.configure(
+                text="Agree and Continue", state="normal"
+            ))
+            return
+
+        # 1. Validate required parameters
+        session_id = self.model.state.session_id
+        if not session_id:
+            error_msg = "Session ID not obtained, cannot continue task"
+            print(f"❌ {error_msg}")
+            self.view.root.after(0, lambda: [
+                self.view.continue_button.configure(text="Agree and Continue", state="normal"),
+                self.view.log_text.insert("1.0", f"❌ Error: {error_msg}\n{self.view.log_text.get('1.0', 'end')}")
+            ])
+            return
+
+        # Define core logic for API call (extracted as internal function for exception handling)
+        def call_go_no_api():
+            try:
+                # 2. Update UI button state (prevent duplicate clicks)
+                self.view.root.after(0, lambda: [
+                    self.view.continue_button.configure(text="Submitting confirmation...", state="disabled"),
+                    self.view.stop_button.configure(state="disabled"),
+                    self.view.log_text.insert(
+                        "1.0",
+                        f"🔄 Submitting user confirmation, session ID: {session_id}\n{self.view.log_text.get('1.0', 'end')}"
+                    )
+                ])
+
+                # 3. [First step] Call go_no API (prioritize ensuring server state update)
+                server_url = self.model.server_url or AUTOMATION_CONFIG["BASE_URL"]
+                api_url = f"{server_url}/v1/sessions/{session_id}/go_no"
+
+                # Configure request timeout and retry (enhance robustness)
+                response = requests.post(
+                    api_url,
+                    timeout=AUTOMATION_CONFIG["SESSION_TIMEOUT"],
+                    headers={"Content-Type": "application/json"}  # Explicitly specify Content-Type
+                )
+                response.raise_for_status()  # Throw HTTP exceptions (4xx/5xx)
+
+                # 4. Parse and validate API response
+                resp_data = response.json() if response.content else {"ok": True}
+                if not resp_data.get("ok"):
+                    raise RuntimeError(f"API returned failure: {resp_data.get('detail', 'unknown error')}")
+
+                print(f"API call succeeded, session {session_id} updated to RUNNING")
+
+                # 5. Resume client thread only after API call fully succeeds
+                self.model.resume_task()
+
+                # 6. Sync model state with server
+                self.model.state.status = TASK_STATUS["RUNNING"]
+                self.model.state.is_running = True
+
+                # 7. Notify view to update state
+                self.on_model_state_changed(self.model.state)
+
+                # 8. Update UI log and status
+                self.view.root.after(0, lambda: [
+                    self.view.log_text.insert(
+                        "1.0",
+                        f"User confirmed, session {session_id} resumed\n{self.view.log_text.get('1.0', 'end')}"
+                    ),
+                    self.view.status_label.configure(text="Resuming..."),
+                    self.view.stop_button.configure(state="normal")
+                ])
+
+                print(f"Client thread resumed, session {session_id} continuing")
+
+            except requests.exceptions.RequestException as e:
+                error_msg = f"go_no API call failed: {str(e)}"
+                print(f"{error_msg}, not resuming client thread")
+                self._handle_continue_error(error_msg)
+
+            except Exception as e:
+                error_msg = f"Continue command failed: {str(e)}"
+                print(f"{error_msg}, not resuming client thread")
+                import traceback
+                traceback.print_exc()
+                self._handle_continue_error(error_msg)
+
+        # Start API call (asynchronous execution, avoid blocking UI thread)
+        threading.Thread(target=call_go_no_api, daemon=True).start()
+
+    # ========== New: Unified Error Handling Method ==========
+    def _handle_continue_error(self, error_msg):
+        """Unified handling of agree and continue error scenarios"""
+        self.view.root.after(0, lambda: [
+            self.view.continue_button.configure(text="Agree and Continue", state="normal"),
+            self.view.stop_button.configure(state="normal"),
+            self.view.log_text.insert("1.0", f"❌ {error_msg}\n{self.view.log_text.get('1.0', 'end')}"),
+            self.view.status_label.configure(text="Confirmation failed")
+        ])
+
+    # ========== Thread Polling Wrapper (Reusable Logic) ==========
+    def _start_thread_polling(self):
+        """Start thread state polling (extracted for reuse)"""
+
+        def poll_thread():
+            if self._task_thread and self._task_thread.is_alive():
+                self.view.root.after(ANIMATION_CONFIG["POLL_INTERVAL"], poll_thread)
+                return
+
+            # Handle state after thread ends
+            if self.model.state.status in (TASK_STATUS["COMPLETED"], TASK_STATUS["ERROR"], TASK_STATUS["STOPPED"], TASK_STATUS["MAX_STEP_REACHED"]):
+                self.on_model_state_changed(self.model.state)
+            elif self.model.stop_event.is_set():
+                self.model.mark_stopped()
+
+        self.view.root.after(ANIMATION_CONFIG["POLL_INTERVAL"], poll_thread)
+
+    # ========== Business Methods ==========
+    def init_task(self, task_name: str, server_url: Optional[str] = None, expected_result: Optional[str] = None, session_id: Optional[str] = None, max_steps: int = None) -> bool:
+        """Initialize automation task"""
+        try:
+            import customtkinter as ctk
+            ctk.set_appearance_mode("dark")
+            ctk.set_default_color_theme("dark-blue")
+
+            # Wire minimize callback from model to view (only minimize, never expand)
+            def _minimize_if_needed():
+                if not self.view._minimized:
+                    self.view._toggle_minimize()
+            self.model.on_minimize_panel = lambda: self.view.root.after(0, _minimize_if_needed)
+
+            # Initialize Model
+            self.model.init_task(task_name, server_url, expected_result=expected_result, session_id=session_id, max_steps=max_steps)
+
+            # Initialize View
+            self.view.show()
+            self._is_running = True
+            return True
+        except ImportError:
+            print("CustomTkinter not installed, skipping visualization")
+            return False
+        except Exception as e:
+            print(f"Failed to initialize task: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def run_task(self):
+        """Run automation task"""
+        if not self._is_running:
+            return False
+
+        # Start Model's automation task
+        def worker():
+            self.model.run_automation_task()
+
+        self._task_thread = threading.Thread(target=worker, daemon=True)
+        self._task_thread.start()
+
+        # Start thread polling (using wrapped method)
+        self._start_thread_polling()
+
+        # Run UI main loop
+        try:
+            self.view.run_mainloop()
+        except Exception as e:
+            print(f"UI runtime exception: {e}")
+            self._is_running = False
+            self.model.mark_error(str(e))
+        finally:
+            if self._task_thread and self._task_thread.is_alive():
+                self._task_thread.join(timeout=2)
+
+        return self.model.state.status == TASK_STATUS["COMPLETED"]
+
+    def close(self):
+        """Close ViewModel"""
+        self.on_close_command()
