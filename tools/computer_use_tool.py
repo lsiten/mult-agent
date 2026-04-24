@@ -26,10 +26,13 @@ import logging
 import os
 import platform
 import subprocess
+import tempfile
 import time
 from io import BytesIO
+from pathlib import Path
 from typing import Dict, List, Optional
 
+from tools.mano_cua.runtime import get_runtime, normalize_coordinate
 from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
@@ -112,9 +115,10 @@ def get_display_config() -> Dict[str, int]:
 def _check_computer_use_available() -> bool:
     """Check if Computer Use is available on this system."""
     try:
-        import PIL.Image
+        import mss  # noqa: F401
+        import pynput  # noqa: F401
     except ImportError:
-        logger.debug("Computer Use unavailable: missing pillow")
+        logger.debug("Computer Use unavailable: missing Mano runtime deps")
         return False
 
     system = platform.system()
@@ -198,40 +202,80 @@ def _capture_screenshot_pil() -> bytes:
 
 
 def capture_screenshot() -> bytes:
-    """Capture current screen as PNG bytes."""
-    system = platform.system()
-
+    """Capture current screen as PNG bytes through Mano runtime."""
     try:
-        if system == "Darwin":
-            return _capture_screenshot_macos()
-        elif system == "Linux":
-            return _capture_screenshot_linux()
-        else:
-            return _capture_screenshot_pil()
+        return get_runtime().capture_screenshot()["bytes"]
     except Exception as e:
         logger.exception("Screenshot capture failed")
         raise RuntimeError(f"Screenshot capture failed: {e}")
 
 
 def execute_mouse_action(action: str, coordinate: Optional[List[int]] = None, target_coordinate: Optional[List[int]] = None) -> Dict:
-    """Execute mouse action using system tools."""
-    system = platform.system()
-
+    """Execute mouse action through Mano runtime."""
     if coordinate and len(coordinate) != 2:
         raise ValueError("Coordinate must be [x, y]")
     if target_coordinate and len(target_coordinate) != 2:
         raise ValueError("Target coordinate must be [x, y]")
 
-    try:
-        if system == "Darwin":
-            return _execute_mouse_macos(action, coordinate, target_coordinate)
-        elif system == "Linux":
-            return _execute_mouse_linux(action, coordinate, target_coordinate)
-        else:
-            raise RuntimeError(f"Mouse control not supported on {system}")
-    except Exception as e:
-        logger.exception(f"Mouse action {action} failed")
-        raise RuntimeError(f"Mouse action failed: {e}")
+    config = get_display_config()
+    normalized_coordinate = normalize_coordinate(
+        coordinate or [0, 0],
+        config["width"],
+        config["height"],
+        config.get("x_offset", 0),
+        config.get("y_offset", 0),
+    )
+    runtime = get_runtime()
+
+    if action == "drag":
+        normalized_target = normalize_coordinate(
+            target_coordinate or [0, 0],
+            config["width"],
+            config["height"],
+            config.get("x_offset", 0),
+            config.get("y_offset", 0),
+        )
+        payload = {
+            "name": "computer",
+            "input": {
+                "action": "left_click_drag",
+                "start_coordinate": normalized_coordinate,
+                "coordinate": normalized_target,
+            },
+        }
+    elif action in ("scroll_up", "scroll_down"):
+        payload = {
+            "name": "computer",
+            "input": {
+                "action": "scroll",
+                "scroll_direction": "up" if action == "scroll_up" else "down",
+                "scroll_amount": 10,
+                "coordinate": normalized_coordinate,
+            },
+        }
+    else:
+        payload = {
+            "name": "computer",
+            "input": {
+                "action": action,
+                "coordinate": normalized_coordinate,
+            },
+        }
+
+    result = runtime.execute_action(payload)
+    if not result.get("ok"):
+        raise RuntimeError(result.get("message", f"Mouse action failed: {action}"))
+    response = {
+        "success": True,
+        "action": action,
+    }
+    if action == "drag":
+        response["start_coordinate"] = coordinate
+        response["target_coordinate"] = target_coordinate
+    else:
+        response["coordinate"] = coordinate
+    response["meta"] = result.get("meta", {})
+    return response
 
 
 def _execute_mouse_macos(action: str, coordinate: Optional[List[int]], target_coordinate: Optional[List[int]]) -> Dict:
@@ -340,36 +384,37 @@ def _execute_mouse_linux(action: str, coordinate: Optional[List[int]], target_co
 
 
 def execute_keyboard_action(text: str) -> Dict:
-    """Type text using system keyboard simulation."""
-    system = platform.system()
-
-    try:
-        if system == "Darwin":
-            return _execute_keyboard_macos(text)
-        elif system == "Linux":
-            return _execute_keyboard_linux(text)
-        else:
-            raise RuntimeError(f"Keyboard control not supported on {system}")
-    except Exception as e:
-        logger.exception("Keyboard action failed")
-        raise RuntimeError(f"Keyboard action failed: {e}")
+    """Type text through Mano runtime."""
+    result = get_runtime().execute_action(
+        {
+            "name": "computer",
+            "input": {
+                "action": "type",
+                "text": text,
+            },
+        }
+    )
+    if not result.get("ok"):
+        raise RuntimeError(result.get("message", "Keyboard action failed"))
+    return {"success": True, "text": text, "meta": result.get("meta", {})}
 
 
 def execute_special_key(key: str, modifiers: Optional[List[str]] = None) -> Dict:
-    """Execute special key press (Enter, Escape, arrow keys, modifier combinations)."""
-    system = platform.system()
+    """Execute special key press through Mano runtime."""
     modifiers = modifiers or []
-    
-    try:
-        if system == "Darwin":
-            return _execute_special_key_macos(key, modifiers)
-        elif system == "Linux":
-            return _execute_special_key_linux(key, modifiers)
-        else:
-            raise RuntimeError(f"Special key control not supported on {system}")
-    except Exception as e:
-        logger.exception(f"Special key {key} failed")
-        raise RuntimeError(f"Special key failed: {e}")
+    result = get_runtime().execute_action(
+        {
+            "name": "computer",
+            "input": {
+                "action": "key",
+                "modifiers": modifiers,
+                "mains": [key],
+            },
+        }
+    )
+    if not result.get("ok"):
+        raise RuntimeError(result.get("message", f"Special key failed: {key}"))
+    return {"success": True, "key": key, "modifiers": modifiers, "meta": result.get("meta", {})}
 
 
 def _execute_keyboard_macos(text: str) -> Dict:
@@ -551,6 +596,10 @@ def computer_screenshot_handler(args: dict, **kwargs) -> str:
     try:
         png_data = capture_screenshot()
         b64_data = base64.b64encode(png_data).decode("utf-8")
+        screenshot_dir = Path(tempfile.gettempdir()) / "hermes-computer-use"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshot_dir / f"screenshot-{int(time.time() * 1000)}.png"
+        screenshot_path.write_bytes(png_data)
 
         config = get_display_config()
 
@@ -558,6 +607,7 @@ def computer_screenshot_handler(args: dict, **kwargs) -> str:
             success=True,
             image=b64_data,
             format="png",
+            path=str(screenshot_path),
             width=config["width"],
             height=config["height"],
             timestamp=time.time(),
@@ -634,6 +684,48 @@ def computer_key_handler(args: dict, **kwargs) -> str:
     except Exception as e:
         logger.exception("Special key failed")
         return tool_error(f"Special key failed: {e}")
+
+
+def execute_open_app(app_name: str) -> Dict:
+    """Open a desktop application through Mano runtime."""
+    result = get_runtime(task_name=f"Open {app_name}").execute_action(
+        {"name": "open_app", "input": {"app_name": app_name}}
+    )
+    if not result.get("ok"):
+        raise RuntimeError(result.get("message", f"Failed to open app: {app_name}"))
+    return {"success": True, "app_name": app_name, "meta": result.get("meta", {})}
+
+
+def execute_open_url(url: str) -> Dict:
+    """Open a URL through Mano runtime."""
+    result = get_runtime(task_name=f"Open {url}").execute_action(
+        {"name": "open_url", "input": {"url": url}}
+    )
+    if not result.get("ok"):
+        raise RuntimeError(result.get("message", f"Failed to open URL: {url}"))
+    return {"success": True, "url": url, "meta": result.get("meta", {})}
+
+
+def computer_open_app_handler(args: dict, **kwargs) -> str:
+    app_name = args.get("app_name")
+    if not app_name or not isinstance(app_name, str):
+        return tool_error("Missing required parameter: app_name")
+    try:
+        return tool_result(**execute_open_app(app_name))
+    except Exception as e:
+        logger.exception("Open app failed")
+        return tool_error(f"Open app failed: {e}")
+
+
+def computer_open_url_handler(args: dict, **kwargs) -> str:
+    url = args.get("url")
+    if not url or not isinstance(url, str):
+        return tool_error("Missing required parameter: url")
+    try:
+        return tool_result(**execute_open_url(url))
+    except Exception as e:
+        logger.exception("Open URL failed")
+        return tool_error(f"Open URL failed: {e}")
 
 
 
@@ -767,4 +859,48 @@ registry.register(
     handler=computer_key_handler,
     check_fn=_check_computer_use_available,
     description="Press special key or keyboard shortcut",
+)
+
+registry.register(
+    name="computer_open_app",
+    toolset="computer-use",
+    schema={
+        "name": "computer_open_app",
+        "description": "Open a desktop application by app name using Mano's local desktop controller.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Application name, for example WeChat or Safari",
+                },
+            },
+            "required": ["app_name"],
+        },
+    },
+    handler=computer_open_app_handler,
+    check_fn=_check_computer_use_available,
+    description="Open a desktop app",
+)
+
+registry.register(
+    name="computer_open_url",
+    toolset="computer-use",
+    schema={
+        "name": "computer_open_url",
+        "description": "Open a URL in the system browser using Mano's local desktop controller.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Fully-qualified URL to open",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    handler=computer_open_url_handler,
+    check_fn=_check_computer_use_available,
+    description="Open a URL",
 )

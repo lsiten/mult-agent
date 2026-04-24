@@ -9,7 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import type { Translations } from "@/i18n/types";
 import { api, type OrgAgent, type OrgCompany, type OrgDepartment, type OrgPosition } from "@/lib/api";
-import type { OrgEditHandler } from "../../types";
+import type { OrgDeleteHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { OrgNodeCard } from "../OrgNodeCard";
 
@@ -19,6 +19,7 @@ interface AgentNodeProps {
   department: OrgDepartment;
   position: OrgPosition;
   t: Translations;
+  onDelete: OrgDeleteHandler;
   onEdit: OrgEditHandler;
   onRefresh?: () => void;
   allDepartments?: OrgDepartment[]; // 用于查找管理部门
@@ -30,6 +31,7 @@ export function AgentNode({
   department,
   position,
   t,
+  onDelete,
   onEdit,
   onRefresh,
   allDepartments = [],
@@ -380,6 +382,8 @@ export function AgentNode({
           </div>
         </div>
       }
+      deleteTitle={t.organization.delete}
+      onDelete={() => onDelete("agent", agent)}
       onEdit={() => onEdit("agent", agent, { company, department, position })}
     />
   );

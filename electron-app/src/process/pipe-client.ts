@@ -6,7 +6,24 @@
  */
 
 import { EventEmitter } from 'events';
-import { v4 as uuidv4 } from 'uuid';
+// 使用 Node.js 原生 crypto 模块生成 UUID v4
+import { randomBytes } from 'crypto';
+
+// 简单的 UUID v4 生成函数
+function uuidv4(): string {
+  const bytes = randomBytes(16);
+  // 设置版本号 (4) 和变体 (RFC4122)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
 import { ChildProcessWithoutNullStreams } from 'child_process';
 
 interface PipeRequest {

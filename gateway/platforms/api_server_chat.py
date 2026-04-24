@@ -31,7 +31,7 @@ class ChatAPIHandlers:
 
     def __init__(self, session_token: str):
         self._session_token = session_token
-        self._active_streams = {}  # session_id -> asyncio.Task mapping for cancellation
+        self._active_streams = {}  # session_id -> {"task": asyncio.Task, "agent": AIAgent | None}
 
         # In Electron mode, use HERMES_GATEWAY_TOKEN if available
         import os
@@ -66,6 +66,69 @@ class ChatAPIHandlers:
 
         # Neither header nor URL param matched
         raise web.HTTPUnauthorized(text="Unauthorized")
+
+    @staticmethod
+    def _start_tool_invocation(
+        tool_invocations: list[Dict[str, Any]],
+        tool_invocation_map: Dict[str, Dict[str, Any]],
+        tool_call_id: str,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        *,
+        started_at: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Track a tool invocation by ID so out-of-order completion is safe."""
+        invocation = {
+            "id": tool_call_id,
+            "tool": tool_name,
+            "args": tool_args,
+            "status": "pending",
+            "start_time": started_at if started_at is not None else time.time(),
+        }
+        tool_invocations.append(invocation)
+        tool_invocation_map[tool_call_id] = invocation
+        return invocation
+
+    @staticmethod
+    def _complete_tool_invocation(
+        tool_invocation_map: Dict[str, Dict[str, Any]],
+        tool_call_id: str,
+        result: str,
+        *,
+        completed_at: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Complete a tracked tool invocation, even if callbacks arrive out of order."""
+        invocation = tool_invocation_map.get(tool_call_id)
+        if invocation is None:
+            return None
+
+        end_time = completed_at if completed_at is not None else time.time()
+        invocation["result"] = result
+        invocation["status"] = "success"
+        invocation["duration"] = max(0, int((end_time - invocation["start_time"]) * 1000))
+        return invocation
+
+    async def _safe_write_sse(
+        self,
+        response: web.StreamResponse,
+        event_name: str,
+        payload: Dict[str, Any],
+        *,
+        log_context: str,
+    ) -> bool:
+        """Write an SSE event and treat closing transports as best-effort disconnects."""
+        try:
+            event = f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+            await response.write(event.encode())
+            return True
+        except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+            _log.warning("Could not send %s (%s): client disconnected", event_name, log_context)
+            return False
+        except Exception as exc:
+            if "closing transport" in str(exc).lower():
+                _log.warning("Could not send %s (%s): %s", event_name, log_context, exc)
+                return False
+            raise
 
     @staticmethod
     def _extract_model_settings(config: Dict[str, Any]) -> tuple[str, Optional[str], Optional[str]]:
@@ -659,7 +722,7 @@ class ChatAPIHandlers:
                     # Create SSE stream consumer
                     full_response = []
                     tool_invocations = []
-                    current_tool_invocation = None
+                    tool_invocation_map: Dict[str, Dict[str, Any]] = {}
 
                     # Event queue for cross-thread communication
                     tool_events = asyncio.Queue()
@@ -673,6 +736,7 @@ class ChatAPIHandlers:
                     # Track current text segment for message splitting
                     current_text_segment = []
                     segment_saved = False  # Track if current segment was saved
+                    client_disconnected = False
 
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
@@ -682,15 +746,14 @@ class ChatAPIHandlers:
 
                     def on_tool_start(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any]):
                         """Callback when a tool invocation starts (called from thread pool)."""
-                        nonlocal current_tool_invocation, segment_saved
-                        current_tool_invocation = {
-                            "id": tool_call_id,
-                            "tool": tool_name,
-                            "args": tool_args,
-                            "status": "pending",
-                            "start_time": time.time(),
-                        }
-                        tool_invocations.append(current_tool_invocation)
+                        nonlocal segment_saved
+                        self._start_tool_invocation(
+                            tool_invocations,
+                            tool_invocation_map,
+                            tool_call_id,
+                            tool_name,
+                            tool_args,
+                        )
                         _log.info("[TOOL_CALLBACK] Tool started: %s (id=%s)", tool_name, tool_call_id)
 
                         # Mark that we need to save the current text segment
@@ -707,26 +770,29 @@ class ChatAPIHandlers:
 
                     def on_tool_complete(tool_call_id: str, tool_name: str, tool_args: Dict[str, Any], result: str):
                         """Callback when a tool invocation completes (called from thread pool)."""
-                        nonlocal current_tool_invocation, segment_saved
-                        if current_tool_invocation and current_tool_invocation["id"] == tool_call_id:
-                            current_tool_invocation["result"] = result
-                            current_tool_invocation["status"] = "success"
-                            current_tool_invocation["duration"] = int((time.time() - current_tool_invocation["start_time"]) * 1000)
-                            _log.info("[TOOL_CALLBACK] Tool completed: %s (id=%s, duration=%dms)", tool_name, tool_call_id, current_tool_invocation["duration"])
+                        nonlocal segment_saved
+                        invocation = self._complete_tool_invocation(
+                            tool_invocation_map,
+                            tool_call_id,
+                            result,
+                        )
+                        if invocation is None:
+                            _log.warning("[TOOL_CALLBACK] Tool completed with unknown id: %s (id=%s)", tool_name, tool_call_id)
+                            return
 
-                            # Reset segment_saved flag so new text after tool can be saved
-                            segment_saved = False
+                        _log.info("[TOOL_CALLBACK] Tool completed: %s (id=%s, duration=%dms)", tool_name, tool_call_id, invocation["duration"])
 
-                            # Queue event for async processing using captured loop
-                            try:
-                                asyncio.run_coroutine_threadsafe(
-                                    tool_events.put(("complete", tool_call_id, tool_name, current_tool_invocation["duration"])),
-                                    main_loop
-                                )
-                            except Exception as e:
-                                _log.warning("Failed to queue tool_complete event: %s", e)
+                        # Reset segment_saved flag so new text after tool can be saved
+                        segment_saved = False
 
-                            current_tool_invocation = None
+                        # Queue event for async processing using captured loop
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                tool_events.put(("complete", tool_call_id, tool_name, invocation["duration"])),
+                                main_loop
+                            )
+                        except Exception as e:
+                            _log.warning("Failed to queue tool_complete event: %s", e)
 
                     # Run agent in thread pool to avoid blocking event loop
                     from run_agent import AIAgent
@@ -756,6 +822,8 @@ class ChatAPIHandlers:
                                 else None
                             ),
                         )
+                        if sid in self._active_streams:
+                            self._active_streams[sid]["agent"] = agent
 
                         # Send skill_loaded event if skills are selected
                         # Use selected_skills from query parameter to show which skills were loaded
@@ -807,11 +875,12 @@ class ChatAPIHandlers:
 
                     # Start streaming with real agent
                     try:
+                        # Store active stream for cancellation
+                        self._active_streams[sid] = {"task": None, "agent": None}
+
                         # Stream deltas as they arrive
                         agent_task = asyncio.create_task(stream_agent_response())
-
-                        # Store active stream for cancellation
-                        self._active_streams[sid] = agent_task
+                        self._active_streams[sid]["task"] = agent_task
                         _log.info("Started streaming task for session %s", sid)
 
                         # Poll for deltas and send SSE events
@@ -821,6 +890,64 @@ class ChatAPIHandlers:
                         assistant_msg_id = None  # Track assistant message ID for updates
                         skill_use_msg_saved = False  # Track if skill_use message is saved
                         tool_use_msg_id = None  # Track tool_use message ID for updates
+
+                        async def send_sse_event(event_name: str, payload: Dict[str, Any], *, log_context: str) -> bool:
+                            nonlocal client_disconnected
+                            if client_disconnected:
+                                return False
+                            ok = await self._safe_write_sse(
+                                response,
+                                event_name,
+                                payload,
+                                log_context=log_context,
+                            )
+                            if not ok:
+                                client_disconnected = True
+                            return ok
+
+                        async def process_tool_events() -> None:
+                            nonlocal segment_saved, assistant_msg_id
+                            while not tool_events.empty():
+                                try:
+                                    event = tool_events.get_nowait()
+                                    event_type = event[0]
+
+                                    if event_type == "start":
+                                        _, tool_call_id, tool_name = event
+
+                                        # Save current text segment before tool starts
+                                        if current_text_segment and not segment_saved:
+                                            segment_text = "".join(current_text_segment)
+                                            db.append_message(
+                                                session_id=sid,
+                                                role="assistant",
+                                                content=segment_text
+                                            )
+                                            _log.info("[MESSAGE_SPLIT] Saved text segment (%d chars) before tool %s", len(segment_text), tool_name)
+                                            current_text_segment.clear()
+                                            segment_saved = True
+                                            assistant_msg_id = None  # Reset for next segment
+
+                                        await send_sse_event(
+                                            "tool_progress",
+                                            {"tool": tool_name, "status": "started", "id": tool_call_id},
+                                            log_context=f"tool_progress start for {tool_name}",
+                                        )
+                                        if not client_disconnected:
+                                            _log.info("[SSE] Sent tool_progress start: %s", tool_name)
+                                    elif event_type == "complete":
+                                        _, tool_call_id, tool_name, duration = event
+                                        await send_sse_event(
+                                            "tool_progress",
+                                            {"tool": tool_name, "status": "completed", "id": tool_call_id, "duration": duration},
+                                            log_context=f"tool_progress complete for {tool_name}",
+                                        )
+                                        if not client_disconnected:
+                                            _log.info("[SSE] Sent tool_progress complete: %s (%dms)", tool_name, duration)
+                                except asyncio.QueueEmpty:
+                                    break
+                                except Exception as e:
+                                    _log.warning("Failed to process tool event: %s", e)
 
                         # Save skill_use message immediately if skills were selected
                         if selected_skills and not skill_use_msg_saved:
@@ -863,46 +990,17 @@ class ChatAPIHandlers:
                         while not agent_task.done():
                             try:
                                 # Process tool events from queue (non-blocking)
-                                while not tool_events.empty():
-                                    try:
-                                        event = tool_events.get_nowait()
-                                        event_type = event[0]
-
-                                        if event_type == "start":
-                                            _, tool_call_id, tool_name = event
-
-                                            # Save current text segment before tool starts
-                                            if current_text_segment and not segment_saved:
-                                                segment_text = "".join(current_text_segment)
-                                                db.append_message(
-                                                    session_id=sid,
-                                                    role="assistant",
-                                                    content=segment_text
-                                                )
-                                                _log.info("[MESSAGE_SPLIT] Saved text segment (%d chars) before tool %s", len(segment_text), tool_name)
-                                                current_text_segment.clear()
-                                                segment_saved = True
-                                                assistant_msg_id = None  # Reset for next segment
-
-                                            progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "started", "id": tool_call_id})}\n\n'
-                                            await response.write(progress_event.encode())
-                                            _log.info("[SSE] Sent tool_progress start: %s", tool_name)
-                                        elif event_type == "complete":
-                                            _, tool_call_id, tool_name, duration = event
-                                            progress_event = f'event: tool_progress\ndata: {json.dumps({"tool": tool_name, "status": "completed", "id": tool_call_id, "duration": duration})}\n\n'
-                                            await response.write(progress_event.encode())
-                                            _log.info("[SSE] Sent tool_progress complete: %s (%dms)", tool_name, duration)
-                                    except asyncio.QueueEmpty:
-                                        break
-                                    except Exception as e:
-                                        _log.warning("Failed to process tool event: %s", e)
+                                await process_tool_events()
 
                                 if len(full_response) > last_sent:
                                     # Send accumulated new content
                                     new_content = "".join(full_response[last_sent:])
-                                    content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
-                                    await response.write(content_event.encode())
-                                    last_sent = len(full_response)
+                                    if await send_sse_event(
+                                        "content",
+                                        {"delta": new_content},
+                                        log_context=f"content delta for session {sid}",
+                                    ):
+                                        last_sent = len(full_response)
 
                                     # Save/update current segment assistant message every 10 deltas to reduce DB writes
                                     if len(current_text_segment) >= 10 and not segment_saved:
@@ -923,8 +1021,11 @@ class ChatAPIHandlers:
                                     new_invocations = tool_invocations[last_tool_sent:]
 
                                     # Send SSE event with new invocations
-                                    tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
-                                    await response.write(tool_event.encode())
+                                    await send_sse_event(
+                                        "tool_use",
+                                        {"invocations": new_invocations},
+                                        log_context=f"tool_use update for session {sid}",
+                                    )
 
                                     # Save each new tool invocation as a separate message
                                     for inv in new_invocations:
@@ -944,23 +1045,34 @@ class ChatAPIHandlers:
                             except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
                                 # Client disconnected, stop streaming but let agent finish
                                 _log.warning("Client disconnected during streaming for session %s", sid)
+                                client_disconnected = True
                                 break
                             except Exception as e:
                                 # Unexpected error, log but continue
                                 _log.error("Error during streaming loop: %s", e)
                                 break
 
+                        # Drain any tool events queued right before agent completion.
+                        await process_tool_events()
+
                         # Send any remaining content
                         if len(full_response) > last_sent:
                             new_content = "".join(full_response[last_sent:])
-                            content_event = f'event: content\ndata: {json.dumps({"delta": new_content})}\n\n'
-                            await response.write(content_event.encode())
+                            if await send_sse_event(
+                                "content",
+                                {"delta": new_content},
+                                log_context=f"final content delta for session {sid}",
+                            ):
+                                last_sent = len(full_response)
 
                         # Send any remaining tool invocations
                         if len(tool_invocations) > last_tool_sent:
                             new_invocations = tool_invocations[last_tool_sent:]
-                            tool_event = f'event: tool_use\ndata: {json.dumps({"invocations": new_invocations})}\n\n'
-                            await response.write(tool_event.encode())
+                            await send_sse_event(
+                                "tool_use",
+                                {"invocations": new_invocations},
+                                log_context=f"final tool_use update for session {sid}",
+                            )
 
                             # Save remaining tool invocations as separate messages
                             for inv in new_invocations:
@@ -1012,8 +1124,11 @@ class ChatAPIHandlers:
 
                             if result_text.strip():
                                 full_response.append(result_text)
-                                content_event = f'event: content\ndata: {json.dumps({"delta": result_text})}\n\n'
-                                await response.write(content_event.encode())
+                                await send_sse_event(
+                                    "content",
+                                    {"delta": result_text},
+                                    log_context=f"final fallback content for session {sid}",
+                                )
 
                         final_text = "".join(full_response)
                         if final_text.strip():
@@ -1066,27 +1181,35 @@ class ChatAPIHandlers:
                         # No need to save again here
 
                         # Send done event (may fail if client disconnected, but data is already saved)
-                        try:
-                            done_event = f'event: done\ndata: {json.dumps({"finish_reason": "stop"})}\n\n'
-                            await response.write(done_event.encode())
+                        if await send_sse_event(
+                            "done",
+                            {"finish_reason": "stop"},
+                            log_context=f"done event for session {sid}",
+                        ):
                             _log.info("Sent done event for session %s", sid)
-                        except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+                        elif client_disconnected:
                             _log.warning("Could not send done event (client disconnected), but data saved for session %s", sid)
-                        except Exception as done_error:
-                            _log.error("Failed to send done event: %s", done_error)
 
                     except asyncio.CancelledError:
                         _log.info("Agent task cancelled for session %s", sid)
                         # Send cancelled event
-                        cancelled_event = f'event: cancelled\ndata: {json.dumps({"message": "Task stopped by user"})}\n\n'
-                        await response.write(cancelled_event.encode())
+                        await self._safe_write_sse(
+                            response,
+                            "cancelled",
+                            {"message": "Task stopped by user"},
+                            log_context=f"cancelled event for session {sid}",
+                        )
                         raise  # Re-raise to properly clean up
 
                     except Exception as agent_error:
                         _log.exception("Agent execution failed: %s", agent_error)
                         # Send error event
-                        error_event = f'event: error\ndata: {json.dumps({"error": str(agent_error)})}\n\n'
-                        await response.write(error_event.encode())
+                        await self._safe_write_sse(
+                            response,
+                            "error",
+                            {"error": str(agent_error)},
+                            log_context=f"error event for session {sid}",
+                        )
 
                     finally:
                         # Clean up active stream
@@ -1099,8 +1222,12 @@ class ChatAPIHandlers:
 
         except Exception as e:
             _log.exception("Stream error")
-            error_event = f'event: error\ndata: {json.dumps({"error": str(e)})}\n\n'
-            await response.write(error_event.encode())
+            await self._safe_write_sse(
+                response,
+                "error",
+                {"error": str(e)},
+                log_context="outer stream error",
+            )
 
         return response
 
@@ -1132,10 +1259,23 @@ class ChatAPIHandlers:
                 if sid not in self._active_streams:
                     return web.json_response({"detail": "No active task for this session"}, status=404)
 
-                # Cancel the task
-                task = self._active_streams[sid]
-                task.cancel()
-                _log.info("Cancelled streaming task for session %s", sid)
+                # Interrupt the underlying agent first so tool / model execution
+                # can observe the stop request even when it is already running
+                # inside a worker thread.
+                stream_state = self._active_streams[sid]
+                agent = stream_state.get("agent")
+                if agent is not None:
+                    try:
+                        agent.interrupt()
+                        _log.info("Interrupted agent for session %s", sid)
+                    except Exception:
+                        _log.exception("Failed to interrupt agent for session %s", sid)
+
+                # Then cancel the SSE task so the streaming loop exits promptly.
+                task = stream_state.get("task")
+                if task is not None:
+                    task.cancel()
+                    _log.info("Cancelled streaming task for session %s", sid)
 
                 return web.json_response({
                     "ok": True,

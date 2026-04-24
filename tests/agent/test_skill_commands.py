@@ -193,6 +193,17 @@ class TestResolveSkillCommandKey:
 
 
 class TestBuildPreloadedSkillsPrompt:
+    def test_loads_real_mano_skill_from_bundled_skills(self):
+        repo_skills_dir = Path(__file__).resolve().parents[2] / "skills"
+        repo_skill = repo_skills_dir / "mano-skill"
+        with patch("tools.skills_tool.SKILLS_DIR", repo_skills_dir):
+            prompt, loaded, missing = build_preloaded_skills_prompt([str(repo_skill)])
+
+        assert missing == []
+        assert loaded == ["mano-skill"]
+        assert "mano-skill" in prompt
+        assert "current Hermes system model" in prompt
+
     def test_builds_prompt_for_multiple_named_skills(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "first-skill")

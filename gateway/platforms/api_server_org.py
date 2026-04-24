@@ -73,6 +73,10 @@ class OrganizationAPIHandlers:
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.update_company(company_id, data))
 
+    async def handle_delete_company(self, request: web.Request) -> web.Response:
+        company_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.delete_company(company_id))
+
     async def handle_create_department(self, request: web.Request) -> web.Response:
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.create_department(data))
@@ -82,6 +86,10 @@ class OrganizationAPIHandlers:
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.update_department(department_id, data))
 
+    async def handle_delete_department(self, request: web.Request) -> web.Response:
+        department_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.delete_department(department_id))
+
     async def handle_create_position(self, request: web.Request) -> web.Response:
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.create_position(data))
@@ -90,6 +98,10 @@ class OrganizationAPIHandlers:
         position_id = int(request.match_info["id"])
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.update_position(position_id, data))
+
+    async def handle_delete_position(self, request: web.Request) -> web.Response:
+        position_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.delete_position(position_id))
 
     async def handle_create_agent(self, request: web.Request) -> web.Response:
         data = await self._json_body(request)
@@ -103,6 +115,10 @@ class OrganizationAPIHandlers:
         agent_id = int(request.match_info["id"])
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.update_agent(agent_id, data))
+
+    async def handle_delete_agent(self, request: web.Request) -> web.Response:
+        agent_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.delete_agent(agent_id))
 
     async def handle_provision_profile(self, request: web.Request) -> web.Response:
         agent_id = int(request.match_info["id"])

@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Translations } from "@/i18n/types";
 import { api, type OrgCompany, type OrgDepartment, type OrgPosition } from "@/lib/api";
 import { getAgentTreeWidth } from "../../orgLayout";
-import type { OrgCreateHandler, OrgEditHandler } from "../../types";
+import type { OrgCreateHandler, OrgDeleteHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
 import { OrgNodeCard } from "../OrgNodeCard";
@@ -18,6 +18,7 @@ interface PositionBranchProps {
   position: OrgPosition;
   t: Translations;
   onCreate: OrgCreateHandler;
+  onDelete: OrgDeleteHandler;
   onEdit: OrgEditHandler;
   onRefresh: () => void;
   allDepartments?: OrgDepartment[];
@@ -29,6 +30,7 @@ export function PositionBranch({
   position,
   t,
   onCreate,
+  onDelete,
   onEdit,
   onRefresh,
   allDepartments,
@@ -87,6 +89,8 @@ export function PositionBranch({
             />
           </Tooltip>
         }
+        deleteTitle={t.organization.delete}
+        onDelete={() => onDelete("position", position)}
         onEdit={() => onEdit("position", position, { company, department, position })}
       />
 
@@ -103,6 +107,7 @@ export function PositionBranch({
             department={department}
             position={position}
             t={t}
+            onDelete={onDelete}
             onEdit={onEdit}
             onRefresh={onRefresh}
             allDepartments={allDepartments}

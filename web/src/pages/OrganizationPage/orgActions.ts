@@ -92,3 +92,19 @@ export async function persistOrgNode(
   }
   return currentCompany?.id;
 }
+
+export async function deleteOrgNode(type: OrgNodeType, id: number): Promise<void> {
+  if (type === "company") {
+    await api.deleteCompany(id);
+    return;
+  }
+  if (type === "department") {
+    await api.deleteDepartment(id);
+    return;
+  }
+  if (type === "position") {
+    await api.deletePosition(id);
+    return;
+  }
+  await api.deleteAgent(id);
+}

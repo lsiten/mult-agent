@@ -1,7 +1,7 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
 import { getDepartmentTreeWidth } from "../../orgLayout";
-import type { OrgCreateHandler, OrgEditHandler } from "../../types";
+import type { OrgCreateHandler, OrgDeleteHandler, OrgEditHandler } from "../../types";
 import { nodeColor } from "../../utils";
 import { ChildBranch } from "../ChildBranch";
 import { OrgNodeCard } from "../OrgNodeCard";
@@ -11,11 +11,12 @@ interface CompanyChartProps {
   company: OrgCompany;
   t: Translations;
   onCreate: OrgCreateHandler;
+  onDelete: OrgDeleteHandler;
   onEdit: OrgEditHandler;
   onRefresh: () => void;
 }
 
-export function CompanyChart({ company, t, onCreate, onEdit, onRefresh }: CompanyChartProps) {
+export function CompanyChart({ company, t, onCreate, onDelete, onEdit, onRefresh }: CompanyChartProps) {
   return (
     <div className="mx-auto flex w-max min-w-full flex-col items-center">
       <OrgNodeCard
@@ -29,6 +30,8 @@ export function CompanyChart({ company, t, onCreate, onEdit, onRefresh }: Compan
           [t.organization.positions, company.position_count ?? 0],
           [t.organization.agents, company.agent_count ?? 0],
         ]}
+        deleteTitle={t.organization.delete}
+        onDelete={() => onDelete("company", company)}
         onEdit={() => onEdit("company", company, { company })}
       />
 
@@ -44,6 +47,7 @@ export function CompanyChart({ company, t, onCreate, onEdit, onRefresh }: Compan
             department={department}
             t={t}
             onCreate={onCreate}
+            onDelete={onDelete}
             onEdit={onEdit}
             onRefresh={onRefresh}
             allDepartments={company.departments}

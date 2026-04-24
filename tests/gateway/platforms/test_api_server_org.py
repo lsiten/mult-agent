@@ -149,3 +149,61 @@ async def test_missing_agent_returns_404(handlers):
     response = await handlers.handle_get_agent(make_request(match_info={"id": "999"}))
 
     assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_company_endpoint_cascades_records(handlers):
+    company_response = await handlers.handle_create_company(
+        make_request({"name": "Hermes AI Lab", "goal": "Build agent teams"})
+    )
+    company = json.loads(company_response.body.decode())
+
+    department_response = await handlers.handle_create_department(
+        make_request(
+            {
+                "company_id": company["id"],
+                "name": "Research",
+                "goal": "Deliver research",
+            }
+        )
+    )
+    department = json.loads(department_response.body.decode())
+
+    position_response = await handlers.handle_create_position(
+        make_request(
+            {
+                "department_id": department["id"],
+                "name": "Market Analyst",
+                "responsibilities": "Write market briefs.",
+            }
+        )
+    )
+    position = json.loads(position_response.body.decode())
+
+    agent_response = await handlers.handle_create_agent(
+        make_request(
+            {
+                "position_id": position["id"],
+                "name": "Market Analyst Agent",
+                "role_summary": "Market analyst",
+            }
+        )
+    )
+    agent = json.loads(agent_response.body.decode())
+
+    delete_response = await handlers.handle_delete_company(
+        make_request(match_info={"id": str(company["id"])})
+    )
+    deleted = json.loads(delete_response.body.decode())
+
+    assert delete_response.status == 200
+    assert deleted == {"deleted": company["id"]}
+
+    tree_response = await handlers.handle_get_tree(make_request())
+    tree = json.loads(tree_response.body.decode())
+    assert tree["companies"] == []
+
+    missing_agent = await handlers.handle_get_agent(
+        make_request(match_info={"id": str(agent["id"])})
+    )
+    assert missing_agent.status == 404

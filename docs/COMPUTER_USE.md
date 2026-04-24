@@ -18,7 +18,7 @@ Computer Use enables Hermes to directly control your desktop environment:
 ┌─────────────────────────────────────┐
 │  Hermes Agent                       │
 │  ┌───────────────────────────────┐ │
-│  │ Skill: computer-use           │ │
+│  │ Skill: mano-skill             │ │
 │  │ (Task orchestration)          │ │
 │  └───────────┬───────────────────┘ │
 │              │                      │
@@ -136,18 +136,18 @@ hermes status
 
 ### High-Level Skill Usage
 
-The `computer-use` skill provides task orchestration:
+The `mano-skill` skill provides screenshot-driven task orchestration:
 
 ```python
 # Natural language task
 {
-  "skill": "computer-use",
+  "skill": "mano-skill",
   "task": "Open Safari and search for 'Anthropic Claude'"
 }
 
 # Predefined workflow
 {
-  "skill": "computer-use",
+  "skill": "mano-skill",
   "steps": [
     {
       "type": "bash",
@@ -406,7 +406,7 @@ else:
 See detailed API documentation in:
 - `tools/computer_use_tool.py` - Implementation
 - `tests/test_computer_use_tool.py` - Usage examples
-- `skills/computer-use/README.md` - Skill documentation
+- `skills/mano-skill/SKILL.md` - Skill guidance
 
 ## Contributing
 

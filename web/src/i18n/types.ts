@@ -554,6 +554,10 @@ export interface Translations {
     errorMessage: string;
     rootGoal: string;
     targetChain: string;
+    delete: string;
+    deleteConfirmWithName: string;
+    deleteFailedWithReason: string;
+    deleted: string;
     saveFailed: string;
     saveFailedWithReason: string;
     loadFailed: string;

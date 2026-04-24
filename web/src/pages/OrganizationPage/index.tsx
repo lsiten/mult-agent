@@ -21,6 +21,7 @@ export default function OrganizationPage() {
         multipleCompanies={page.multipleCompanies}
         t={page.t}
         onCreate={page.openCreate}
+        onDelete={page.deleteNode}
         onEdit={page.openEdit}
         onMoveCompany={page.moveCompany}
         onRefresh={page.refreshSelectedCompany}

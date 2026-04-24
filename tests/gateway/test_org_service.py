@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from gateway.org import OrganizationService, OrganizationStore
 
@@ -198,6 +199,59 @@ def test_bootstrap_block_records_profile_error(tmp_path):
 
     assert agent["profile_agent"]["profile_status"] == "blocked"
     assert "Provider API key is missing" in agent["profile_agent"]["error_message"]
+
+
+def test_delete_company_removes_cascaded_records_and_managed_paths(tmp_path):
+    service = make_service(tmp_path)
+    company = service.create_company({"name": "Hermes AI Lab", "goal": "Build agent teams"})
+    department = service.create_department(
+        {
+            "company_id": company["id"],
+            "name": "Research",
+            "goal": "Deliver product intelligence",
+        }
+    )
+    position = service.create_position(
+        {
+            "department_id": department["id"],
+            "name": "Market Analyst",
+            "responsibilities": "Write weekly market briefs.",
+        }
+    )
+    agent = service.create_agent(
+        {
+            "position_id": position["id"],
+            "name": "Market Analyst Agent",
+            "role_summary": "Market analyst",
+        }
+    )
+
+    company_workspace = service.workspaces.get_by_owner("company", company["id"])
+    department_workspace = service.workspaces.get_by_owner("department", department["id"])
+    position_workspace = service.workspaces.get_by_owner("position", position["id"])
+    agent_workspace = service.workspaces.get_by_owner("agent", agent["id"])
+    profile = service.profile_agents.get_by_agent(agent["id"])
+
+    assert company_workspace is not None
+    assert department_workspace is not None
+    assert position_workspace is not None
+    assert agent_workspace is not None
+    assert profile is not None
+
+    assert service.delete_company(company["id"]) == {"deleted": company["id"]}
+
+    assert service.store.query_all("SELECT * FROM companies") == []
+    assert service.store.query_all("SELECT * FROM departments") == []
+    assert service.store.query_all("SELECT * FROM positions") == []
+    assert service.store.query_all("SELECT * FROM agents") == []
+    assert service.store.query_all("SELECT * FROM profile_agents") == []
+    assert service.store.query_all("SELECT * FROM workspaces") == []
+
+    assert not Path(company_workspace["root_path"]).exists()
+    assert not Path(department_workspace["root_path"]).exists()
+    assert not Path(position_workspace["root_path"]).exists()
+    assert not Path(agent_workspace["root_path"]).exists()
+    assert not Path(profile["profile_home"]).exists()
 
 
 def test_foreign_keys_enabled(tmp_path):

@@ -1,6 +1,6 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
-import type { OrgCreateHandler, OrgEditHandler } from "../types";
+import type { OrgCreateHandler, OrgDeleteHandler, OrgEditHandler } from "../types";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { OrganizationEmptyState } from "./OrganizationEmptyState";
 import { OrganizationLoadingState } from "./OrganizationLoadingState";
@@ -12,6 +12,7 @@ interface OrganizationWorkspaceProps {
   multipleCompanies: boolean;
   t: Translations;
   onCreate: OrgCreateHandler;
+  onDelete: OrgDeleteHandler;
   onEdit: OrgEditHandler;
   onMoveCompany: (direction: -1 | 1) => void;
   onRefresh: () => void;
@@ -23,6 +24,7 @@ export function OrganizationWorkspace({
   multipleCompanies,
   t,
   onCreate,
+  onDelete,
   onEdit,
   onMoveCompany,
   onRefresh,
@@ -44,6 +46,7 @@ export function OrganizationWorkspace({
               company={company}
               t={t}
               onCreate={onCreate}
+              onDelete={onDelete}
               onEdit={onEdit}
               onRefresh={onRefresh}
             />

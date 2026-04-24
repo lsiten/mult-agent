@@ -1,0 +1,116 @@
+import json
+import os
+import tempfile
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+from aiohttp import web
+
+os.environ.setdefault("HERMES_HOME", tempfile.mkdtemp(prefix="hermes-chat-api-test-"))
+
+from gateway.platforms.api_server_chat import ChatAPIHandlers
+
+
+def make_request(match_info=None, authorized=True):
+    request = Mock(spec=web.Request)
+    request.headers = {"Authorization": "Bearer test-token"} if authorized else {}
+    request.query = {}
+    request.match_info = match_info or {}
+    return request
+
+
+@pytest.mark.asyncio
+async def test_stop_stream_interrupts_agent_and_cancels_task(monkeypatch):
+    handlers = ChatAPIHandlers("test-token")
+
+    fake_db = Mock()
+    fake_db.resolve_session_id.return_value = "chat_123"
+    fake_db.close.return_value = None
+
+    class FakeSessionDB:
+        def __init__(self):
+            pass
+
+        def resolve_session_id(self, session_id):
+            return fake_db.resolve_session_id(session_id)
+
+        def close(self):
+            fake_db.close()
+
+    interrupt_agent = Mock()
+    task = Mock()
+    handlers._active_streams["chat_123"] = {"task": task, "agent": interrupt_agent}
+
+    monkeypatch.setattr("hermes_state.SessionDB", FakeSessionDB)
+
+    response = await handlers.handle_stop_stream(
+        make_request(match_info={"session_id": "chat_123"})
+    )
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["ok"] is True
+    interrupt_agent.interrupt.assert_called_once_with()
+    task.cancel.assert_called_once_with()
+
+
+def test_tool_invocations_handle_out_of_order_completion():
+    handlers = ChatAPIHandlers("test-token")
+    invocations = []
+    invocation_map = {}
+
+    handlers._start_tool_invocation(
+        invocations,
+        invocation_map,
+        "tool_a",
+        "terminal",
+        {"command": "echo a"},
+        started_at=10.0,
+    )
+    handlers._start_tool_invocation(
+        invocations,
+        invocation_map,
+        "tool_b",
+        "read_file",
+        {"path": "/tmp/demo"},
+        started_at=20.0,
+    )
+
+    completed_a = handlers._complete_tool_invocation(
+        invocation_map,
+        "tool_a",
+        "ok-a",
+        completed_at=12.0,
+    )
+    completed_b = handlers._complete_tool_invocation(
+        invocation_map,
+        "tool_b",
+        "ok-b",
+        completed_at=21.5,
+    )
+
+    assert completed_a is invocations[0]
+    assert completed_a["status"] == "success"
+    assert completed_a["duration"] == 2000
+    assert completed_a["result"] == "ok-a"
+
+    assert completed_b is invocations[1]
+    assert completed_b["status"] == "success"
+    assert completed_b["duration"] == 1500
+    assert completed_b["result"] == "ok-b"
+
+
+@pytest.mark.asyncio
+async def test_safe_write_sse_returns_false_for_closing_transport():
+    handlers = ChatAPIHandlers("test-token")
+    response = Mock()
+    response.write = AsyncMock(side_effect=RuntimeError("Cannot write to closing transport"))
+
+    ok = await handlers._safe_write_sse(
+        response,
+        "done",
+        {"finish_reason": "stop"},
+        log_context="test done",
+    )
+
+    assert ok is False

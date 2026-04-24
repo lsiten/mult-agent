@@ -25,6 +25,9 @@ parallel-web>=0.4.2
 # Image generation and processing
 fal-client
 pillow  # Computer Use screenshot handling
+mss  # Mano-CUA screen capture
+pynput  # Mano-CUA mouse and keyboard control
+customtkinter  # Mano-CUA overlay GUI
 
 # Text-to-speech (Edge TTS is free, no API key needed)
 edge-tts

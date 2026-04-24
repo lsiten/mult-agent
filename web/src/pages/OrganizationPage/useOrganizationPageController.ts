@@ -3,9 +3,9 @@ import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
 import type { OrganizationTreeResponse } from "@/lib/api";
-import { persistOrgNode, type DialogState } from "./orgActions";
+import { deleteOrgNode, persistOrgNode, type DialogState } from "./orgActions";
 import type { OrgDialogItem, OrgDialogParent, OrgNodeType, OrgNodeValues } from "./types";
-import { formatReason, getErrorMessage } from "./utils";
+import { formatReason, formatTemplate, getErrorMessage } from "./utils";
 
 const EMPTY_TREE: OrganizationTreeResponse = { companies: [] };
 
@@ -99,7 +99,38 @@ export function useOrganizationPageController() {
     }
   };
 
+  const deleteNode = async (type: OrgNodeType, item: OrgDialogItem) => {
+    const typeLabel = {
+      company: t.organization.company,
+      department: t.organization.department,
+      position: t.organization.position,
+      agent: t.organization.agent,
+    }[type];
+    const nodeName =
+      ("display_name" in item && item.display_name) || ("name" in item && item.name) || String(item.id);
+
+    const confirmed = window.confirm(
+      formatTemplate(t.organization.deleteConfirmWithName, {
+        type: typeLabel,
+        name: nodeName,
+      }),
+    );
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+      await deleteOrgNode(type, item.id);
+      showToast(t.organization.deleted, "success");
+      await loadTree(type === "company" ? undefined : selectedCompany?.id);
+    } catch (error) {
+      showToast(formatReason(t.organization.deleteFailedWithReason, getErrorMessage(error)), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
+    deleteNode,
     dialog,
     loading,
     multipleCompanies,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -40,6 +41,9 @@ except ImportError:
         if not val:
             raise RuntimeError("HERMES_HOME environment variable is not set.")
         return Path(val)
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrganizationError(ValueError):
@@ -356,8 +360,6 @@ class SoulRenderService:
             return any_agent
 
         except Exception as e:
-            import hermes_logging
-            logger = hermes_logging.get_logger(__name__)
             logger.warning(f"Failed to find manager by hierarchy: {e}")
             return None
 
@@ -862,8 +864,6 @@ class ProfileProvisionService:
 
         except Exception as e:
             # 配置文件生成失败不应阻断 Profile 创建，记录错误即可
-            import hermes_logging
-            logger = hermes_logging.get_logger(__name__)
             logger.warning(f"Failed to generate Sub Agent config.yaml: {e}")
 
     def _copy_env_file(self, profile_home: Path) -> None:
@@ -882,8 +882,6 @@ class ProfileProvisionService:
 
             # 2. 如果主 Agent 没有 .env 文件，跳过（不影响 Profile 创建）
             if not main_env_path.exists():
-                import hermes_logging
-                logger = hermes_logging.get_logger(__name__)
                 logger.warning("Main Agent .env not found, Sub Agent may lack API keys")
                 return
 
@@ -896,8 +894,6 @@ class ProfileProvisionService:
 
         except Exception as e:
             # .env 复制失败不应阻断 Profile 创建，记录错误即可
-            import hermes_logging
-            logger = hermes_logging.get_logger(__name__)
             logger.warning(f"Failed to copy .env file: {e}")
 
     def _mark_profile(
@@ -1145,6 +1141,34 @@ class OrganizationService:
         if not workspace:
             raise OrganizationError("Workspace not found", 404)
         return workspace
+
+    def delete_company(self, company_id: int) -> dict[str, Any]:
+        resources = self.store.transaction(
+            lambda conn: self._delete_company_tx(company_id, conn)
+        )
+        self._cleanup_paths(resources)
+        return {"deleted": company_id}
+
+    def delete_department(self, department_id: int) -> dict[str, Any]:
+        resources = self.store.transaction(
+            lambda conn: self._delete_department_tx(department_id, conn)
+        )
+        self._cleanup_paths(resources)
+        return {"deleted": department_id}
+
+    def delete_position(self, position_id: int) -> dict[str, Any]:
+        resources = self.store.transaction(
+            lambda conn: self._delete_position_tx(position_id, conn)
+        )
+        self._cleanup_paths(resources)
+        return {"deleted": position_id}
+
+    def delete_agent(self, agent_id: int) -> dict[str, Any]:
+        resources = self.store.transaction(
+            lambda conn: self._delete_agent_tx(agent_id, conn)
+        )
+        self._cleanup_paths(resources)
+        return {"deleted": agent_id}
 
     # ----------------------------------------- Quick Actions (快捷操作)
 
@@ -1492,6 +1516,253 @@ class OrganizationService:
             return {"deleted": template_id}
 
         return self.store.transaction(tx)
+
+    def _delete_company_tx(
+        self,
+        company_id: int,
+        conn: sqlite3.Connection,
+    ) -> dict[str, list[str]]:
+        if not self.companies.get(company_id, conn):
+            raise OrganizationError("Company not found", 404)
+        resources = self._collect_delete_resources("company", company_id, conn)
+        self.store.execute(
+            """
+            DELETE FROM workspaces
+            WHERE (owner_type = 'company' AND owner_id = ?)
+               OR (owner_type = 'department' AND owner_id IN (
+                    SELECT id FROM departments WHERE company_id = ?
+               ))
+               OR (owner_type = 'position' AND owner_id IN (
+                    SELECT p.id
+                    FROM positions p
+                    JOIN departments d ON d.id = p.department_id
+                    WHERE d.company_id = ?
+               ))
+               OR (owner_type = 'agent' AND owner_id IN (
+                    SELECT id FROM agents WHERE company_id = ?
+               ))
+            """,
+            (company_id, company_id, company_id, company_id),
+            conn,
+        )
+        self.companies.delete(company_id, conn)
+        return resources
+
+    def _delete_department_tx(
+        self,
+        department_id: int,
+        conn: sqlite3.Connection,
+    ) -> dict[str, list[str]]:
+        if not self.departments.get(department_id, conn):
+            raise OrganizationError("Department not found", 404)
+        resources = self._collect_delete_resources("department", department_id, conn)
+        self.store.execute(
+            """
+            DELETE FROM workspaces
+            WHERE (owner_type = 'department' AND owner_id = ?)
+               OR (owner_type = 'position' AND owner_id IN (
+                    SELECT id FROM positions WHERE department_id = ?
+               ))
+               OR (owner_type = 'agent' AND owner_id IN (
+                    SELECT id FROM agents WHERE department_id = ?
+               ))
+            """,
+            (department_id, department_id, department_id),
+            conn,
+        )
+        self.departments.delete(department_id, conn)
+        return resources
+
+    def _delete_position_tx(
+        self,
+        position_id: int,
+        conn: sqlite3.Connection,
+    ) -> dict[str, list[str]]:
+        if not self.positions.get(position_id, conn):
+            raise OrganizationError("Position not found", 404)
+        resources = self._collect_delete_resources("position", position_id, conn)
+        self.store.execute(
+            """
+            DELETE FROM workspaces
+            WHERE (owner_type = 'position' AND owner_id = ?)
+               OR (owner_type = 'agent' AND owner_id IN (
+                    SELECT id FROM agents WHERE position_id = ?
+               ))
+            """,
+            (position_id, position_id),
+            conn,
+        )
+        self.positions.delete(position_id, conn)
+        return resources
+
+    def _delete_agent_tx(
+        self,
+        agent_id: int,
+        conn: sqlite3.Connection,
+    ) -> dict[str, list[str]]:
+        if not self.agents.get(agent_id, conn):
+            raise OrganizationError("Agent not found", 404)
+        resources = self._collect_delete_resources("agent", agent_id, conn)
+        self.store.execute(
+            "DELETE FROM workspaces WHERE owner_type = 'agent' AND owner_id = ?",
+            (agent_id,),
+            conn,
+        )
+        self.agents.delete(agent_id, conn)
+        return resources
+
+    def _collect_delete_resources(
+        self,
+        owner_type: str,
+        owner_id: int,
+        conn: sqlite3.Connection,
+    ) -> dict[str, list[str]]:
+        workspace_paths: list[str]
+        profile_paths: list[str]
+
+        if owner_type == "company":
+            workspace_rows = self.store.query_all(
+                """
+                SELECT root_path FROM workspaces
+                WHERE (owner_type = 'company' AND owner_id = ?)
+                   OR (owner_type = 'department' AND owner_id IN (
+                        SELECT id FROM departments WHERE company_id = ?
+                   ))
+                   OR (owner_type = 'position' AND owner_id IN (
+                        SELECT p.id
+                        FROM positions p
+                        JOIN departments d ON d.id = p.department_id
+                        WHERE d.company_id = ?
+                   ))
+                   OR (owner_type = 'agent' AND owner_id IN (
+                        SELECT id FROM agents WHERE company_id = ?
+                   ))
+                """,
+                (owner_id, owner_id, owner_id, owner_id),
+                conn,
+            )
+            profile_rows = self.store.query_all(
+                """
+                SELECT pa.profile_home
+                FROM profile_agents pa
+                JOIN agents a ON a.id = pa.agent_id
+                WHERE a.company_id = ?
+                """,
+                (owner_id,),
+                conn,
+            )
+        elif owner_type == "department":
+            workspace_rows = self.store.query_all(
+                """
+                SELECT root_path FROM workspaces
+                WHERE (owner_type = 'department' AND owner_id = ?)
+                   OR (owner_type = 'position' AND owner_id IN (
+                        SELECT id FROM positions WHERE department_id = ?
+                   ))
+                   OR (owner_type = 'agent' AND owner_id IN (
+                        SELECT id FROM agents WHERE department_id = ?
+                   ))
+                """,
+                (owner_id, owner_id, owner_id),
+                conn,
+            )
+            profile_rows = self.store.query_all(
+                """
+                SELECT pa.profile_home
+                FROM profile_agents pa
+                JOIN agents a ON a.id = pa.agent_id
+                WHERE a.department_id = ?
+                """,
+                (owner_id,),
+                conn,
+            )
+        elif owner_type == "position":
+            workspace_rows = self.store.query_all(
+                """
+                SELECT root_path FROM workspaces
+                WHERE (owner_type = 'position' AND owner_id = ?)
+                   OR (owner_type = 'agent' AND owner_id IN (
+                        SELECT id FROM agents WHERE position_id = ?
+                   ))
+                """,
+                (owner_id, owner_id),
+                conn,
+            )
+            profile_rows = self.store.query_all(
+                """
+                SELECT pa.profile_home
+                FROM profile_agents pa
+                JOIN agents a ON a.id = pa.agent_id
+                WHERE a.position_id = ?
+                """,
+                (owner_id,),
+                conn,
+            )
+        elif owner_type == "agent":
+            workspace_rows = self.store.query_all(
+                "SELECT root_path FROM workspaces WHERE owner_type = 'agent' AND owner_id = ?",
+                (owner_id,),
+                conn,
+            )
+            profile_rows = self.store.query_all(
+                "SELECT profile_home FROM profile_agents WHERE agent_id = ?",
+                (owner_id,),
+                conn,
+            )
+        else:
+            raise OrganizationError("Invalid delete owner type")
+
+        workspace_paths = [row["root_path"] for row in workspace_rows if row.get("root_path")]
+        profile_paths = [row["profile_home"] for row in profile_rows if row.get("profile_home")]
+        return {
+            "workspace_paths": self._dedupe_paths(workspace_paths),
+            "profile_paths": self._dedupe_paths(profile_paths),
+        }
+
+    def _cleanup_paths(self, resources: dict[str, list[str]]) -> None:
+        all_paths = self._dedupe_paths(
+            [*resources.get("workspace_paths", []), *resources.get("profile_paths", [])]
+        )
+        for path_str in sorted(all_paths, key=len, reverse=True):
+            managed_path = self._managed_path(path_str)
+            if not managed_path:
+                continue
+            try:
+                if managed_path.is_dir():
+                    shutil.rmtree(managed_path)
+                elif managed_path.exists():
+                    managed_path.unlink()
+            except FileNotFoundError:
+                continue
+            except Exception:
+                logger.warning("Failed to delete organization path: %s", managed_path, exc_info=True)
+
+    def _managed_path(self, raw_path: str) -> Path | None:
+        if not raw_path:
+            return None
+        try:
+            path = Path(raw_path).expanduser().resolve(strict=False)
+            org_root = self.store.org_root.resolve(strict=False)
+        except OSError:
+            logger.warning("Failed to resolve organization path: %s", raw_path, exc_info=True)
+            return None
+
+        if path == org_root or org_root in path.parents:
+            return path
+
+        logger.info("Skip deleting unmanaged path outside org root: %s", raw_path)
+        return None
+
+    @staticmethod
+    def _dedupe_paths(paths: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for path in paths:
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            ordered.append(path)
+        return ordered
 
     def _update_existing(
         self,

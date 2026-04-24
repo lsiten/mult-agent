@@ -22,6 +22,7 @@ export function useStreamingResponse() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentSessionRef = useRef<string | null>(null);
   const retryCountRef = useRef(0);
+  const stopRequestedRef = useRef(false);
   const maxRetries = 3;
 
   const startStreaming = useCallback(async (
@@ -35,6 +36,7 @@ export function useStreamingResponse() {
     if (!isRetry) {
       retryCountRef.current = 0;
     }
+    stopRequestedRef.current = false;
 
     setIsStreaming(true);
     setStreamingContent("");
@@ -247,6 +249,7 @@ export function useStreamingResponse() {
       // Listen for done event
       eventSource.addEventListener("done", (event) => {
         console.log("[SSE] Done event received:", event.data);
+        stopRequestedRef.current = false;
         setIsStreaming(false);
         setStreamingContent(""); // Clear streaming content
         setTextSegments([]); // Clear completed text segments
@@ -262,6 +265,7 @@ export function useStreamingResponse() {
       eventSource.addEventListener("cancelled", (event) => {
         const messageEvent = event as MessageEvent;
         console.log("[SSE] Cancelled event received:", messageEvent.data);
+        stopRequestedRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
         setTextSegments([]);
@@ -275,6 +279,10 @@ export function useStreamingResponse() {
 
       // Listen for error event
       eventSource.addEventListener("error", (event) => {
+        if (stopRequestedRef.current) {
+          console.log("[SSE] Ignoring error event because stop was requested");
+          return;
+        }
         try {
           const messageEvent = event as MessageEvent;
           const data = JSON.parse(messageEvent.data);
@@ -296,6 +304,10 @@ export function useStreamingResponse() {
 
       // Handle connection errors with retry
       eventSource.onerror = (err) => {
+        if (stopRequestedRef.current) {
+          console.log("[SSE] Ignoring EventSource onerror because stop was requested");
+          return;
+        }
         console.error("[SSE] Error:", err);
         eventSource.close();
 
@@ -308,6 +320,10 @@ export function useStreamingResponse() {
           setError(`连接断开，正在重试 (${retryCountRef.current}/${maxRetries})...`);
 
           setTimeout(() => {
+            if (stopRequestedRef.current) {
+              console.log("[SSE] Skip retry because stop was requested");
+              return;
+            }
             startStreaming(sessionId, message, attachments, selectedSkills, agentId, true)
               .then(resolve)
               .catch(reject);
@@ -329,6 +345,7 @@ export function useStreamingResponse() {
 
   const stopStreaming = useCallback(async () => {
     const sessionId = currentSessionRef.current;
+    stopRequestedRef.current = true;
 
     // Close event source
     if (eventSourceRef.current) {

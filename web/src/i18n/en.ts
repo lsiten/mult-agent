@@ -313,6 +313,11 @@ export const en: Translations = {
     errorMessage: "Error Message",
     rootGoal: "Root Goal",
     targetChain: "Goal Chain",
+    delete: "Delete Node",
+    deleteConfirmWithName:
+      "Delete the {type} \"{name}\"? Related child nodes, agents, profiles, and workspaces will also be removed.",
+    deleteFailedWithReason: "Failed to delete organization node: {reason}",
+    deleted: "Organization node deleted",
     saveFailed: "Failed to save organization data",
     saveFailedWithReason: "Failed to save organization data: {reason}",
     loadFailed: "Failed to load organization data",

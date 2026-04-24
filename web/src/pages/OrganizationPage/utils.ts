@@ -40,6 +40,13 @@ export function formatReason(template: string, reason: string) {
   return template.replace("{reason}", reason || "");
 }
 
+export function formatTemplate(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
+}
+
 export function nodeKey(item: unknown, index: number) {
   if (item && typeof item === "object" && "id" in item) {
     return String((item as { id: number }).id);

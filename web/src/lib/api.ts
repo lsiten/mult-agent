@@ -409,6 +409,7 @@ export const api = {
 
     // Get appropriate auth token for the environment
     const gatewayToken = await getGatewayAuthToken();
+    const requestBase = await getRequestBase();
 
     return new Promise<UploadAttachmentResponse>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -428,7 +429,7 @@ export const api = {
       };
 
       xhr.onerror = () => reject(new Error("Network error"));
-      xhr.open("POST", `${getRequestBase()}/api/attachments/upload`);
+      xhr.open("POST", `${requestBase}/api/attachments/upload`);
 
       // In Electron mode, use Gateway auth token; otherwise use session token
       if (gatewayToken) {
@@ -530,6 +531,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  deleteCompany: (id: number) =>
+    fetchJSON<{ deleted: number }>(`/api/companies/${id}`, {
+      method: "DELETE",
+    }),
   createDepartment: (data: DepartmentPayload) =>
     fetchJSON<OrgDepartment>("/api/departments", {
       method: "POST",
@@ -541,6 +546,10 @@ export const api = {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+    }),
+  deleteDepartment: (id: number) =>
+    fetchJSON<{ deleted: number }>(`/api/departments/${id}`, {
+      method: "DELETE",
     }),
   createPosition: (data: PositionPayload) =>
     fetchJSON<OrgPosition>("/api/positions", {
@@ -554,6 +563,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  deletePosition: (id: number) =>
+    fetchJSON<{ deleted: number }>(`/api/positions/${id}`, {
+      method: "DELETE",
+    }),
   createAgent: (data: AgentPayload) =>
     fetchJSON<OrgAgent>("/api/agents", {
       method: "POST",
@@ -566,6 +579,10 @@ export const api = {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+    }),
+  deleteAgent: (id: number) =>
+    fetchJSON<{ deleted: number }>(`/api/agents/${id}`, {
+      method: "DELETE",
     }),
   provisionAgentProfile: (id: number) =>
     fetchJSON<OrgProfileAgent>(`/api/agents/${id}/provision-profile`, { method: "POST" }),

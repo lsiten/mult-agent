@@ -384,6 +384,13 @@ class BaseRepository:
         self.store.execute(sql, (*[updates[n] for n in names], item_id), conn)
         return self.get(item_id, conn)
 
+    def delete(self, item_id: int, conn: sqlite3.Connection | None = None) -> None:
+        self.store.execute(
+            f"DELETE FROM {self.table} WHERE id = ?",
+            (item_id,),
+            conn,
+        )
+
 
 class CompanyRepository(BaseRepository):
     table = "companies"
