@@ -579,6 +579,9 @@ export interface Translations {
     managementPosition: string;
     setManagementPosition: string;
     removeManagementPosition: string;
+    managementDepartment: string;
+    setManagementDepartment: string;
+    removeManagementDepartment: string;
     managingDepartment: string;
     setManagingDepartment: string;
     changeManagingDepartment: string;
@@ -592,6 +595,7 @@ export interface Translations {
     agentNotFound: string;
     leaderRoleUpdated: string;
     managementPositionUpdated: string;
+    managementDepartmentUpdated: string;
     managingDepartmentUpdated: string;
     setDirectManager: string;
     setLeadershipRole: string;

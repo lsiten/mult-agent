@@ -1259,6 +1259,35 @@ class OrganizationService:
 
         return self.store.transaction(tx)
 
+    def set_department_as_management(
+        self,
+        department_id: int,
+        is_management: bool = True,
+    ) -> dict[str, Any]:
+        """设置部门为管理部门
+
+        Args:
+            department_id: Department ID
+            is_management: True 设置为管理部门，False 取消
+
+        Returns:
+            更新后的 Department 信息
+        """
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            department = self.departments.get(department_id, conn)
+            if not department:
+                raise OrganizationError("Department not found", 404)
+
+            self.departments.update(
+                department_id,
+                {"is_management_department": 1 if is_management else 0},
+                {"is_management_department"},
+                conn,
+            )
+            return self.departments.get(department_id, conn) or department
+
+        return self.store.transaction(tx)
+
     def set_managing_department(
         self,
         department_id: int,

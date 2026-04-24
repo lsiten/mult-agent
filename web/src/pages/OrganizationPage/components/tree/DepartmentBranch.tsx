@@ -1,9 +1,6 @@
-import { Building2, MoreVertical } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import type { Translations } from "@/i18n/types";
@@ -37,18 +34,15 @@ export function DepartmentBranch({
   const color = nodeColor(department.accent_color, company.accent_color);
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [showManagingSelect, setShowManagingSelect] = useState(false);
 
-  const handleSetManagingDepartment = async (managingDeptId: string) => {
+  const handleToggleManagement = async (checked: boolean) => {
     setLoading(true);
     try {
-      const id = managingDeptId === "none" ? null : Number(managingDeptId);
-      await api.setManagingDepartment(department.id, id);
+      await api.setDepartmentAsManagement(department.id, checked);
       toast({
-        title: t.organization.managingDepartmentUpdated,
+        title: t.organization.managementDepartmentUpdated,
         variant: "default",
       });
-      setShowManagingSelect(false);
       onRefresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -62,17 +56,8 @@ export function DepartmentBranch({
     }
   };
 
-  // 过滤可选的管理部门（排除自己和子部门）
-  const availableDepartments = (company.departments ?? []).filter(
-    (d) => d.id !== department.id && d.parent_id !== department.id
-  );
-
-  const managingDeptName = department.managing_department_id
-    ? company.departments?.find((d) => d.id === department.managing_department_id)?.name
-    : null;
-
-  const managingBadge = managingDeptName ? (
-    <Tooltip content={`${t.organization.managedBy}: ${managingDeptName}`} side="top" delay={150}>
+  const managementBadge = department.is_management_department ? (
+    <Tooltip content={t.organization.managementDepartment} side="top" delay={150}>
       <Building2 className="h-4 w-4 text-blue-500" />
     </Tooltip>
   ) : null;
@@ -84,7 +69,7 @@ export function DepartmentBranch({
         name={
           <div className="flex items-center gap-2">
             <span>{department.name}</span>
-            {managingBadge}
+            {managementBadge}
           </div>
         }
         subtitle={department.description || department.goal}
@@ -95,40 +80,13 @@ export function DepartmentBranch({
           [t.organization.agents, department.agent_count ?? 0],
         ]}
         actions={
-          <Popover open={showManagingSelect} onOpenChange={setShowManagingSelect}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" disabled={loading}>
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t.organization.setManagingDepartment}</label>
-                <Select
-                  value={department.managing_department_id?.toString() || "none"}
-                  onValueChange={handleSetManagingDepartment}
-                  disabled={loading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t.organization.setManagingDepartment} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{t.common.none}</SelectItem>
-                    {availableDepartments.map((d) => (
-                      <SelectItem key={d.id} value={d.id.toString()}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {managingDeptName && (
-                  <Badge variant="outline" className="text-xs">
-                    {t.organization.managedBy}: {managingDeptName}
-                  </Badge>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <Tooltip content={t.organization.setManagementDepartment} side="left" delay={150}>
+            <Switch
+              checked={Boolean(department.is_management_department)}
+              onCheckedChange={handleToggleManagement}
+              disabled={loading}
+            />
+          </Tooltip>
         }
         onEdit={() => onEdit("department", department, { company, department })}
       />

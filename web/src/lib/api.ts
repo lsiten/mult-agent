@@ -590,6 +590,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_management: isManagement }),
     }),
+  setDepartmentAsManagement: (departmentId: number, isManagement: boolean) =>
+    fetchJSON<OrgDepartment>(`/api/departments/${departmentId}/set-management-department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_management: isManagement }),
+    }),
   setManagingDepartment: (departmentId: number, managingDepartmentId: number | null) =>
     fetchJSON<OrgDepartment>(`/api/departments/${departmentId}/set-managing-department`, {
       method: "POST",
@@ -736,6 +742,7 @@ export interface OrgDepartment {
   company_id: number;
   parent_id: number | null;
   managing_department_id: number | null;
+  is_management_department: number | boolean;
   code: string;
   name: string;
   goal: string;

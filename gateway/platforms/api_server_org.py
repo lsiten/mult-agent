@@ -140,6 +140,16 @@ class OrganizationAPIHandlers:
             lambda: self._service.set_position_as_management(position_id, is_management),
         )
 
+    async def handle_set_department_as_management(self, request: web.Request) -> web.Response:
+        """设置部门为管理部门"""
+        department_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        is_management = data.get("is_management", True)
+        return await self._handle(
+            request,
+            lambda: self._service.set_department_as_management(department_id, is_management),
+        )
+
     async def handle_set_managing_department(self, request: web.Request) -> web.Response:
         """设置部门的管理部门"""
         department_id = int(request.match_info["id"])

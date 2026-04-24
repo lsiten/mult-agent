@@ -292,6 +292,7 @@ class OrganizationStore:
                 "icon": "TEXT",
                 "accent_color": "TEXT",
                 "managing_department_id": "INTEGER REFERENCES departments(id) ON DELETE SET NULL",
+                "is_management_department": "INTEGER NOT NULL DEFAULT 0",
             },
             "positions": {
                 "icon": "TEXT",

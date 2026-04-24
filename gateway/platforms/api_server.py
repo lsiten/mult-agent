@@ -2697,6 +2697,7 @@ class APIServerAdapter(BasePlatformAdapter):
         # Quick actions for positions
         self._app.router.add_post("/api/positions/{id}/set-management", org_h.handle_set_position_as_management)
         # Quick actions for departments
+        self._app.router.add_post("/api/departments/{id}/set-management-department", org_h.handle_set_department_as_management)
         self._app.router.add_post("/api/departments/{id}/set-managing-department", org_h.handle_set_managing_department)
         # Workspaces
         self._app.router.add_get("/api/workspaces/{ownerType}/{ownerId}", org_h.handle_get_workspace)
