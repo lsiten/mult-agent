@@ -44,6 +44,7 @@ export interface Translations {
     updated: string;
     failedToUpdate: string;
     success: string;
+    operationFailed: string;
     collapse: string;
     expand: string;
     general: string;
@@ -568,6 +569,30 @@ export interface Translations {
       parentPosition: string;
       optional: string;
     };
+    leadershipRole: string;
+    primaryLeader: string;
+    deputyLeader: string;
+    normalEmployee: string;
+    setPrimaryLeader: string;
+    setDeputyLeader: string;
+    removeLeader: string;
+    managementPosition: string;
+    setManagementPosition: string;
+    removeManagementPosition: string;
+    managingDepartment: string;
+    setManagingDepartment: string;
+    changeManagingDepartment: string;
+    managedBy: string;
+    recommendedManager: string;
+    directManager: string;
+    autoRecommend: string;
+    recommended: string;
+    recommendedManagerHint: string;
+    primaryLeaderConflict: string;
+    agentNotFound: string;
+    leaderRoleUpdated: string;
+    managementPositionUpdated: string;
+    managingDepartmentUpdated: string;
   };
 
   // ── Language switcher ──

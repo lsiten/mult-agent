@@ -14,6 +14,7 @@ interface OrganizationWorkspaceProps {
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
   onMoveCompany: (direction: -1 | 1) => void;
+  onRefresh: () => void;
 }
 
 export function OrganizationWorkspace({
@@ -24,6 +25,7 @@ export function OrganizationWorkspace({
   onCreate,
   onEdit,
   onMoveCompany,
+  onRefresh,
 }: OrganizationWorkspaceProps) {
   return (
     <main className="min-h-[620px] overflow-hidden border border-border bg-card/35">
@@ -43,6 +45,7 @@ export function OrganizationWorkspace({
               t={t}
               onCreate={onCreate}
               onEdit={onEdit}
+              onRefresh={onRefresh}
             />
           </div>
         </section>

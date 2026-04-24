@@ -13,6 +13,7 @@ interface DepartmentBranchProps {
   t: Translations;
   onCreate: OrgCreateHandler;
   onEdit: OrgEditHandler;
+  onRefresh: () => void;
 }
 
 export function DepartmentBranch({
@@ -21,6 +22,7 @@ export function DepartmentBranch({
   t,
   onCreate,
   onEdit,
+  onRefresh,
 }: DepartmentBranchProps) {
   const color = nodeColor(department.accent_color, company.accent_color);
   return (
@@ -52,6 +54,7 @@ export function DepartmentBranch({
             t={t}
             onCreate={onCreate}
             onEdit={onEdit}
+            onRefresh={onRefresh}
           />
         )}
       />

@@ -572,6 +572,31 @@ export const api = {
   getWorkspace: (ownerType: OrgOwnerType, ownerId: number) =>
     fetchJSON<OrgWorkspace>(`/api/workspaces/${ownerType}/${ownerId}`),
 
+  // Quick Actions
+  getRecommendedManager: (agentId: number) =>
+    fetchJSON<OrgAgent | null>(`/api/agents/${agentId}/recommended-manager`).catch((err) => {
+      if (err.message?.includes('404')) return null;
+      throw err;
+    }),
+  setAgentAsLeader: (agentId: number, leadershipRole: 'primary' | 'deputy' | 'none') =>
+    fetchJSON<OrgAgent>(`/api/agents/${agentId}/set-leader`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leadership_role: leadershipRole }),
+    }),
+  setPositionAsManagement: (positionId: number, isManagement: boolean) =>
+    fetchJSON<OrgPosition>(`/api/positions/${positionId}/set-management`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_management: isManagement }),
+    }),
+  setManagingDepartment: (departmentId: number, managingDepartmentId: number | null) =>
+    fetchJSON<OrgDepartment>(`/api/departments/${departmentId}/set-managing-department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ managing_department_id: managingDepartmentId }),
+    }),
+
   // Master-agent asset inheritance (per-provider Public/Private toggle lives here)
   refreshMasterAssets: () =>
     fetchJSON<MasterAssetRefreshReport>("/api/org/assets/refresh", { method: "POST" }),
@@ -671,6 +696,7 @@ export interface OrgAgent {
   display_name: string | null;
   avatar_url: string | null;
   manager_agent_id: number | null;
+  leadership_role: 'primary' | 'deputy' | 'none';
   employment_status: string;
   role_summary: string;
   service_goal: string | null;
@@ -694,6 +720,7 @@ export interface OrgPosition {
   icon: string | null;
   accent_color: string | null;
   headcount: number | null;
+  is_management_position: number | boolean;
   template_key: string | null;
   workspace_path: string | null;
   sort_order: number;
@@ -708,6 +735,7 @@ export interface OrgDepartment {
   id: number;
   company_id: number;
   parent_id: number | null;
+  managing_department_id: number | null;
   code: string;
   name: string;
   goal: string;
