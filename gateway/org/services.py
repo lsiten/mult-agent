@@ -150,13 +150,25 @@ class SoulRenderService:
         department: dict[str, Any],
         company: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """根据组织架构智能查找经理
+        """根据组织架构智能查找经理（就近原则）
 
-        查找优先级：
-        1. 同部门的管理岗位（岗位名称包含"负责人"、"经理"、"主管"、"总监"等关键词）
-        2. 上级部门（parent_id）的管理岗位
-        3. 递归向上查找，直到找到或到达公司层级
-        4. 如果都没有，返回公司层级的第一个 Agent（如果有）
+        查找优先级（就近原则）：
+        1. 当前岗位下的负责人 Agent
+           - 如果自己所在岗位有其他 Agent 且是负责人（leadership_role = 'primary' 或 'deputy'）
+           - 优先级：primary > deputy
+
+        2. 当前部门的管理岗位下的 Agent
+           - 查找部门内 is_management_position=1 的岗位下的 Agent
+           - 优先级：primary > deputy > none
+
+        3. 管理部门（managing_department_id）下的 Agent
+           - 如果当前部门有管理部门，查找管理部门的管理岗位下的 Agent
+           - 递归向上查找管理部门链
+
+        4. 上级部门（parent_id）的管理岗位下的 Agent
+           - 递归向上查找部门层级
+
+        5. 公司层级的管理 Agent（兜底）
 
         Args:
             agent: 当前 Agent 信息
@@ -168,103 +180,165 @@ class SoulRenderService:
             经理 Agent 记录，如果找不到返回 None
         """
         try:
-            # 1. 在同部门查找管理岗位（排除自己）
-            manager_keywords = ["负责人", "经理", "主管", "总监", "领导", "manager", "director", "supervisor", "lead"]
+            # 1. 当前岗位下的负责人 Agent（同岗位的其他人）
+            # 场景：同一个岗位下有多个 Agent，其中某些是负责人
+            same_position_leader = self.store.query_one(
+                """
+                SELECT a.id, a.name, a.display_name, a.leadership_role
+                FROM agents a
+                WHERE a.position_id = ?
+                  AND a.id != ?
+                  AND a.leadership_role IN ('primary', 'deputy')
+                  AND a.status = 'active'
+                  AND a.enabled = 1
+                ORDER BY
+                  CASE a.leadership_role
+                    WHEN 'primary' THEN 1
+                    WHEN 'deputy' THEN 2
+                    ELSE 3
+                  END,
+                  a.id
+                LIMIT 1
+                """,
+                (position["id"], agent["id"]),
+            )
 
-            # 构建关键词查询条件
-            keyword_conditions = " OR ".join([f"p.name LIKE '%{kw}%'" for kw in manager_keywords])
+            if same_position_leader:
+                return same_position_leader
 
-            same_dept_manager = self.store.query_one(
-                    f"""
-                    SELECT a.id, a.name, a.display_name
+            # 2. 当前部门的管理岗位下的 Agent
+            # 场景：部门内有专门的管理岗位（如"部门经理"岗位）
+            dept_management_leader = self.store.query_one(
+                """
+                SELECT a.id, a.name, a.display_name, a.leadership_role
+                FROM agents a
+                JOIN positions p ON a.position_id = p.id
+                WHERE a.department_id = ?
+                  AND a.id != ?
+                  AND p.is_management_position = 1
+                  AND a.status = 'active'
+                  AND a.enabled = 1
+                ORDER BY
+                  CASE a.leadership_role
+                    WHEN 'primary' THEN 1
+                    WHEN 'deputy' THEN 2
+                    ELSE 3
+                  END,
+                  a.id
+                LIMIT 1
+                """,
+                (department["id"], agent["id"]),
+            )
+
+            if dept_management_leader:
+                return dept_management_leader
+
+            # 3. 管理部门（managing_department_id）的管理岗位下的 Agent
+            # 场景：部门有指定的管理部门（如技术部由架构部管理）
+            current_managing_dept_id = department.get("managing_department_id")
+            visited_managing_depts = set()  # 防止循环
+
+            while current_managing_dept_id and current_managing_dept_id not in visited_managing_depts:
+                visited_managing_depts.add(current_managing_dept_id)
+
+                managing_dept_leader = self.store.query_one(
+                    """
+                    SELECT a.id, a.name, a.display_name, a.leadership_role
                     FROM agents a
                     JOIN positions p ON a.position_id = p.id
                     WHERE a.department_id = ?
-                      AND a.id != ?
-                      AND ({keyword_conditions})
+                      AND p.is_management_position = 1
                       AND a.status = 'active'
                       AND a.enabled = 1
                     ORDER BY
-                      CASE
-                        WHEN p.name LIKE '%负责人%' THEN 1
-                        WHEN p.name LIKE '%总监%' THEN 2
-                        WHEN p.name LIKE '%经理%' THEN 3
-                        WHEN p.name LIKE '%主管%' THEN 4
-                        ELSE 5
+                      CASE a.leadership_role
+                        WHEN 'primary' THEN 1
+                        WHEN 'deputy' THEN 2
+                        ELSE 3
                       END,
                       a.id
                     LIMIT 1
                     """,
-                    (department["id"], agent["id"]),
+                    (current_managing_dept_id,),
                 )
 
-            if same_dept_manager:
-                return same_dept_manager
+                if managing_dept_leader:
+                    return managing_dept_leader
 
-            # 2. 递归向上查找上级部门的管理岗位
-            current_dept_id = department.get("parent_id")
-            while current_dept_id:
-                parent_dept_manager = self.store.query_one(
-                        f"""
-                        SELECT a.id, a.name, a.display_name
-                        FROM agents a
-                        JOIN positions p ON a.position_id = p.id
-                        WHERE a.department_id = ?
-                          AND ({keyword_conditions})
-                          AND a.status = 'active'
-                          AND a.enabled = 1
-                        ORDER BY
-                          CASE
-                            WHEN p.name LIKE '%负责人%' THEN 1
-                            WHEN p.name LIKE '%总监%' THEN 2
-                            WHEN p.name LIKE '%经理%' THEN 3
-                            WHEN p.name LIKE '%主管%' THEN 4
-                            ELSE 5
-                          END,
-                          a.id
-                        LIMIT 1
-                        """,
-                        (current_dept_id,),
-                    )
+                # 继续向上查找管理部门的管理部门
+                managing_dept = self.store.query_one(
+                    "SELECT managing_department_id FROM departments WHERE id = ?",
+                    (current_managing_dept_id,),
+                )
+                current_managing_dept_id = managing_dept.get("managing_department_id") if managing_dept else None
 
-                if parent_dept_manager:
-                    return parent_dept_manager
+            # 4. 上级部门（parent_id）的管理岗位下的 Agent
+            # 场景：递归向上查找部门层级
+            current_parent_id = department.get("parent_id")
+            visited_parents = set()  # 防止循环
+
+            while current_parent_id and current_parent_id not in visited_parents:
+                visited_parents.add(current_parent_id)
+
+                parent_dept_leader = self.store.query_one(
+                    """
+                    SELECT a.id, a.name, a.display_name, a.leadership_role
+                    FROM agents a
+                    JOIN positions p ON a.position_id = p.id
+                    WHERE a.department_id = ?
+                      AND p.is_management_position = 1
+                      AND a.status = 'active'
+                      AND a.enabled = 1
+                    ORDER BY
+                      CASE a.leadership_role
+                        WHEN 'primary' THEN 1
+                        WHEN 'deputy' THEN 2
+                        ELSE 3
+                      END,
+                      a.id
+                    LIMIT 1
+                    """,
+                    (current_parent_id,),
+                )
+
+                if parent_dept_leader:
+                    return parent_dept_leader
 
                 # 继续向上查找
                 parent_dept = self.store.query_one(
                     "SELECT parent_id FROM departments WHERE id = ?",
-                    (current_dept_id,),
+                    (current_parent_id,),
                 )
-                current_dept_id = parent_dept.get("parent_id") if parent_dept else None
+                current_parent_id = parent_dept.get("parent_id") if parent_dept else None
 
-            # 3. 公司层级：查找公司级别的管理 Agent（排除自己）
-            company_manager = self.store.query_one(
-                    f"""
-                    SELECT a.id, a.name, a.display_name
-                    FROM agents a
-                    JOIN positions p ON a.position_id = p.id
-                    WHERE a.company_id = ?
-                      AND a.id != ?
-                      AND ({keyword_conditions})
-                      AND a.status = 'active'
-                      AND a.enabled = 1
-                    ORDER BY
-                      CASE
-                        WHEN p.name LIKE '%CEO%' OR p.name LIKE '%总裁%' OR p.name LIKE '%董事%' THEN 1
-                        WHEN p.name LIKE '%负责人%' THEN 2
-                        WHEN p.name LIKE '%总监%' THEN 3
-                        ELSE 4
-                      END,
-                      a.id
-                    LIMIT 1
-                    """,
-                    (company["id"], agent["id"]),
-                )
+            # 5. 公司层级的管理 Agent（兜底）
+            # 场景：查找公司级别的管理岗位 Agent
+            company_leader = self.store.query_one(
+                """
+                SELECT a.id, a.name, a.display_name, a.leadership_role
+                FROM agents a
+                JOIN positions p ON a.position_id = p.id
+                WHERE a.company_id = ?
+                  AND a.id != ?
+                  AND p.is_management_position = 1
+                  AND a.status = 'active'
+                  AND a.enabled = 1
+                ORDER BY
+                  CASE a.leadership_role
+                    WHEN 'primary' THEN 1
+                    WHEN 'deputy' THEN 2
+                    ELSE 3
+                  END,
+                  a.id
+                LIMIT 1
+                """,
+                (company["id"], agent["id"]),
+            )
 
-            if company_manager:
-                return company_manager
+            if company_leader:
+                return company_leader
 
-            # 4. 最后尝试：公司中的任何其他 Agent（作为兜底）
+            # 6. 最后兜底：公司中的任何其他 Agent
             any_agent = self.store.query_one(
                 """
                 SELECT a.id, a.name, a.display_name

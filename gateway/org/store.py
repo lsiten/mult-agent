@@ -291,13 +291,16 @@ class OrganizationStore:
             "departments": {
                 "icon": "TEXT",
                 "accent_color": "TEXT",
+                "managing_department_id": "INTEGER REFERENCES departments(id) ON DELETE SET NULL",
             },
             "positions": {
                 "icon": "TEXT",
                 "accent_color": "TEXT",
+                "is_management_position": "INTEGER NOT NULL DEFAULT 0",
             },
             "agents": {
                 "accent_color": "TEXT",
+                "leadership_role": "TEXT DEFAULT 'none'",
             },
         }
         for table, columns in additions.items():
