@@ -254,7 +254,11 @@ export function AgentNode({
                   disabled={loading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={t.organization.selectManager} />
+                    <SelectValue placeholder={t.organization.selectManager}>
+                      {agent.manager_agent_id
+                        ? currentManagerDisplay
+                        : t.common.none}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{t.common.none}</SelectItem>
