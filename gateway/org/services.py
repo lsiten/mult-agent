@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from .assets import MasterAgentAssetScanner, ScanReport
 from .bootstrap import BootstrapResult, BootstrapValidator
@@ -25,6 +29,17 @@ from .store import (
     now_ts,
     slugify,
 )
+
+# Import hermes_constants for HERMES_HOME
+try:
+    from hermes_constants import get_hermes_home
+except ImportError:
+    def get_hermes_home() -> Path:
+        """Fallback implementation for testing."""
+        val = os.environ.get("HERMES_HOME", "").strip()
+        if not val:
+            raise RuntimeError("HERMES_HOME environment variable is not set.")
+        return Path(val)
 
 
 class OrganizationError(ValueError):
@@ -116,9 +131,26 @@ class SoulRenderService:
         *,
         template: dict[str, Any] | None = None,
         prompt_snippets: list[str] | None = None,
+        profile_home: str = "",
+        workspaces: dict[str, str] | None = None,
     ) -> str:
+        """渲染 SOUL.md
+
+        Args:
+            company: 公司信息
+            department: 部门信息
+            position: 岗位信息
+            agent: Agent 信息
+            template: Profile 模板（可选）
+            prompt_snippets: 继承的 prompt 片段（可选）
+            profile_home: Profile 目录路径
+            workspaces: 工作空间路径字典（agent/position/department/company）
+        """
         tpl = template or {}
+        workspaces = workspaces or {}
+
         context = {
+            "agent_id": agent.get("id", ""),
             "agent_name": agent.get("display_name") or agent.get("name", ""),
             "company_name": company.get("name", ""),
             "company_goal": company.get("goal", ""),
@@ -128,6 +160,12 @@ class SoulRenderService:
             "position_goal": position.get("goal") or "Follow the position responsibilities.",
             "position_responsibilities": position.get("responsibilities", ""),
             "agent_goal": agent.get("service_goal") or "Support the assigned position.",
+            "profile_home": profile_home,
+            "agent_workspace": workspaces.get("agent", ""),
+            "position_workspace": workspaces.get("position", ""),
+            "department_workspace": workspaces.get("department", ""),
+            "company_workspace": workspaces.get("company", ""),
+            # 旧模板兼容字段（保留以支持自定义模板）
             "working_style": tpl.get("default_working_style") or self._DEFAULT_SECTIONS["working_style"],
             "output_preferences": tpl.get("default_output_preferences")
             or self._DEFAULT_SECTIONS["output_preferences"],
@@ -147,28 +185,44 @@ class SoulRenderService:
 
     @staticmethod
     def _default_template() -> str:
+        """简化版 SOUL.md 模板（身份与技术能力分离）
+
+        技术能力通过文件系统体现：
+        - Skills 位于 profile_home/skills/ 目录（Python 自动发现）
+        - Tools 配置在 profile_home/config.yaml 的 toolsets 字段
+        """
         return (
-            "# Identity\n"
-            "You are {{agent_name}}, a Profile Agent in "
-            "{{company_name}} / {{department_name}} / {{position_name}}.\n"
+            "# {{agent_name}}\n"
             "\n"
-            "# Mission\n"
-            "Company goal: {{company_goal}}\n"
-            "Department goal: {{department_goal}}\n"
-            "Position goal: {{position_goal}}\n"
-            "Agent goal: {{agent_goal}}\n"
+            "## 身份信息\n"
+            "- **员工编号**: {{agent_id}}\n"
+            "- **岗位**: {{position_name}}\n"
+            "- **部门**: {{department_name}}\n"
+            "- **公司**: {{company_name}}\n"
             "\n"
-            "# Responsibilities\n"
+            "## 职责描述\n"
             "{{position_responsibilities}}\n"
             "\n"
-            "# Working Style\n"
-            "{{working_style}}\n"
+            "## 服务目标\n"
+            "{{agent_goal}}\n"
             "\n"
-            "# Output Preferences\n"
-            "{{output_preferences}}\n"
+            "## 工作空间\n"
             "\n"
-            "# Hard Rules\n"
-            "{{hard_rules}}\n"
+            "### Profile 目录（运行时环境）\n"
+            "- **位置**: `{{profile_home}}`\n"
+            "- **包含**: 配置、会话、记忆、技能、日志\n"
+            "\n"
+            "### Workspace 目录（工作成果）\n"
+            "- **个人工作区**: `{{agent_workspace}}`\n"
+            "- **岗位空间**: `{{position_workspace}}`\n"
+            "- **部门空间**: `{{department_workspace}}`\n"
+            "- **公司空间**: `{{company_workspace}}`\n"
+            "\n"
+            "---\n"
+            "\n"
+            "⚙️ **技术能力**:\n"
+            "- Skills 位于 `skills/` 目录（Python 自动发现）\n"
+            "- Tools 配置见 `config.yaml` 的 `toolsets` 字段\n"
         )
 
 
@@ -272,24 +326,51 @@ class ProfileProvisionService:
 
         profile_home = Path(profile["profile_home"])
         profile_home.mkdir(parents=True, exist_ok=True)
-        for child in ("memories", "sessions", "skills"):
+        for child in ("memories", "sessions", "skills", "logs", "cron"):
             (profile_home / child).mkdir(parents=True, exist_ok=True)
+
+        # Step 2.5: 创建 4 层 Workspace 目录结构
+        workspaces_root = self.store.org_root / "workspaces"
+        agent_ws_path = Path(agent["workspace_path"]) if agent.get("workspace_path") else None
+        position_ws_path = Path(position["workspace_path"]) if position.get("workspace_path") else None
+        department_ws_path = Path(department["workspace_path"]) if department.get("workspace_path") else None
+        company_ws_path = Path(company["workspace_path"]) if company.get("workspace_path") else None
+
+        # Agent workspace
+        if agent_ws_path:
+            (agent_ws_path / "outputs").mkdir(parents=True, exist_ok=True)
+            (agent_ws_path / "reports").mkdir(parents=True, exist_ok=True)
+
+        # Position workspace (templates)
+        if position_ws_path:
+            (position_ws_path / "templates").mkdir(parents=True, exist_ok=True)
+
+        # Department workspace (shared_resources)
+        if department_ws_path:
+            (department_ws_path / "shared_resources").mkdir(parents=True, exist_ok=True)
+
+        # Company workspace (shared_resources)
+        if company_ws_path:
+            (company_ws_path / "shared_resources").mkdir(parents=True, exist_ok=True)
 
         # Step 3: resolve template (verdict.template already ran the fallback).
         template = verdict.template
 
         # Step 4 + 5: apply inheritable assets.
         inheritable = self.assets.list_inheritable(conn)
-        agent_workspace = (
-            Path(agent["workspace_path"]) if agent.get("workspace_path") else None
-        )
         context = InheritContext(
             profile_home=profile_home,
-            agent_workspace=agent_workspace,
+            agent_workspace=agent_ws_path,
         )
         inheritance_result: InheritanceResult = self.applier.apply(inheritable, context)
 
-        # Step 6: render SOUL.md using template + inject_prompt snippets.
+        # Step 6: render SOUL.md using template + inject_prompt snippets + workspace paths.
+        workspaces = {
+            "agent": str(agent_ws_path) if agent_ws_path else "",
+            "position": str(position_ws_path) if position_ws_path else "",
+            "department": str(department_ws_path) if department_ws_path else "",
+            "company": str(company_ws_path) if company_ws_path else "",
+        }
         soul = self.soul_renderer.render(
             company,
             department,
@@ -297,6 +378,8 @@ class ProfileProvisionService:
             agent,
             template=template,
             prompt_snippets=inheritance_result.prompt_snippets,
+            profile_home=str(profile_home),
+            workspaces=workspaces,
         )
         Path(profile["soul_path"]).write_text(soul, encoding="utf-8")
 
@@ -325,6 +408,12 @@ class ProfileProvisionService:
             encoding="utf-8",
         )
 
+        # Step 8: 生成 Sub Agent 的 config.yaml（继承主 Agent 配置并覆盖特定设置）
+        self._generate_sub_agent_config(profile_home, agent)
+
+        # Step 9: 复制主 Agent 的 .env 文件到 Sub Agent profile
+        self._copy_env_file(profile_home)
+
         return self._mark_profile(profile["id"], "ready", None, conn)
 
     def _get_required(self, table: str, item_id: int, conn: sqlite3.Connection) -> dict[str, Any]:
@@ -332,6 +421,117 @@ class ProfileProvisionService:
         if not row:
             raise OrganizationError(f"{table[:-1].replace('_', ' ')} not found", 404)
         return row
+
+    def _generate_sub_agent_config(self, profile_home: Path, agent: dict[str, Any]) -> None:
+        """生成 Sub Agent 的 config.yaml（继承主 Agent 配置并覆盖特定设置）
+
+        Args:
+            profile_home: Sub Agent 的 profile 主目录
+            agent: Agent 记录（包含 id、name 等信息）
+
+        继承策略：
+        - 继承主 Agent 的大部分配置（model、providers、toolsets、agent settings 等）
+        - 覆盖 logging 路径（使用 Sub Agent 自己的 logs/）
+        - 覆盖 platforms 配置（Sub Agent 只启用 api_server，不需要 discord/telegram 等）
+        - 端口通过环境变量 API_SERVER_PORT 动态设置（不在 config.yaml 中硬编码）
+        """
+        try:
+            # 1. 读取主 Agent 的 config.yaml
+            main_hermes_home = get_hermes_home()
+            main_config_path = main_hermes_home / "config.yaml"
+
+            if not main_config_path.exists():
+                # 主 Agent 无配置文件，使用最小默认配置
+                sub_agent_config = {
+                    "model": "claude-sonnet-4-6",
+                    "toolsets": ["hermes-cli"],
+                    "agent": {
+                        "max_turns": 90,
+                        "gateway_timeout": 1800,
+                    },
+                }
+            else:
+                # 读取并继承主 Agent 配置
+                with open(main_config_path, "r", encoding="utf-8") as f:
+                    main_config = yaml.safe_load(f) or {}
+
+                # 深拷贝主配置（避免修改原对象）
+                sub_agent_config = json.loads(json.dumps(main_config))
+
+            # 2. 覆盖 Sub Agent 特定配置
+
+            # 2.1 logging: 使用 Sub Agent 自己的 logs/ 目录
+            if "logging" not in sub_agent_config:
+                sub_agent_config["logging"] = {}
+            sub_agent_config["logging"]["log_dir"] = str(profile_home / "logs")
+            sub_agent_config["logging"]["log_file"] = f"sub-agent-{agent['id']}.log"
+
+            # 2.2 platforms: Sub Agent 只启用 api_server
+            # - 移除 discord、telegram、slack 等平台配置
+            # - api_server 的端口通过环境变量 API_SERVER_PORT 动态设置（不硬编码）
+            sub_agent_config["platforms"] = {
+                "api_server": {
+                    "enabled": True,
+                    # 端口由环境变量 API_SERVER_PORT 设置，不在配置文件中指定
+                    "host": "127.0.0.1",
+                    "cors_origins": ["*"],  # Sub Agent 通常只被主 Agent 调用，允许所有来源
+                }
+            }
+
+            # 2.3 禁用不必要的功能（Sub Agent 不需要）
+            if "dashboard" in sub_agent_config:
+                sub_agent_config["dashboard"]["enabled"] = False  # Sub Agent 不需要 Dashboard UI
+
+            if "tts" in sub_agent_config:
+                sub_agent_config["tts"]["enabled"] = False  # Sub Agent 不需要 TTS
+
+            # 3. 写入 Sub Agent 的 config.yaml
+            config_path = profile_home / "config.yaml"
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(sub_agent_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+            # 设置文件权限（仅所有者可读写）
+            config_path.chmod(0o600)
+
+        except Exception as e:
+            # 配置文件生成失败不应阻断 Profile 创建，记录错误即可
+            import hermes_logging
+            logger = hermes_logging.get_logger(__name__)
+            logger.warning(f"Failed to generate Sub Agent config.yaml: {e}")
+
+    def _copy_env_file(self, profile_home: Path) -> None:
+        """复制主 Agent 的 .env 文件到 Sub Agent profile
+
+        Args:
+            profile_home: Sub Agent 的 profile 主目录
+
+        ⚠️ .env 包含 API keys（ANTHROPIC_API_KEY、OPENROUTER_API_KEY 等），
+        Sub Agent 必须继承才能正常调用 LLM。
+        """
+        try:
+            # 1. 读取主 Agent 的 .env 路径
+            main_hermes_home = get_hermes_home()
+            main_env_path = main_hermes_home / ".env"
+
+            # 2. 如果主 Agent 没有 .env 文件，跳过（不影响 Profile 创建）
+            if not main_env_path.exists():
+                import hermes_logging
+                logger = hermes_logging.get_logger(__name__)
+                logger.warning("Main Agent .env not found, Sub Agent may lack API keys")
+                return
+
+            # 3. 复制 .env 到 Sub Agent profile
+            sub_env_path = profile_home / ".env"
+            shutil.copy2(main_env_path, sub_env_path)
+
+            # 4. 设置文件权限（仅所有者可读写，敏感文件）
+            sub_env_path.chmod(0o600)
+
+        except Exception as e:
+            # .env 复制失败不应阻断 Profile 创建，记录错误即可
+            import hermes_logging
+            logger = hermes_logging.get_logger(__name__)
+            logger.warning(f"Failed to copy .env file: {e}")
 
     def _mark_profile(
         self,

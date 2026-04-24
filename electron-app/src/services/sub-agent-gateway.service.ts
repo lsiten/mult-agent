@@ -13,7 +13,6 @@ import { ProcessManager } from '../process/process-manager';
 import { HealthMonitor } from '../health/health-monitor';
 import { CircuitBreaker, CircuitState } from '../circuit-breaker';
 import { AppEnvironment } from '../env-detector';
-import * as sqlite3 from 'sqlite3';
 
 export interface SubAgentGatewayConfig {
   agentId: number;
@@ -27,29 +26,14 @@ export interface SubAgentGatewayConfig {
 }
 
 /**
- * 工作空间结构（Profile + Workspace 分离）
- */
-interface WorkspaceStructure {
-  profile: string; // Profile 运行时目录（包含 sessions, logs, memories）
-  workspaces: {
-    agent: string;      // Agent 工作区（outputs, reports）
-    position: string;   // 岗位空间（templates）
-    department: string; // 部门空间（shared_resources）
-    company: string;    // 公司空间（shared_resources）
-  };
-  orgDb: string; // org.db 路径
-  hierarchy: {
-    agent: { id: number; name: string; slug: string };
-    position: { id: number; name: string; slug: string };
-    department: { id: number; name: string; slug: string };
-    company: { id: number; name: string; slug: string };
-  };
-}
-
-/**
  * SubAgentGatewayService 类
  *
  * 每个 Sub Agent 一个实例，完全隔离的 Gateway 进程
+ *
+ * ⚠️ Profile 初始化由 Python 后端在创建 Agent 时完成，TypeScript 层只负责：
+ * 1. 同步运行时文件（.runtime_token 和 .env）
+ * 2. 启动 Sub Agent Gateway 进程
+ * 3. 健康检查和生命周期管理
  */
 export class SubAgentGatewayService implements Service {
   readonly id: string;
@@ -63,7 +47,6 @@ export class SubAgentGatewayService implements Service {
   private logCallback?: (log: string) => void;
   private errorCallback?: (error: Error) => void;
   private auditToken: string;
-  private workspaceStructure: WorkspaceStructure | null = null;
 
   constructor(config: SubAgentGatewayConfig) {
     this.id = `sub-agent-gateway-${config.agentId}`;
@@ -176,11 +159,8 @@ export class SubAgentGatewayService implements Service {
     }
 
     try {
-      // 0. 构建工作空间结构
-      this.workspaceStructure = await this.buildWorkspaceStructure();
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Workspace structure built`);
-
-      // 1. 确保 profile 目录存在
+      // 1. 确保 profile 目录存在并同步运行时文件
+      // ⚠️ Profile 初始化（目录、Skills、SOUL.md、Workspace）已由 Python 后端完成
       await this.ensureProfileDirectory();
 
       // 2. 清理可能存在的旧实例
@@ -212,272 +192,69 @@ export class SubAgentGatewayService implements Service {
   }
 
   /**
-   * 确保 profile 目录存在
+   * 确保 profile 目录存在并同步运行时文件
+   *
+   * ⚠️ Profile 初始化（目录结构、Skills、SOUL.md、Workspace）已由 Python 后端在创建 Agent 时完成。
+   * TypeScript 层只需：
+   * 1. 验证目录存在性
+   * 2. 同步运行时文件（.runtime_token 和 .env，每次启动时更新）
+   * 3. 清理历史遗留问题（冗余 org/ 子目录）
    */
   private async ensureProfileDirectory(): Promise<void> {
-    const dirs = [
-      this.config.profileHome,
-      path.join(this.config.profileHome, 'logs'),
-      path.join(this.config.profileHome, 'sessions'),
-      path.join(this.config.profileHome, 'memories'),
-      path.join(this.config.profileHome, 'skills'),
-      path.join(this.config.profileHome, 'cron'),
-    ];
-
-    for (const dir of dirs) {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        console.log(`[SubAgentGatewayService:${this.config.agentId}] Created directory: ${dir}`);
-      }
+    // 验证 Profile 目录存在（由 Python 后端创建）
+    if (!fs.existsSync(this.config.profileHome)) {
+      throw new Error(
+        `Profile directory not found: ${this.config.profileHome}. ` +
+        `Agent should be provisioned via Python backend before starting.`
+      );
     }
 
-    // 复制主 Gateway 的 .runtime_token 到 profile 目录
+    console.log(`[SubAgentGatewayService:${this.config.agentId}] Profile directory verified: ${this.config.profileHome}`);
+
+    // ====================================================================
+    // 同步运行时文件（每次启动时更新）
+    // ====================================================================
+
+    // 1. 复制主 Gateway 的 .runtime_token
     // 总是覆盖，确保使用最新的 token（主 Gateway 重启后 token 会变化）
     const mainTokenPath = path.join(this.config.mainHermesHome, '.runtime_token');
     const profileTokenPath = path.join(this.config.profileHome, '.runtime_token');
     if (fs.existsSync(mainTokenPath)) {
       fs.copyFileSync(mainTokenPath, profileTokenPath);
       fs.chmodSync(profileTokenPath, 0o600);
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Synced runtime token to profile`);
+      console.log(`[SubAgentGatewayService:${this.config.agentId}] Synced runtime token`);
     } else {
       console.warn(`[SubAgentGatewayService:${this.config.agentId}] Main runtime token not found at ${mainTokenPath}`);
     }
 
-    // ====================================================================
-    // 复制主 Agent 的 .env 文件到 profile 目录
-    // ⚠️ .env 包含 API keys，Sub Agent 必须继承才能正常工作
-    // ====================================================================
+    // 2. 验证 .env 文件存在
+    // ⚠️ .env 由 Python 后端在 Profile 创建时复制，此处仅验证
+    // 如果缺失则从主 Agent 同步（通常只在升级或 Profile 损坏时需要）
     const mainEnvPath = path.join(this.config.mainHermesHome, '.env');
     const profileEnvPath = path.join(this.config.profileHome, '.env');
-    if (fs.existsSync(mainEnvPath)) {
-      fs.copyFileSync(mainEnvPath, profileEnvPath);
-      fs.chmodSync(profileEnvPath, 0o600);
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Synced .env (API keys) to profile`);
+    if (!fs.existsSync(profileEnvPath)) {
+      console.warn(`[SubAgentGatewayService:${this.config.agentId}] .env missing in profile, syncing from main Agent...`);
+      if (fs.existsSync(mainEnvPath)) {
+        fs.copyFileSync(mainEnvPath, profileEnvPath);
+        fs.chmodSync(profileEnvPath, 0o600);
+        console.log(`[SubAgentGatewayService:${this.config.agentId}] Synced .env (API keys)`);
+      } else {
+        console.warn(`[SubAgentGatewayService:${this.config.agentId}] Main .env not found, Sub Agent may lack API keys`);
+      }
     } else {
-      console.warn(`[SubAgentGatewayService:${this.config.agentId}] Main .env not found at ${mainEnvPath}, Sub Agent may lack API keys`);
+      console.log(`[SubAgentGatewayService:${this.config.agentId}] .env verified`);
     }
 
     // ====================================================================
-    // 创建工作空间目录结构
+    // 清理历史遗留问题
     // ====================================================================
-    if (this.workspaceStructure) {
-      const { workspaces } = this.workspaceStructure;
 
-      // Agent workspace
-      fs.mkdirSync(path.join(workspaces.agent, 'outputs'), { recursive: true });
-      fs.mkdirSync(path.join(workspaces.agent, 'reports'), { recursive: true });
-
-      // Position workspace
-      fs.mkdirSync(path.join(workspaces.position, 'templates'), { recursive: true });
-
-      // Department workspace
-      fs.mkdirSync(path.join(workspaces.department, 'shared_resources'), { recursive: true });
-
-      // Company workspace
-      fs.mkdirSync(path.join(workspaces.company, 'shared_resources'), { recursive: true });
-
-      // 写入 workspace 元数据
-      const workspaceMetaPath = path.join(workspaces.agent, 'workspace.json');
-      fs.writeFileSync(workspaceMetaPath, JSON.stringify({
-        agent_id: this.config.agentId,
-        profile_home: this.config.profileHome,
-        created_at: new Date().toISOString(),
-        type: 'agent_workspace',
-        hierarchy: this.workspaceStructure.hierarchy
-      }, null, 2));
-
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Created workspace directories`);
-    }
-
-    // ====================================================================
-    // 清理冗余的 org/ 子目录
-    // ====================================================================
+    // 清理冗余的 org/ 子目录（如果存在）
     const invalidOrgDir = path.join(this.config.profileHome, 'org');
     if (fs.existsSync(invalidOrgDir)) {
       console.warn(`[SubAgentGatewayService:${this.config.agentId}] Found invalid org/ subdirectory, removing...`);
       fs.rmSync(invalidOrgDir, { recursive: true, force: true });
       console.log(`[SubAgentGatewayService:${this.config.agentId}] Removed invalid org/ subdirectory`);
-    }
-
-    // ====================================================================
-    // 继承 Skills
-    // ====================================================================
-    await this.inheritSkills(this.config.profileHome);
-
-    // ====================================================================
-    // 生成 SOUL.md
-    // ====================================================================
-    if (this.workspaceStructure) {
-      const soulContent = await this.generateSOUL();
-      fs.writeFileSync(path.join(this.config.profileHome, 'SOUL.md'), soulContent);
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Generated SOUL.md`);
-    }
-
-    // 确保 profile 有 config.yaml（Sub Agent 必需）
-    // 从主 Agent config 中选择性继承配置
-    await this.ensureProfileConfig();
-  }
-
-  /**
-   * 确保 profile 有正确的 config.yaml
-   * 从主 Agent 配置中选择性继承，排除不适用的配置
-   */
-  private async ensureProfileConfig(): Promise<void> {
-    const profileConfigPath = path.join(this.config.profileHome, 'config.yaml');
-    const mainConfigPath = path.join(this.config.mainHermesHome, 'config.yaml');
-
-    // 总是重新生成 config，确保与主配置同步（除了独立配置）
-    console.log(`[SubAgentGatewayService:${this.config.agentId}] Generating config.yaml from main config`);
-
-    let mainConfig: any = null;
-    if (fs.existsSync(mainConfigPath)) {
-      try {
-        const yaml = require('js-yaml');
-        const mainConfigContent = fs.readFileSync(mainConfigPath, 'utf-8');
-        mainConfig = yaml.load(mainConfigContent);
-      } catch (error) {
-        console.warn(`[SubAgentGatewayService:${this.config.agentId}] Failed to parse main config:`, error);
-      }
-    }
-
-    // 构建 Sub Agent 配置
-    const subAgentConfig: any = {};
-
-    if (mainConfig) {
-      // ============================================================
-      // 继承的配置（从主 Agent）
-      // ============================================================
-      const inheritedKeys = [
-        'model',                    // 主模型
-        'providers',                // Provider 配置
-        'fallback_providers',       // 降级 Provider
-        'credential_pool_strategies', // 凭证池策略
-        'toolsets',                 // 工具集
-        'agent',                    // Agent 核心配置
-        'terminal',                 // 终端配置
-        'browser',                  // 浏览器配置
-        'checkpoints',              // 检查点配置
-        'file_read_max_chars',      // 文件读取限制
-        'compression',              // 压缩配置
-        'bedrock',                  // AWS Bedrock
-        'smart_model_routing',      // 智能路由
-        'auxiliary',                // 辅助任务配置
-        'display',                  // 显示配置
-        'dashboard',                // Dashboard
-        'privacy',                  // 隐私设置
-        'tts',                      // 文本转语音
-        'stt',                      // 语音转文本
-        'voice',                    // 语音设置
-        'human_delay',              // 人类延迟模拟
-        'context',                  // 上下文引擎
-        'memory',                   // 记忆配置
-        'delegation',               // 委托配置
-        'skills',                   // 技能配置
-        'timezone',                 // 时区
-        'approvals',                // 审批配置
-        'command_allowlist',        // 命令白名单
-        'quick_commands',           // 快捷命令
-        'personalities',            // 个性配置
-        'security',                 // 安全配置
-        'cron',                     // 定时任务
-        'code_execution',           // 代码执行
-        'network',                  // 网络配置
-        'tasks',                    // 任务配置
-      ];
-
-      for (const key of inheritedKeys) {
-        if (mainConfig[key] !== undefined) {
-          subAgentConfig[key] = mainConfig[key];
-        }
-      }
-
-      // ============================================================
-      // 排除的配置（不继承，Sub Agent 不需要）
-      // ============================================================
-      // - prefill_messages_file: 预填充消息（主 Agent 特定）
-      // - honcho: Honcho 集成（主 Agent 特定）
-      // - platforms.discord/telegram/slack/etc: 其他平台（Sub Agent 只用 api_server）
-      // - discord/telegram/slack/whatsapp/mattermost: 平台特定配置
-
-      // ============================================================
-      // 独立配置（Sub Agent 特有，不从主 Agent 继承）
-      // ============================================================
-
-      // Logging: 使用 profile 独立日志目录
-      subAgentConfig.logging = {
-        level: mainConfig.logging?.level || 'INFO',
-        max_size_mb: mainConfig.logging?.max_size_mb || 5,
-        backup_count: mainConfig.logging?.backup_count || 3,
-      };
-
-      // Platforms: 只启用 api_server，使用动态分配的端口
-      subAgentConfig.platforms = {
-        api_server: {
-          enabled: true,
-          extra: {
-            host: '127.0.0.1',
-            port: this.config.port, // 动态分配的端口
-            cors_origins: '*',      // Sub Agent 允许所有来源（内部使用）
-          },
-        },
-      };
-
-    } else {
-      // ============================================================
-      // 主配置不存在时的最小配置
-      // ============================================================
-      console.warn(`[SubAgentGatewayService:${this.config.agentId}] Main config not found, using minimal config`);
-
-      subAgentConfig.model = 'claude-sonnet-4-6';
-      subAgentConfig.agent = {
-        max_turns: 90,
-        gateway_timeout: 1800,
-        tool_use_enforcement: 'auto',
-      };
-      subAgentConfig.logging = {
-        level: 'INFO',
-        max_size_mb: 5,
-        backup_count: 3,
-      };
-      subAgentConfig.platforms = {
-        api_server: {
-          enabled: true,
-          extra: {
-            host: '127.0.0.1',
-            port: this.config.port,
-            cors_origins: '*',
-          },
-        },
-      };
-      subAgentConfig.toolsets = ['hermes-cli'];
-      subAgentConfig.memory = {
-        memory_enabled: true,
-        user_profile_enabled: true,
-      };
-    }
-
-    // 写入配置文件
-    try {
-      const yaml = require('js-yaml');
-      const configYaml = yaml.dump(subAgentConfig, {
-        indent: 2,
-        lineWidth: 120,
-        noRefs: true,
-      });
-
-      const header = `# Sub Agent Profile Config (Agent ID: ${this.config.agentId})
-# 此配置从主 Agent 继承核心设置，但使用独立的端口和日志
-# 生成时间: ${new Date().toISOString()}
-# 端口: ${this.config.port}
-# HERMES_HOME: ${this.config.profileHome}
-
-`;
-
-      fs.writeFileSync(profileConfigPath, header + configYaml, 'utf-8');
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Created config.yaml with inherited settings`);
-    } catch (error) {
-      console.error(`[SubAgentGatewayService:${this.config.agentId}] Failed to write config:`, error);
-      throw error;
     }
   }
 
@@ -701,24 +478,8 @@ export class SubAgentGatewayService implements Service {
     env.HERMES_HOME = this.config.profileHome;
     console.log(`[SubAgentGatewayService:${this.config.agentId}] HERMES_HOME = ${this.config.profileHome}`);
 
-    // ====================================================================
-    // 工作空间路径（未来工具生成文件时使用）
-    // ====================================================================
-    if (this.workspaceStructure) {
-      env.HERMES_AGENT_WORKSPACE = this.workspaceStructure.workspaces.agent;
-      env.HERMES_POSITION_WORKSPACE = this.workspaceStructure.workspaces.position;
-      env.HERMES_DEPARTMENT_WORKSPACE = this.workspaceStructure.workspaces.department;
-      env.HERMES_COMPANY_WORKSPACE = this.workspaceStructure.workspaces.company;
-      env.HERMES_ORG_DB = this.workspaceStructure.orgDb;
-
-      // Agent 身份标识
-      env.HERMES_AGENT_ID = String(this.config.agentId);
-      env.HERMES_COMPANY_ID = String(this.workspaceStructure.hierarchy.company.id);
-      env.HERMES_DEPARTMENT_ID = String(this.workspaceStructure.hierarchy.department.id);
-      env.HERMES_POSITION_ID = String(this.workspaceStructure.hierarchy.position.id);
-
-      console.log(`[SubAgentGatewayService:${this.config.agentId}] Workspace env vars configured`);
-    }
+    // ⚠️ 工作空间环境变量由 Python 后端在 config.yaml 中设置
+    // Python 后端在 Profile 初始化时已写入这些环境变量
 
     // ====================================================================
     // Sub Agent 标记：跳过 config.yaml 端口配置，使用环境变量
@@ -781,186 +542,4 @@ export class SubAgentGatewayService implements Service {
   /**
    * 构建工作空间结构（从 org.db 查询层级信息）
    */
-  private async buildWorkspaceStructure(): Promise<WorkspaceStructure> {
-    const orgRoot = path.join(path.dirname(this.config.profileHome), '..');
-    const orgDbPath = path.join(orgRoot, 'org.db');
-
-    if (!fs.existsSync(orgDbPath)) {
-      throw new Error(`org.db not found: ${orgDbPath}`);
-    }
-
-    console.log(`[SubAgent:${this.config.agentId}] Querying org.db for hierarchy...`);
-
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(orgDbPath, sqlite3.OPEN_READONLY, (err: Error | null) => {
-        if (err) {
-          reject(new Error(`Failed to open org.db: ${err.message}`));
-          return;
-        }
-
-        const query = `
-          SELECT
-            a.id as agent_id, a.name as agent_name,
-            p.id as position_id, p.name as position_name,
-            d.id as department_id, d.name as department_name,
-            c.id as company_id, c.name as company_name
-          FROM agents a
-          JOIN positions p ON a.position_id = p.id
-          JOIN departments d ON p.department_id = d.id
-          JOIN companies c ON d.company_id = c.id
-          WHERE a.id = ?
-        `;
-
-        db.get(query, [this.config.agentId], (err: Error | null, row: any) => {
-          db.close();
-
-          if (err) {
-            reject(new Error(`Failed to query org.db: ${err.message}`));
-            return;
-          }
-
-          if (!row) {
-            reject(new Error(`Agent ${this.config.agentId} not found in org.db`));
-            return;
-          }
-
-          // 生成 slug（小写 + 连字符）
-          const toSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-          const workspacesRoot = path.join(orgRoot, 'workspaces');
-
-          const structure: WorkspaceStructure = {
-            profile: this.config.profileHome,
-            workspaces: {
-              company: path.join(workspacesRoot, 'companies', `${row.company_id}-${toSlug(row.company_name)}`),
-              department: path.join(workspacesRoot, 'departments', `${row.department_id}-${toSlug(row.department_name)}`),
-              position: path.join(workspacesRoot, 'positions', `${row.position_id}-${toSlug(row.position_name)}`),
-              agent: path.join(workspacesRoot, 'agents', `${row.agent_id}-${toSlug(row.agent_name)}`),
-            },
-            orgDb: orgDbPath,
-            hierarchy: {
-              agent: { id: row.agent_id, name: row.agent_name, slug: toSlug(row.agent_name) },
-              position: { id: row.position_id, name: row.position_name, slug: toSlug(row.position_name) },
-              department: { id: row.department_id, name: row.department_name, slug: toSlug(row.department_name) },
-              company: { id: row.company_id, name: row.company_name, slug: toSlug(row.company_name) },
-            }
-          };
-
-          console.log(`[SubAgent:${this.config.agentId}] Workspace structure built from org.db`);
-          resolve(structure);
-        });
-      });
-    });
-  }
-
-  /**
-   * 从主 Agent 继承 Skills（按 inheritable 标记）
-   */
-  private async inheritSkills(profileDir: string): Promise<void> {
-    const mainSkillsDir = path.join(this.config.mainHermesHome, 'skills');
-    const profileSkillsDir = path.join(profileDir, 'skills');
-
-    if (!fs.existsSync(mainSkillsDir)) {
-      console.warn(`[SubAgent:${this.config.agentId}] Main skills directory not found: ${mainSkillsDir}`);
-      return;
-    }
-
-    fs.mkdirSync(profileSkillsDir, { recursive: true });
-
-    const skillDirs = fs.readdirSync(mainSkillsDir, { withFileTypes: true })
-      .filter(d => d.isDirectory());
-
-    let inheritedCount = 0;
-    let skippedCount = 0;
-
-    for (const skillDir of skillDirs) {
-      const skillPath = path.join(mainSkillsDir, skillDir.name);
-      const skillYamlPath = path.join(skillPath, 'skill.yaml');
-
-      if (!fs.existsSync(skillYamlPath)) {
-        console.log(`[SubAgent:${this.config.agentId}] Skipping ${skillDir.name} (no skill.yaml)`);
-        continue;
-      }
-
-      try {
-        const yaml = require('js-yaml');
-        const skillMeta = yaml.load(fs.readFileSync(skillYamlPath, 'utf-8'));
-
-        // 继承条件：inheritable=true 或 visibility=public
-        // 如果字段不存在，默认为 private（不继承）
-        const shouldInherit = skillMeta.inheritable === true || skillMeta.visibility === 'public';
-
-        if (shouldInherit) {
-          const targetPath = path.join(profileSkillsDir, skillDir.name);
-          this.copyRecursive(skillPath, targetPath);
-          inheritedCount++;
-          console.log(`[SubAgent:${this.config.agentId}] ✓ Inherited: ${skillDir.name}`);
-        } else {
-          skippedCount++;
-        }
-      } catch (error) {
-        console.warn(`[SubAgent:${this.config.agentId}] Failed to parse ${skillDir.name}/skill.yaml:`, error);
-      }
-    }
-
-    console.log(`[SubAgent:${this.config.agentId}] Skills inheritance: ${inheritedCount} inherited, ${skippedCount} skipped`);
-  }
-
-  /**
-   * 递归复制目录
-   */
-  private copyRecursive(src: string, dest: string): void {
-    if (fs.statSync(src).isDirectory()) {
-      fs.mkdirSync(dest, { recursive: true });
-      for (const file of fs.readdirSync(src)) {
-        this.copyRecursive(path.join(src, file), path.join(dest, file));
-      }
-    } else {
-      fs.copyFileSync(src, dest);
-    }
-  }
-
-  /**
-   * 生成简化版 SOUL.md（仅身份职责）
-   */
-  private async generateSOUL(): Promise<string> {
-    if (!this.workspaceStructure) {
-      throw new Error('Workspace structure not initialized');
-    }
-
-    const { hierarchy, workspaces, profile } = this.workspaceStructure;
-
-    return `# ${hierarchy.agent.name}
-
-## 身份信息
-- **员工编号**: ${hierarchy.agent.id}
-- **岗位**: ${hierarchy.position.name}
-- **部门**: ${hierarchy.department.name}
-- **公司**: ${hierarchy.company.name}
-
-## 职责描述
-${hierarchy.position.name}的核心职责。
-
-## 服务目标
-提供专业、高效的服务。
-
-## 工作空间
-
-### Profile 目录（运行时环境）
-- **位置**: \`${profile}\`
-- **包含**: 配置、会话、记忆、技能、日志
-
-### Workspace 目录（工作成果）
-- **个人工作区**: \`${workspaces.agent}\`
-- **岗位空间**: \`${workspaces.position}\`
-- **部门空间**: \`${workspaces.department}\`
-- **公司空间**: \`${workspaces.company}\`
-
----
-
-⚙️ **技术能力**:
-- Skills 位于 \`skills/\` 目录（Python 自动发现）
-- Tools 配置见 \`config.yaml\` 的 \`toolsets\` 字段
-`;
-  }
 }
