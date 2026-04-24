@@ -936,7 +936,7 @@ class OrganizationService:
     def update_department(self, department_id: int, data: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "name", "goal", "description", "icon", "accent_color", "leader_agent_id", "workspace_path",
-            "sort_order", "status", "parent_id",
+            "sort_order", "status", "parent_id", "managing_department_id",
         }
         return self._update_existing(self.departments, department_id, data, allowed)
 
@@ -963,7 +963,7 @@ class OrganizationService:
     def update_position(self, position_id: int, data: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "name", "goal", "responsibilities", "icon", "accent_color", "headcount", "template_key",
-            "workspace_path", "sort_order", "status",
+            "workspace_path", "sort_order", "status", "is_management_position",
         }
         return self._update_existing(self.positions, position_id, data, allowed)
 
@@ -1009,7 +1009,7 @@ class OrganizationService:
         allowed = {
             "employee_no", "name", "display_name", "avatar_url", "manager_agent_id",
             "employment_status", "role_summary", "service_goal", "workspace_path",
-            "accent_color", "enabled", "status",
+            "accent_color", "enabled", "status", "leadership_role",
         }
 
         def tx(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -1034,6 +1034,162 @@ class OrganizationService:
         if not workspace:
             raise OrganizationError("Workspace not found", 404)
         return workspace
+
+    # ----------------------------------------- Quick Actions (快捷操作)
+
+    def get_recommended_manager(self, agent_id: int) -> dict[str, Any] | None:
+        """获取推荐的经理 Agent
+
+        Args:
+            agent_id: Agent ID
+
+        Returns:
+            推荐的经理 Agent 信息，如果没有返回 None
+        """
+        def tx(conn: sqlite3.Connection) -> dict[str, Any] | None:
+            agent = self.agents.get(agent_id, conn)
+            if not agent:
+                raise OrganizationError("Agent not found", 404)
+
+            # 如果已经有显式指定的经理，直接返回
+            if agent.get("manager_agent_id"):
+                return self.get_agent(agent["manager_agent_id"], conn)
+
+            # 否则根据组织架构推荐
+            position = self.positions.get(agent["position_id"], conn)
+            department = self.departments.get(agent["department_id"], conn)
+            company = self.companies.get(agent["company_id"], conn)
+
+            if not all([position, department, company]):
+                return None
+
+            soul_service = SoulRenderService(self.store)
+            manager = soul_service._find_manager_by_hierarchy(agent, position, department, company)
+
+            if manager:
+                return self.get_agent(manager["id"], conn)
+            return None
+
+        return self.store.transaction(tx)
+
+    def set_agent_as_leader(
+        self,
+        agent_id: int,
+        leadership_role: str,
+    ) -> dict[str, Any]:
+        """设置 Agent 为负责人
+
+        Args:
+            agent_id: Agent ID
+            leadership_role: 'primary' | 'deputy' | 'none'
+
+        Returns:
+            更新后的 Agent 信息
+        """
+        if leadership_role not in {"primary", "deputy", "none"}:
+            raise OrganizationError("leadership_role must be 'primary', 'deputy', or 'none'")
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            agent = self.agents.get(agent_id, conn)
+            if not agent:
+                raise OrganizationError("Agent not found", 404)
+
+            # 如果设置为 primary，需要检查同岗位是否已有 primary
+            if leadership_role == "primary":
+                existing_primary = self.store.query_one(
+                    """
+                    SELECT id, name FROM agents
+                    WHERE position_id = ?
+                      AND id != ?
+                      AND leadership_role = 'primary'
+                      AND status = 'active'
+                    """,
+                    (agent["position_id"], agent_id),
+                    conn,
+                )
+                if existing_primary:
+                    raise OrganizationError(
+                        f"Position already has a primary leader: {existing_primary['name']} (ID: {existing_primary['id']})",
+                        409,
+                    )
+
+            # 更新 leadership_role
+            self.agents.update(agent_id, {"leadership_role": leadership_role}, {"leadership_role"}, conn)
+            return self.get_agent(agent_id, conn)
+
+        return self.store.transaction(tx)
+
+    def set_position_as_management(
+        self,
+        position_id: int,
+        is_management: bool = True,
+    ) -> dict[str, Any]:
+        """设置岗位为管理岗位
+
+        Args:
+            position_id: Position ID
+            is_management: True 设置为管理岗位，False 取消
+
+        Returns:
+            更新后的 Position 信息
+        """
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            position = self.positions.get(position_id, conn)
+            if not position:
+                raise OrganizationError("Position not found", 404)
+
+            self.positions.update(
+                position_id,
+                {"is_management_position": 1 if is_management else 0},
+                {"is_management_position"},
+                conn,
+            )
+            return self.positions.get(position_id, conn) or position
+
+        return self.store.transaction(tx)
+
+    def set_managing_department(
+        self,
+        department_id: int,
+        managing_department_id: int | None,
+    ) -> dict[str, Any]:
+        """设置部门的管理部门
+
+        Args:
+            department_id: Department ID
+            managing_department_id: 管理部门 ID，None 表示取消
+
+        Returns:
+            更新后的 Department 信息
+        """
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            department = self.departments.get(department_id, conn)
+            if not department:
+                raise OrganizationError("Department not found", 404)
+
+            # 如果设置管理部门，检查目标部门是否存在
+            if managing_department_id is not None:
+                managing_dept = self.departments.get(managing_department_id, conn)
+                if not managing_dept:
+                    raise OrganizationError("Managing department not found", 404)
+
+                # 防止自己管理自己
+                if managing_department_id == department_id:
+                    raise OrganizationError("Department cannot manage itself", 400)
+
+                # 防止循环引用（简单检查：A→B，B不能→A）
+                if managing_dept.get("managing_department_id") == department_id:
+                    raise OrganizationError("Circular managing department reference", 400)
+
+            self.departments.update(
+                department_id,
+                {"managing_department_id": managing_department_id},
+                {"managing_department_id"},
+                conn,
+            )
+            return self.departments.get(department_id, conn) or department
+
+        return self.store.transaction(tx)
 
     # ----------------------------------------- master_agent_assets management
 
