@@ -388,33 +388,42 @@ class SoulRenderService:
         tpl = template or {}
         workspaces = workspaces or {}
 
-        # 构建经理信息（智能查找）
-        manager_info = ""
-        manager_id = agent.get("manager_agent_id")
+        # 构建领导角色信息
+        leadership_role = agent.get("leadership_role", "none")
+        leadership_role_info = ""
+        if leadership_role == "primary":
+            leadership_role_info = "- **角色**: 主负责人 👑\n"
+        elif leadership_role == "deputy":
+            leadership_role_info = "- **角色**: 副负责人 🎖️\n"
 
-        if manager_id:
-            # 1. 优先使用指定的 manager_agent_id
-            manager = self._query_manager(manager_id)
-        else:
-            # 2. 如果没有指定，根据组织架构智能查找
-            manager = self._find_manager_by_hierarchy(agent, position, department, company)
+        # 岗位管理标识
+        position_management_badge = ""
+        if position.get("is_management_position"):
+            position_management_badge = " 👔（管理岗位）"
 
-        if manager:
-            manager_display = manager.get("display_name") or manager.get("name", "")
-            manager_info = f"- **直属负责人**: {manager_display}\n"
+        # org.db 路径
+        org_db_path = str(self.store.db_path)
 
         context = {
+            # 基本身份信息
             "agent_id": agent.get("id", ""),
             "agent_name": agent.get("display_name") or agent.get("name", ""),
+            "company_id": company.get("id", ""),
             "company_name": company.get("name", ""),
             "company_goal": company.get("goal", ""),
+            "department_id": department.get("id", ""),
             "department_name": department.get("name", ""),
             "department_goal": department.get("goal", ""),
+            "position_id": position.get("id", ""),
             "position_name": position.get("name", ""),
             "position_goal": position.get("goal") or "Follow the position responsibilities.",
             "position_responsibilities": position.get("responsibilities", ""),
+            "position_management_badge": position_management_badge,
             "agent_goal": agent.get("service_goal") or "Support the assigned position.",
-            "manager_info": manager_info,
+            "leadership_role_info": leadership_role_info,
+            # 组织架构查询信息
+            "org_db_path": org_db_path,
+            # 工作空间路径
             "profile_home": profile_home,
             "agent_workspace": workspaces.get("agent", ""),
             "position_workspace": workspaces.get("position", ""),
@@ -440,7 +449,13 @@ class SoulRenderService:
 
     @staticmethod
     def _default_template() -> str:
-        """简化版 SOUL.md 模板（身份与技术能力分离）
+        """动态组织架构版 SOUL.md 模板
+
+        不写死组织关系，而是提供查询方法，让 Agent 动态查询：
+        - 自己的直属负责人
+        - 自己的直属下属（如果是负责人）
+        - 同部门的管理岗位 Agent
+        - 部门的管理部门
 
         技术能力通过文件系统体现：
         - Skills 位于 profile_home/skills/ 目录（Python 自动发现）
@@ -451,16 +466,111 @@ class SoulRenderService:
             "\n"
             "## 身份信息\n"
             "- **员工编号**: {{agent_id}}\n"
-            "- **岗位**: {{position_name}}\n"
+            "- **岗位**: {{position_name}}{{position_management_badge}}\n"
             "- **部门**: {{department_name}}\n"
             "- **公司**: {{company_name}}\n"
-            "{{manager_info}}"
+            "{{leadership_role_info}}"
             "\n"
             "## 职责描述\n"
             "{{position_responsibilities}}\n"
             "\n"
             "## 服务目标\n"
             "{{agent_goal}}\n"
+            "\n"
+            "## 组织关系查询\n"
+            "\n"
+            "### 如何查询我的直属负责人？\n"
+            "\n"
+            "使用以下 SQLite 查询（org.db 位于 `{{org_db_path}}`）：\n"
+            "\n"
+            "```sql\n"
+            "-- 方法 1: 如果有显式指定的负责人\n"
+            "SELECT a.id, a.display_name, a.name, p.name AS position\n"
+            "FROM agents a\n"
+            "JOIN positions p ON a.position_id = p.id\n"
+            "WHERE a.id = (\n"
+            "  SELECT manager_agent_id FROM agents WHERE id = {{agent_id}}\n"
+            ")\n"
+            "AND a.status = 'active';\n"
+            "\n"
+            "-- 方法 2: 如果未指定，根据组织架构查找\n"
+            "-- 优先级 1: 同岗位的负责人\n"
+            "SELECT a.id, a.display_name, a.name, a.leadership_role\n"
+            "FROM agents a\n"
+            "WHERE a.position_id = (SELECT position_id FROM agents WHERE id = {{agent_id}})\n"
+            "  AND a.id != {{agent_id}}\n"
+            "  AND a.leadership_role IN ('primary', 'deputy')\n"
+            "  AND a.status = 'active'\n"
+            "ORDER BY CASE a.leadership_role\n"
+            "  WHEN 'primary' THEN 1\n"
+            "  WHEN 'deputy' THEN 2\n"
+            "  ELSE 3 END\n"
+            "LIMIT 1;\n"
+            "\n"
+            "-- 优先级 2: 本部门的管理岗位 Agent\n"
+            "SELECT a.id, a.display_name, a.name, p.name AS position\n"
+            "FROM agents a\n"
+            "JOIN positions p ON a.position_id = p.id\n"
+            "WHERE a.department_id = (SELECT department_id FROM agents WHERE id = {{agent_id}})\n"
+            "  AND a.id != {{agent_id}}\n"
+            "  AND p.is_management_position = 1\n"
+            "  AND a.status = 'active'\n"
+            "ORDER BY CASE a.leadership_role\n"
+            "  WHEN 'primary' THEN 1\n"
+            "  WHEN 'deputy' THEN 2\n"
+            "  ELSE 3 END\n"
+            "LIMIT 1;\n"
+            "```\n"
+            "\n"
+            "### 如何查询我的直属下属？\n"
+            "\n"
+            "```sql\n"
+            "-- 查询以我为负责人的 Agent\n"
+            "SELECT a.id, a.display_name, a.name, p.name AS position\n"
+            "FROM agents a\n"
+            "JOIN positions p ON a.position_id = p.id\n"
+            "WHERE a.manager_agent_id = {{agent_id}}\n"
+            "  AND a.status = 'active'\n"
+            "ORDER BY p.name, a.name;\n"
+            "\n"
+            "-- 如果我是管理岗位的负责人，查询本部门所有非管理岗位的 Agent\n"
+            "SELECT a.id, a.display_name, a.name, p.name AS position\n"
+            "FROM agents a\n"
+            "JOIN positions p ON a.position_id = p.id\n"
+            "WHERE a.department_id = (SELECT department_id FROM agents WHERE id = {{agent_id}})\n"
+            "  AND a.id != {{agent_id}}\n"
+            "  AND (p.is_management_position = 0 OR a.leadership_role = 'none')\n"
+            "  AND a.status = 'active'\n"
+            "ORDER BY p.name, a.name;\n"
+            "```\n"
+            "\n"
+            "### 如何查询同部门的其他 Agent？\n"
+            "\n"
+            "```sql\n"
+            "SELECT a.id, a.display_name, a.name, p.name AS position, a.leadership_role\n"
+            "FROM agents a\n"
+            "JOIN positions p ON a.position_id = p.id\n"
+            "WHERE a.department_id = (SELECT department_id FROM agents WHERE id = {{agent_id}})\n"
+            "  AND a.id != {{agent_id}}\n"
+            "  AND a.status = 'active'\n"
+            "ORDER BY \n"
+            "  p.is_management_position DESC,\n"
+            "  CASE a.leadership_role WHEN 'primary' THEN 1 WHEN 'deputy' THEN 2 ELSE 3 END,\n"
+            "  p.name, a.name;\n"
+            "```\n"
+            "\n"
+            "### 组织架构信息\n"
+            "\n"
+            "- **org.db 路径**: `{{org_db_path}}`\n"
+            "- **我的 Agent ID**: {{agent_id}}\n"
+            "- **我的岗位 ID**: {{position_id}}\n"
+            "- **我的部门 ID**: {{department_id}}\n"
+            "- **我的公司 ID**: {{company_id}}\n"
+            "\n"
+            "**使用建议**:\n"
+            "- 需要向负责人汇报时，先查询负责人是谁\n"
+            "- 需要分配任务给下属时，先查询下属列表\n"
+            "- 组织关系会动态变化，每次查询确保使用最新数据\n"
             "\n"
             "## 工作空间\n"
             "\n"
@@ -479,6 +589,7 @@ class SoulRenderService:
             "⚙️ **技术能力**:\n"
             "- Skills 位于 `skills/` 目录（Python 自动发现）\n"
             "- Tools 配置见 `config.yaml` 的 `toolsets` 字段\n"
+            "- 组织架构查询使用 SQLite（见上方查询示例）\n"
         )
 
 
