@@ -4,42 +4,33 @@ Mano-CUA Tool Module
 
 Provides GUI overlay and computer control capabilities for Hermes Agent.
 Each action launches a single GUI instance that auto-closes after completion.
-
-Usage via Hermes tool calling:
-    mano_click(x=400, y=300, task="My Task", step=1, reasoning="Click button")
-    mano_type(text="Hello", task="My Task", step=2, reasoning="Type text")
-    mano_screenshot(task="My Task", step=1, reasoning="Capture screen")
-
-Available tools:
-- mano_click: Left click at normalized (1280x720) coordinates
-- mano_right_click: Right click at normalized coordinates
-- mano_double_click: Double click at normalized coordinates
-- mano_move: Move mouse to normalized coordinates
-- mano_drag: Drag from (x1,y1) to (x2,y2)
-- mano_type: Type text
-- mano_key: Press keyboard key
-- mano_scroll: Scroll (up/down/left/right)
-- mano_open_app: Open application by name
-- mano_open_url: Open URL in browser
-- mano_screenshot: Capture screenshot and save to /tmp/mano-cua-screenshot.png
 """
 
-import json
 import logging
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-MANO_CUA_DIR = Path(__file__).parent / "mano_cua"
-PYTHON_BIN = sys.executable
+_TOOLS_DIR = Path(__file__).resolve().parent
+MANO_CUA_DIR = _TOOLS_DIR / "mano_cua"
+
+
+def _get_mano_python() -> str:
+    venv_python = MANO_CUA_DIR / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        return str(venv_python)
+    return sys.executable
+
+
+PYTHON_BIN = _get_mano_python()
 
 
 def _run_mano_command(args: list, timeout: int = 30) -> Dict[str, Any]:
+    logger.info(f"Running mano command: {args}")
     result = subprocess.run(
         [PYTHON_BIN, str(MANO_CUA_DIR / "direct_cli.py")] + args,
         capture_output=True,
@@ -47,6 +38,9 @@ def _run_mano_command(args: list, timeout: int = 30) -> Dict[str, Any]:
         timeout=timeout,
         cwd=str(MANO_CUA_DIR),
     )
+    logger.info(f"Result: returncode={result.returncode}")
+    if result.returncode != 0:
+        logger.error(f"stderr: {result.stderr}")
     return {
         "returncode": result.returncode,
         "stdout": result.stdout,
@@ -55,27 +49,12 @@ def _run_mano_command(args: list, timeout: int = 30) -> Dict[str, Any]:
     }
 
 
-def _build_args(
-    command: str,
-    task: str,
-    step: int,
-    reasoning: str,
-    extra_args: Optional[list] = None,
-) -> list:
-    args = [
-        "--task", task,
-        "--step", str(step),
-        "--reasoning", reasoning,
-        command,
-    ]
-    if extra_args:
-        args.extend(extra_args)
-    return args
-
-
-def mano_screenshot(task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_screenshot(args: Dict[str, Any], **kwargs) -> str:
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("screenshot", task, step, reasoning),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "screenshot"],
         timeout=30,
     )
     screenshot_path = "/tmp/mano-direct-screenshot.png"
@@ -83,102 +62,150 @@ def mano_screenshot(task: str = "Mano Task", step: int = 1, reasoning: str = "")
         with open(screenshot_path, "rb") as f:
             import base64
             b64 = base64.b64encode(f.read()).decode("utf-8")
-        return {
-            "ok": True,
-            "screenshot_path": screenshot_path,
-            "screenshot_base64": b64,
-            "stdout": result["stdout"].strip(),
-        }
-    return {
-        "ok": False,
-        "error": result["stderr"] or "Screenshot failed",
-        "stdout": result["stdout"],
-    }
+        return tool_result(
+            ok=True,
+            screenshot_path=screenshot_path,
+            screenshot_base64=b64,
+            stdout=result["stdout"].strip(),
+        )
+    return tool_result(
+        ok=False,
+        error=result["stderr"] or "Screenshot failed",
+        stdout=result["stdout"],
+    )
 
 
-def mano_click(x: float, y: float, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_click(args: Dict[str, Any], **kwargs) -> str:
+    x = args.get("x", 0)
+    y = args.get("y", 0)
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("click", task, step, reasoning, ["--x", str(x), "--y", str(y)]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "click", "--x", str(x), "--y", str(y)],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_right_click(x: float, y: float, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_right_click(args: Dict[str, Any], **kwargs) -> str:
+    x = args.get("x", 0)
+    y = args.get("y", 0)
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("right_click", task, step, reasoning, ["--x", str(x), "--y", str(y)]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "right_click", "--x", str(x), "--y", str(y)],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_double_click(x: float, y: float, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_double_click(args: Dict[str, Any], **kwargs) -> str:
+    x = args.get("x", 0)
+    y = args.get("y", 0)
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("double_click", task, step, reasoning, ["--x", str(x), "--y", str(y)]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "double_click", "--x", str(x), "--y", str(y)],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_move(x: float, y: float, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_move(args: Dict[str, Any], **kwargs) -> str:
+    x = args.get("x", 0)
+    y = args.get("y", 0)
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("move", task, step, reasoning, ["--x", str(x), "--y", str(y)]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "move", "--x", str(x), "--y", str(y)],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_drag(x1: float, y1: float, x2: float, y2: float, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_drag(args: Dict[str, Any], **kwargs) -> str:
+    x1 = args.get("x1", 0)
+    y1 = args.get("y1", 0)
+    x2 = args.get("x2", 0)
+    y2 = args.get("y2", 0)
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("drag", task, step, reasoning, ["--x1", str(x1), "--y1", str(y1), "--x2", str(x2), "--y2", str(y2)]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "drag",
+         "--x1", str(x1), "--y1", str(y1), "--x2", str(x2), "--y2", str(y2)],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_type(text: str, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_type(args: Dict[str, Any], **kwargs) -> str:
+    text = args.get("text", "")
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("type", task, step, reasoning, ["--text", text]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "type", "--text", text],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_key(key: str, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_key(args: Dict[str, Any], **kwargs) -> str:
+    key = args.get("key", "")
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("key", task, step, reasoning, ["--key", key]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "key", "--key", key],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_scroll(direction: str, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_scroll(args: Dict[str, Any], **kwargs) -> str:
+    direction = args.get("direction", "down")
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("scroll", task, step, reasoning, ["--direction", direction]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "scroll", "--direction", direction],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_open_app(app_name: str, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_open_app(args: Dict[str, Any], **kwargs) -> str:
+    app_name = args.get("app_name", "")
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("open_app", task, step, reasoning, ["--text", app_name]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "open_app", "--text", app_name],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
-def mano_open_url(url: str, task: str = "Mano Task", step: int = 1, reasoning: str = "") -> Dict[str, Any]:
+def mano_open_url(args: Dict[str, Any], **kwargs) -> str:
+    url = args.get("url", "")
+    task = args.get("task", "Mano Task")
+    step = args.get("step", 1)
+    reasoning = args.get("reasoning", "")
     result = _run_mano_command(
-        _build_args("open_url", task, step, reasoning, ["--text", url]),
+        ["--task", task, "--step", str(step), "--reasoning", reasoning, "open_url", "--text", url],
         timeout=30,
     )
-    return {"ok": result["ok"], "stdout": result["stdout"].strip(), "stderr": result["stderr"].strip()}
+    return tool_result(ok=result["ok"], stdout=result["stdout"].strip(), stderr=result["stderr"].strip())
 
 
 MANO_SCREENSHOT_SCHEMA = {
     "name": "mano_screenshot",
-    "description": "Capture screenshot using Mano-CUA GUI overlay. Saves to /tmp/mano-direct-screenshot.png and returns base64 encoded image.",
+    "description": "Capture screenshot using Mano-CUA GUI overlay.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -192,7 +219,7 @@ MANO_SCREENSHOT_SCHEMA = {
 
 MANO_CLICK_SCHEMA = {
     "name": "mano_click",
-    "description": "Left click at normalized (1280x720) coordinates. Coordinates are scaled to actual screen resolution.",
+    "description": "Left click at normalized (1280x720) coordinates.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -355,7 +382,7 @@ def _check_mano_cua_requirements() -> tuple[bool, str]:
     return True, ""
 
 
-from tools.registry import registry
+from tools.registry import registry, tool_result
 
 registry.register(
     name="mano_screenshot",

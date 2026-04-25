@@ -1,0 +1,21 @@
+# TuriX-CUA Local Dependencies (Cross-platform)
+# Desktop automation for Windows and macOS without remote API dependencies
+
+# Core runtime
+pydantic>=2.0.0
+
+# Desktop automation and imaging
+Pillow>=10.0.0
+numpy>=1.24.0
+pyautogui>=0.9.54
+pyperclip>=1.8.2
+
+# Windows-specific
+pywin32>=306; platform_system == "Windows"
+psutil>=5.9.0; platform_system == "Windows"
+rapidfuzz>=3.0.0; platform_system == "Windows"
+
+# macOS-specific
+# pyobjc; platform_system == "Darwin"
+# Note: On macOS, you may need to install pyobjc separately:
+# pip install pyobjc pyobjc-framework-Quartz pyobjc-framework-ApplicationServices

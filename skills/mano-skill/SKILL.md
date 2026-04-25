@@ -1,210 +1,265 @@
 ---
-name: Mano-CUA Direct Computer Control
-description: Mano-CUA GUI automation tool for Hermes Agent - provides computer control capabilities via Hermes tool calling. No remote model calls, Hermes makes all decisions, Mano-CUA provides GUI and action execution.
+name: mano-cua
+description: Use when you need to control the desktop GUI (click, type, open apps, navigate visual interfaces). This is a local-only computer control tool - no remote API calls. Use whenever the user asks you to interact with graphical applications, open files, click buttons, or perform visual automation tasks. For AI-powered desktop automation with vision models, use the turix-cua skill instead.
 author: Hermes Agent
+hermes:
+  requires_toolsets: [computer]
 ---
 
-# Mano-CUA Direct Computer Control
+# Mano-CUA Desktop Control
 
 ## Overview
 
-Mano-CUA provides GUI overlay and computer control capabilities for Hermes Agent. It is registered as a Hermes tool under the `computer` toolset.
+Mano-CUA is a **local-only desktop automation tool** that provides GUI control capabilities. It acts as the "eyes and hands" for Hermes Agent.
 
-**Key features:**
-- ✅ Complete original GUI (VLA Task Monitor floating window in top-right corner)
-- ✅ Complete computer action execution (click, type, scroll, drag, open app, screenshot, etc.)
-- ✅ **Hermes Agent makes all decisions** via tool calling
-- ✅ One action → one GUI instance, GUI auto-closes after completion
-
-## Tool Registration
-
-Tools are registered in `tools/mano_cua_tool.py` under the `computer` toolset:
-
-```python
-from tools.registry import registry
-
-registry.register(
-    name="mano_click",
-    toolset="computer",
-    schema=MANO_CLICK_SCHEMA,
-    handler=mano_click,
-    check_fn=_check_mano_cua_requirements,
-    emoji="🖱️",
-)
+**Architecture (local-only, no remote API):**
+```
+┌─────────────┐    Tool Calls    ┌──────────────────┐
+│   Hermes    │ ──────────────► │  mano_cua_tool   │
+│   Agent     │                 │  (CLI Executor)  │
+│ (Decisions) │ ◄────────────── │                  │
+└─────────────┘   Screenshot     └──────────────────┘
+                                         │
+                                         ▼
+                                ┌──────────────────┐
+                                │  TaskOverlayView │
+                                │  (GUI + Actions) │
+                                └──────────────────┘
 ```
 
-## Hermes Tool Calling
+**Key principles:**
+- **Hermes makes all decisions** - analyzes screenshots, determines actions
+- **Mano-CUA executes only** - no AI inference, no remote calls
+- **Screenshot-driven loop** - each action followed by screenshot to verify
 
-All tools follow Hermes's tool calling format. Call them via the agent's tool interface:
+## Tool Usage Rule
 
-```python
-# Example: Tool call from agent
-result = await context.call_tool("mano_click", {
-    "x": 400,
-    "y": 300,
-    "task": "Open browser",
-    "step": 1,
-    "reasoning": "Click on Chrome icon"
-})
-```
+- This skill must use **only** Mano-CUA tools: `mano_screenshot`, `mano_click`, `mano_right_click`, `mano_double_click`, `mano_move`, `mano_drag`, `mano_type`, `mano_key`, `mano_scroll`, `mano_open_app`, `mano_open_url`.
+- Do **not** switch to `terminal`, `execute_code`, AppleScript, browser tools, or any other non-Mano tool to complete desktop actions while this skill is active.
+- If a Mano tool fails, report the failure clearly and ask the user how to proceed instead of silently falling back to scripts or other tools.
 
-## Available Tools
+## TuriX-CUA vs Mano-CUA
 
-### mano_screenshot
-Capture screenshot and save to `/tmp/mano-direct-screenshot.png`.
+There are two desktop automation options available:
+
+| Feature | Mano-CUA | TuriX-CUA |
+|---------|----------|-----------|
+| **Remote API** | ❌ None | ⚠️ Required |
+| **AI Inference** | ❌ None (Hermes decisions) | ✅ Built-in |
+| **Platform** | macOS, Windows | macOS, Windows, Linux |
+| **Control Method** | Tool calls | Skill invocation |
+| **Based on** | TuriX-CUA architecture | TuriX-CUA original |
+
+### When to Use
+
+- **Use Mano-CUA**: Need local control, fully offline, cost-saving
+- **Use TuriX-CUA**: Need AI vision understanding, complex task automation
+
+## Platform Support
+
+| Feature | macOS | Windows |
+|---------|-------|---------|
+| Click/Type/Move | ✅ | ✅ |
+| Screenshot | ✅ | ✅ |
+| App Launch | ✅ | ✅ |
+| URL Open | ✅ | ✅ |
+| Hotkeys | ✅ | ✅ |
+| GUI Overlay | ✅ | ✅ |
+
+### Windows Notes
+
+- **Screenshot path**: Uses `%TEMP%` instead of `/tmp/`
+- **App launch**: Uses PowerShell `Start-Process`
+- **Clipboard**: Uses `clip` command
+- **Administrator**: Some actions may require elevation
+
+## Workflow
+
+### Step 1: Capture Screen
 
 ```python
 result = await context.call_tool("mano_screenshot", {
-    "task": "My Task",
+    "task": "User's task description",
     "step": 1,
-    "reasoning": "Capture current screen"
+    "reasoning": "First, I need to see the current screen state"
 })
-# Returns: {"ok": true, "screenshot_path": "...", "screenshot_base64": "..."}
+# Returns: screenshot_base64 for vision analysis
 ```
 
-### mano_click
-Left click at normalized (1280x720) coordinates.
+### Step 2: Analyze & Plan
+
+Use the screenshot to understand the current state and determine the next action.
+
+### Step 3: Execute Action
 
 ```python
+# Click at coordinates
 result = await context.call_tool("mano_click", {
     "x": 400, "y": 300,
-    "task": "My Task",
+    "task": "User's task",
     "step": 2,
-    "reasoning": "Click submit button"
+    "reasoning": "Click the submit button"
 })
-```
 
-### mano_right_click
-Right click at normalized coordinates.
-
-### mano_double_click
-Double click at normalized coordinates.
-
-### mano_move
-Move mouse to normalized coordinates.
-
-### mano_drag
-Left click drag from (x1,y1) to (x2,y2).
-
-```python
-result = await context.call_tool("mano_drag", {
-    "x1": 100, "y1": 100, "x2": 400, "y2": 300,
-    "task": "My Task",
-    "step": 3,
-    "reasoning": "Drag to select all"
-})
-```
-
-### mano_type
-Type text using clipboard paste.
-
-```python
+# Type text
 result = await context.call_tool("mano_type", {
-    "text": "Hello, World!",
-    "task": "My Task",
-    "step": 4,
-    "reasoning": "Type search query"
+    "text": "Hello World",
+    "task": "User's task",
+    "step": 3,
+    "reasoning": "Enter the search query"
 })
-```
 
-### mano_key
-Press keyboard key (enter, esc, tab, up, down, left, right, etc.).
-
-```python
+# Press key
 result = await context.call_tool("mano_key", {
     "key": "enter",
-    "task": "My Task",
-    "step": 5,
-    "reasoning": "Submit form"
+    "task": "User's task",
+    "step": 4,
+    "reasoning": "Submit the form"
 })
 ```
 
-### mano_scroll
-Scroll screen in direction.
+### Step 4: Verify & Repeat
 
-```python
-result = await context.call_tool("mano_scroll", {
-    "direction": "down",
-    "task": "My Task",
-    "step": 6,
-    "reasoning": "Scroll to see more content"
-})
-```
+Capture screenshot again to verify the action succeeded, then continue as needed.
 
-### mano_open_app
-Open application by name (macOS Spotlight matching).
+## Available Actions
 
-```python
-result = await context.call_tool("mano_open_app", {
-    "app_name": "Google Chrome",
-    "task": "My Task",
-    "step": 1,
-    "reasoning": "Open Chrome browser"
-})
-```
+### Navigation & Cursor
 
-### mano_open_url
-Open URL in default browser.
+| Tool | Description |
+|------|-------------|
+| `mano_click` | Left click at (x, y) |
+| `mano_right_click` | Right click at (x, y) |
+| `mano_double_click` | Double click at (x, y) |
+| `mano_move` | Move cursor to (x, y) without clicking |
+| `mano_drag` | Drag from (x1, y1) to (x2, y2) |
 
-```python
-result = await context.call_tool("mano_open_url", {
-    "url": "https://example.com",
-    "task": "My Task",
-    "step": 1,
-    "reasoning": "Navigate to website"
-})
-```
+### Input
 
-## Common Parameters
+| Tool | Description |
+|------|-------------|
+| `mano_type` | Type text (via clipboard paste) |
+| `mano_key` | Press keyboard key |
+| `mano_scroll` | Scroll up/down/left/right |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task` | string | Yes | Task description shown in GUI |
-| `step` | integer | No | Step number (default: 1) |
-| `reasoning` | string | No | Hermes reasoning for this action |
+### Application
+
+| Tool | Description |
+|------|-------------|
+| `mano_open_app` | Open application by name |
+| `mano_open_url` | Open URL in browser |
+| `mano_screenshot` | Capture screen |
+
+### All Tools Accept
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `task` | string | "Mano Task" | Task description (shown in GUI) |
+| `step` | integer | 1 | Step number |
+| `reasoning` | string | "" | Your reasoning for this action |
 
 ## Coordinate System
 
-All coordinates are **normalized to 1280x720 resolution**:
-- `(0, 0)` = top-left corner
-- `(1280, 720)` = bottom-right corner
-- The code automatically scales to actual screen resolution
-
-## Project Location
+**Normalized to 1280×720** - all coordinates scale automatically to your screen:
 
 ```
-tools/mano_cua/
-├── direct_cli.py           # CLI entry point
-├── runtime.py              # Python API (ManoRuntimeController)
-├── requirements.txt         # Dependencies
-└── visual/
-    ├── model/              # Data models
-    ├── view_model/         # ViewModels
-    ├── view/               # TaskOverlayView GUI
-    ├── computer/           # Action executors
-    └── config/            # Configuration
-
-tools/mano_cua_tool.py      # Hermes tool registration
+(0, 0) ─────────────── (1280, 0)
+  │                        │
+  │    Screen Area         │
+  │                        │
+(0, 720) ───────────── (1280, 720)
 ```
 
-## Dependencies
+## Example: Open Chrome and Search
 
-All dependencies must be installed in the mano_cua venv:
+```python
+# Step 1: Open Chrome
+result = await context.call_tool("mano_open_app", {
+    "app_name": "Google Chrome",
+    "task": "Search for information",
+    "step": 1,
+    "reasoning": "Open Chrome browser"
+})
 
-```bash
-cd tools/mano_cua
-python3.14 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+# Step 2: Click address bar
+result = await context.call_tool("mano_click", {
+    "x": 435, "y": 70,
+    "task": "Search for information",
+    "step": 2,
+    "reasoning": "Click on the address bar"
+})
+
+# Step 3: Type search
+result = await context.call_tool("mano_type", {
+    "text": "Claude AI",
+    "task": "Search for information",
+    "step": 3,
+    "reasoning": "Enter search query"
+})
+
+# Step 4: Submit
+result = await context.call_tool("mano_key", {
+    "key": "enter",
+    "task": "Search for information",
+    "step": 4,
+    "reasoning": "Submit the search"
+})
 ```
+
+## Keyboard Keys
+
+Common keys for `mano_key`: `enter`, `esc`, `tab`, `space`, `backspace`, `up`, `down`, `left`, `right`, `cmd` (⌘), `option` (⌥), `control` (⌃), `shift` (⇧)
+
+## Tips
+
+1. **Always verify** - After each action, capture a screenshot to verify success
+2. **Start broad** - Open apps first, then navigate within them
+3. **Be specific** - "Click the red button at (320, 450)" not just "click submit"
+4. **Handle errors** - If an action fails, try again or take a new screenshot to reassess
+5. **Use scroll** - For long pages, scroll to see more content before acting
 
 ## Troubleshooting
 
-- **Tools not found**: Ensure `tools/mano_cua_tool.py` is in the tools directory
-- **GUI not appearing**: Make sure you're running on macOS with a display server
-- **Coordinates wrong**: Remember all coordinates are normalized to 1280x720
+| Issue | Solution |
+|-------|----------|
+| GUI not appearing | Ensure macOS permissions granted (Accessibility + Screen Recording) |
+| Coordinates off | Remember - coordinates are normalized to 1280×720 |
+| App not opening | Use exact app name as shown in Spotlight |
+| Type not working | mano_type uses clipboard - paste target must be focused |
 
-## Update Log
+## Technical Details
 
-- 2026-04-25: Created Hermes tool registration format
-- 2026-04-25: Registered 11 tools under `computer` toolset
-- 2026-04-25: Removed TaskModel/TaskViewModel API code, keeping local-only operation
+### Environment Setup
+
+Mano-CUA requires its own Python virtual environment with GUI dependencies:
+
+```bash
+# Navigate to mano_cua directory
+cd tools/mano_cua
+
+# Create virtual environment (if not exists)
+python3 -m venv .venv
+
+# Install dependencies
+.venv/bin/pip install mss pynput customtkinter Pillow pyobjc-framework-Quartz
+```
+
+**Important**: The tool automatically uses `.venv/bin/python` from the mano_cua directory. Do NOT use the system Python.
+
+### File Locations
+
+| Component | Path |
+|-----------|------|
+| Tool Module | `tools/mano_cua_tool.py` |
+| CLI Entry | `tools/mano_cua/direct_cli.py` |
+| GUI Overlay | `tools/mano_cua/visual/view/task_overlay_view.py` |
+| Action Executor | `tools/mano_cua/visual/computer/computer_action_executor.py` |
+| Dependencies | `tools/mano_cua/requirements.txt` |
+| Virtual Environment | `tools/mano_cua/.venv/` |
+
+### Permissions Required (macOS)
+
+- **Screen Recording**: Required for screenshot capture
+- **Accessibility**: Required for mouse/keyboard control
+
+Go to System Settings → Privacy & Security → Screen Recording (or Accessibility) to grant permissions to Terminal and your IDE.
