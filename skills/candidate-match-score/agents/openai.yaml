@@ -1,0 +1,7 @@
+interface:
+  display_name: "Candidate Match Score"
+  short_description: "把候选人简历 JSON 与岗位 JSON 和权重 JSON 做结构化打分"
+  default_prompt: "Load candidate-match-score with skill_view. Score a structured candidate resume JSON against a job JSON plus weight JSON, produce a deterministic breakdown with evidence, and save a per-candidate score file such as resume1_name_score.json."
+
+policy:
+  allow_implicit_invocation: true

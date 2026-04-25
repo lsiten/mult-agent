@@ -1,0 +1,7 @@
+interface:
+  display_name: "Web Access"
+  short_description: "联网检索、核验网页，并支持保存 Markdown 或 JSON 结果"
+  default_prompt: "Load the web-access skill with skill_view, then use Hermes web_search, web_extract, browser tools, or this skill's CDP scripts as appropriate. Verify sources and clearly mark login or captcha restrictions instead of inventing protected data."
+
+policy:
+  allow_implicit_invocation: true

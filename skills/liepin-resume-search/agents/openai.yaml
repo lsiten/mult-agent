@@ -1,0 +1,7 @@
+interface:
+  display_name: "Liepin Resume Search"
+  short_description: "用 web-access 操作猎聘搜人页，并保存主表、简历 JSON 和评分 JSON"
+  default_prompt: "Load liepin-resume-search and web-access with skill_view. Read a job JSON plus weight JSON, operate the Liepin recruiter search page through web-access, capture structured resume JSON for each candidate, score each candidate, and save search-master plus per-candidate resume and score files under data/liepin."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "LinkedIn People Search"
+  short_description: "用 web-access 操作 LinkedIn People 搜索，并保存主表、profile JSON 和评分 JSON"
+  default_prompt: "Load linkedin-people-search, web-access, and candidate-match-score with skill_view. Read a job JSON plus weight JSON, operate the LinkedIn People search page through web-access, capture structured candidate profile JSON, score each candidate, and save search-master plus per-candidate profile and score files under data/linkedin."
+
+policy:
+  allow_implicit_invocation: true
