@@ -1,6 +1,6 @@
-from tools.mano_cua.visual.config.visual_config import ANIMATION_CONFIG
-from tools.mano_cua.visual.model.direct_task_model import DirectTaskModel
-from tools.mano_cua.visual.view.task_overlay_view import TaskOverlayView
+from visual.config.visual_config import ANIMATION_CONFIG
+from visual.model.direct_task_model import DirectTaskModel
+from visual.view.task_overlay_view import TaskOverlayView
 
 
 class DirectTaskViewModel:

@@ -1,11 +1,11 @@
 import threading
 from typing import Any, Callable, Dict, Optional
 
-from tools.mano_cua.visual.computer.computer_action_executor import ComputerActionExecutor
-from tools.mano_cua.visual.computer.computer_use_util import screenshot_to_bytes
-from tools.mano_cua.visual.config.visual_config import AUTOMATION_CONFIG, TASK_STATUS
-from tools.mano_cua.visual.model.task_progress import TaskProgress
-from tools.mano_cua.visual.model.task_state import TaskState
+from visual.computer.computer_action_executor import ComputerActionExecutor
+from visual.computer.computer_use_util import screenshot_to_bytes
+from visual.config.visual_config import AUTOMATION_CONFIG, TASK_STATUS
+from visual.model.task_progress import TaskProgress
+from visual.model.task_state import TaskState
 
 
 class DirectTaskModel:

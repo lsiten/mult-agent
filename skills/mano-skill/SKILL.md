@@ -1,6 +1,6 @@
 ---
 name: Mano-CUA Direct Computer Control
-description: Mano-CUA GUI automation with Hermes direct control - no remote model calls, Hermes makes all decisions, Mano-CUA provides GUI and action execution
+description: Mano-CUA GUI automation tool for Hermes Agent - provides computer control capabilities via Hermes tool calling. No remote model calls, Hermes makes all decisions, Mano-CUA provides GUI and action execution.
 author: Hermes Agent
 ---
 
@@ -8,166 +8,203 @@ author: Hermes Agent
 
 ## Overview
 
-This is a fork/extraction of the Mano-CUA (Mano-P) project that **removes all remote model/API inference capabilities**, keeping only:
+Mano-CUA provides GUI overlay and computer control capabilities for Hermes Agent. It is registered as a Hermes tool under the `computer` toolset.
+
+**Key features:**
 - ✅ Complete original GUI (VLA Task Monitor floating window in top-right corner)
-- ✅ Complete computer action execution capabilities (click, type, scroll, drag, open app, screenshot, etc.)
-- ✅ **Hermes Agent makes all decisions** - calls CLI actions one-by-one based on screenshot analysis
-- ✅ One task/step → one GUI instance, GUI auto-closes after 5 seconds (same as original Mano-CUA design)
-- ✅ Exact same styling and interaction as original Mano-CUA
+- ✅ Complete computer action execution (click, type, scroll, drag, open app, screenshot, etc.)
+- ✅ **Hermes Agent makes all decisions** via tool calling
+- ✅ One action → one GUI instance, GUI auto-closes after completion
 
-This matches the requirement: "don't use Mano-P's model, let Hermes control directly".
+## Tool Registration
 
-## Project Location
+Tools are registered in `tools/mano_cua_tool.py` under the `computer` toolset:
 
-Full source code is at:
-```
-tools/mano_cua/
-```
+```python
+from tools.registry import registry
 
-## Requirements
-
-All dependencies are already installed in `/opt/homebrew/Cellar/mano-cua/.../libexec/venv` (from Homebrew installation). The launcher automatically activates this venv.
-
-## Usage
-
-### Basic Command Structure
-
-```bash
-./tools/mano_cua/mano-direct --task "Task description" --step N --reasoning "Hermes reasoning for this step" <command> [options]
+registry.register(
+    name="mano_click",
+    toolset="computer",
+    schema=MANO_CLICK_SCHEMA,
+    handler=mano_click,
+    check_fn=_check_mano_cua_requirements,
+    emoji="🖱️",
+)
 ```
 
-- `--task`: Task name displayed in GUI
-- `--step`: Step number (1-based)
-- `--reasoning`: Hermes reasoning text displayed in GUI
-- `command`: Action to execute (see below)
+## Hermes Tool Calling
 
-### Available Commands
+All tools follow Hermes's tool calling format. Call them via the agent's tool interface:
 
-| Command | Options | Description |
-|---------|---------|-------------|
-| `click` | `--x X --y Y` | Left click at normalized (1280x720) coordinates |
-| `right_click` | `--x X --y Y` | Right click at normalized coordinates |
-| `double_click` | `--x X --y Y` | Double click at normalized coordinates |
-| `move` | `--x X --y Y` | Move mouse to normalized coordinates |
-| `drag` | `--x1 X1 --y1 Y1 --x2 X2 --y2 Y2` | Left click drag from (x1,y1) to (x2,y2) |
-| `type` | `--text "text"` | Type text |
-| `key` | `--key enter` | Press keyboard key (enter, esc, tab, up, down, etc.) |
-| `scroll` | `--direction down` | Scroll (up/down/left/right) |
-| `open_app` | `--text "Google Chrome"` | Open application by name |
-| `open_url` | `--text "https://example.com"` | Open URL in default browser |
-| `screenshot` | (none) | Capture full screen and save to `/tmp/mano-direct-screenshot.png` |
+```python
+# Example: Tool call from agent
+result = await context.call_tool("mano_click", {
+    "x": 400,
+    "y": 300,
+    "task": "Open browser",
+    "step": 1,
+    "reasoning": "Click on Chrome icon"
+})
+```
 
-### Coordinate System
+## Available Tools
+
+### mano_screenshot
+Capture screenshot and save to `/tmp/mano-direct-screenshot.png`.
+
+```python
+result = await context.call_tool("mano_screenshot", {
+    "task": "My Task",
+    "step": 1,
+    "reasoning": "Capture current screen"
+})
+# Returns: {"ok": true, "screenshot_path": "...", "screenshot_base64": "..."}
+```
+
+### mano_click
+Left click at normalized (1280x720) coordinates.
+
+```python
+result = await context.call_tool("mano_click", {
+    "x": 400, "y": 300,
+    "task": "My Task",
+    "step": 2,
+    "reasoning": "Click submit button"
+})
+```
+
+### mano_right_click
+Right click at normalized coordinates.
+
+### mano_double_click
+Double click at normalized coordinates.
+
+### mano_move
+Move mouse to normalized coordinates.
+
+### mano_drag
+Left click drag from (x1,y1) to (x2,y2).
+
+```python
+result = await context.call_tool("mano_drag", {
+    "x1": 100, "y1": 100, "x2": 400, "y2": 300,
+    "task": "My Task",
+    "step": 3,
+    "reasoning": "Drag to select all"
+})
+```
+
+### mano_type
+Type text using clipboard paste.
+
+```python
+result = await context.call_tool("mano_type", {
+    "text": "Hello, World!",
+    "task": "My Task",
+    "step": 4,
+    "reasoning": "Type search query"
+})
+```
+
+### mano_key
+Press keyboard key (enter, esc, tab, up, down, left, right, etc.).
+
+```python
+result = await context.call_tool("mano_key", {
+    "key": "enter",
+    "task": "My Task",
+    "step": 5,
+    "reasoning": "Submit form"
+})
+```
+
+### mano_scroll
+Scroll screen in direction.
+
+```python
+result = await context.call_tool("mano_scroll", {
+    "direction": "down",
+    "task": "My Task",
+    "step": 6,
+    "reasoning": "Scroll to see more content"
+})
+```
+
+### mano_open_app
+Open application by name (macOS Spotlight matching).
+
+```python
+result = await context.call_tool("mano_open_app", {
+    "app_name": "Google Chrome",
+    "task": "My Task",
+    "step": 1,
+    "reasoning": "Open Chrome browser"
+})
+```
+
+### mano_open_url
+Open URL in default browser.
+
+```python
+result = await context.call_tool("mano_open_url", {
+    "url": "https://example.com",
+    "task": "My Task",
+    "step": 1,
+    "reasoning": "Navigate to website"
+})
+```
+
+## Common Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task` | string | Yes | Task description shown in GUI |
+| `step` | integer | No | Step number (default: 1) |
+| `reasoning` | string | No | Hermes reasoning for this action |
+
+## Coordinate System
 
 All coordinates are **normalized to 1280x720 resolution**:
 - `(0, 0)` = top-left corner
 - `(1280, 720)` = bottom-right corner
-- The code automatically scales to your actual screen resolution
+- The code automatically scales to actual screen resolution
 
-This matches the original Mano-CUA coordinate system design.
+## Project Location
 
-## Typical Workflow (for Hermes Agent)
+```
+tools/mano_cua/
+├── direct_cli.py           # CLI entry point
+├── runtime.py              # Python API (ManoRuntimeController)
+├── requirements.txt         # Dependencies
+└── visual/
+    ├── model/              # Data models
+    ├── view_model/         # ViewModels
+    ├── view/               # TaskOverlayView GUI
+    ├── computer/           # Action executors
+    └── config/            # Configuration
 
-1. **Screenshot** - `./tools/mano_cua/mano-direct --task "..." --step 1 screenshot`
-2. **Vision Analysis** - Analyze screenshot with vision AI, determine what to do next, get coordinates
-3. **Execute Action** - Call the corresponding CLI command (click, type, etc.)
-4. **Wait for completion** - GUI executes, shows step info, auto-closes after 5 seconds
-5. **Repeat** - Go back to step 1 until task is complete
+tools/mano_cua_tool.py      # Hermes tool registration
+```
 
-All decision making is done by Hermes - Mano-CUA only does GUI display and action execution. No remote API calls, no model inference.
+## Dependencies
 
-## Example: Open Chrome and Search "mono"
+All dependencies must be installed in the mano_cua venv:
 
 ```bash
-# Step 1: Open Chrome
-./tools/mano_cua/mano-direct --task "Open browser and search mono" --step 1 \
-  --reasoning "First step: open Google Chrome browser" \
-  open_app --text "Google Chrome"
-
-# Wait for GUI to auto-close, then...
-
-# Step 2: Click address bar (coordinates need to be determined from screenshot)
-./tools/mano_cua/mano-direct --task "Open browser and search mono" --step 2 \
-  --reasoning "Click on address bar to activate it" \
-  click --x 435 --y 70
-
-# Step 3: Type search term
-./tools/mano_cua/mano-direct --task "Open browser and search mono" --step 3 \
-  --reasoning "Input search keyword 'mono'" \
-  type --text "mono"
-
-# Step 4: Press Enter
-./tools/mano_cua/mano-direct --task "Open browser and search mono" --step 4 \
-  --reasoning "Submit search by pressing Enter" \
-  key --key enter
-
-# Step 5: Capture result
-./tools/mano_cua/mano-direct --task "Open browser and search mono" --step 5 \
-  --reasoning "Verify search result" \
-  screenshot
+cd tools/mano_cua
+python3.14 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
-
-## GUI Behavior (matches original Mano-CUA)
-
-- ✅ One launch = one GUI instance (per step)
-- ✅ Floating window in **top-right corner**
-- ✅ Dark theme (#1e1e1e background, 92% opacity, 14px corner radius)
-- ✅ Shows: Task name, Step number, Action description, Hermes reasoning
-- ✅ Red **Stop** button to stop immediately
-- ✅ `-` minimize button to collapse to corner
-- ✅ Draggable anywhere on screen
-- ✅ Title flashes when running
-- ✅ **Auto-closes 5 seconds after action completes**
-
-## Python API (Runtime Integration)
-
-For integration within Hermes mult-agent, use the `ManoRuntimeController`:
-
-```python
-from tools.mano_cua.runtime import get_runtime
-
-# Get or create persistent runtime (starts GUI in background thread)
-runtime = get_runtime(task_name="My Task")
-
-# Execute an action
-result = runtime.execute_action({
-    "action": "click",
-    "x": 400,
-    "y": 100
-}, reasoning="Click the button")
-
-# Capture screenshot
-screenshot_result = runtime.capture_screenshot()
-# Returns: {"bytes": png_bytes, "base64": base64_str, "path": screenshot_path}
-
-# Close when done
-runtime.close()
-```
-
-## Development Notes
-
-- This extraction intentionally removes all model calling API code (`vla.py` kept but unused)
-- Uses the **original** `TaskOverlayView` from Mano-CUA - styles are exactly the same
-- Depends on the Homebrew-installed mano-cua venv for dependencies (mss, pynput, customtkinter, etc.)
-- All actions are executed through the original `ComputerActionExecutor`
-- Fixed the original bug: `root.withdraw()` but never `deiconify()` to show window
-- Fixed step number not updating bug: `model.init_task` calls `update_progress(0)` which overwrites step, now we overwrite it back immediately
 
 ## Troubleshooting
 
-- **GUI not appearing**: Make sure you're running on macOS with display, Tkinter requires a window server
-- **Module not found**: Check that mano-cua is installed via Homebrew at `/opt/homebrew/Cellar/mano-cua/`
-- **Coordinates wrong**: Remember all coordinates are normalized to 1280x720, not your actual screen resolution
-
-## Credits
-
-Original Mano-CUA/Mano-P project: https://github.com/Mininglamp-AI/Mano-P
-
-This is just a cleaned-up extraction that removes the model inference part for direct Hermes control.
+- **Tools not found**: Ensure `tools/mano_cua_tool.py` is in the tools directory
+- **GUI not appearing**: Make sure you're running on macOS with a display server
+- **Coordinates wrong**: Remember all coordinates are normalized to 1280x720
 
 ## Update Log
 
-- 2026-04-25: Initial creation
-- 2026-04-25: Refactored to match original Mano-CUA GUI style - one step = one GUI, auto-close after completion
-- 2026-04-25: **Fixed GUI not showing bug** - added `root.deiconify()` in `_update_status_ui`
-- 2026-04-25: **Fixed step number not updating** - Now correctly calls `model.init_task` and `update_progress`, Task/Step/Action/Reasoning all display properly
+- 2026-04-25: Created Hermes tool registration format
+- 2026-04-25: Registered 11 tools under `computer` toolset
+- 2026-04-25: Removed TaskModel/TaskViewModel API code, keeping local-only operation
