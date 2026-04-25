@@ -92,11 +92,8 @@ async function getSubAgentPort(agentId: number): Promise<number | null> {
 async function getRequestBase(): Promise<string> {
   // Return cached result if agentId hasn't changed
   if (_cachedRequestBase !== null && _cachedRequestBaseAgentId === _activeAgentId) {
-    console.log(`[API] Using cached request base: ${_cachedRequestBase} (agentId: ${_activeAgentId})`);
     return _cachedRequestBase;
   }
-
-  console.log(`[API] Computing request base for agentId: ${_activeAgentId}`);
   let result: string;
 
   // If sub-agent is active, use sub-agent port
@@ -154,6 +151,14 @@ async function getGatewayAuthToken(): Promise<string | null> {
   // 非 Electron 环境，返回空（开发模式）
   _gatewayAuthToken = '';
   return _gatewayAuthToken;
+}
+
+async function getEventSourceToken(): Promise<string | null> {
+  const gatewayToken = await getGatewayAuthToken();
+  if (gatewayToken) {
+    return gatewayToken;
+  }
+  return window.__HERMES_SESSION_TOKEN__ ?? null;
 }
 
 /**
@@ -390,12 +395,29 @@ export const api = {
     }
 
     // Add Gateway token as URL parameter for EventSource (cannot use headers)
-    const gatewayToken = await getGatewayAuthToken();
-    if (gatewayToken) {
-      params.append('token', gatewayToken);
+    const eventSourceToken = await getEventSourceToken();
+    if (eventSourceToken) {
+      params.append('token', eventSourceToken);
     }
 
-    const requestBase = await getRequestBase();
+    const requestBase = isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE;
+    return `${requestBase}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
+  },
+  getResumeStreamUrl: async (
+    sessionId: string,
+    agentId?: number | null,
+  ) => {
+    const params = new URLSearchParams({ resume: "1" });
+    if (agentId != null) {
+      params.append("agent_id", String(agentId));
+    }
+
+    const eventSourceToken = await getEventSourceToken();
+    if (eventSourceToken) {
+      params.append("token", eventSourceToken);
+    }
+
+    const requestBase = isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE;
     return `${requestBase}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>
@@ -519,6 +541,8 @@ export const api = {
 
   // Organization orchestration
   getOrgTree: () => fetchJSON<OrganizationTreeResponse>("/api/org/tree"),
+  getOrgCompanyTree: (companyId: number) => 
+    fetchJSON<{ company: OrgCompany }>(`/api/org/companies/${companyId}/tree`),
   createCompany: (data: CompanyPayload) =>
     fetchJSON<OrgCompany>("/api/companies", {
       method: "POST",
@@ -879,6 +903,7 @@ export interface SessionInfo {
   input_tokens: number;
   output_tokens: number;
   preview: string | null;
+  has_active_stream?: boolean;
 }
 
 export interface PaginatedSessions {

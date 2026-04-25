@@ -2681,6 +2681,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         # Organization API
         self._app.router.add_get("/api/org/tree", org_h.handle_get_tree)
+        self._app.router.add_get("/api/org/companies/{id}/tree", org_h.handle_get_company_tree)
         self._app.router.add_post("/api/companies", org_h.handle_create_company)
         self._app.router.add_patch("/api/companies/{id}", org_h.handle_update_company)
         self._app.router.add_delete("/api/companies/{id}", org_h.handle_delete_company)

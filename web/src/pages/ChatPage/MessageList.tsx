@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
 import { MessageBubble } from "./MessageBubble";
@@ -30,6 +30,8 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [displayedMessageCount, setDisplayedMessageCount] = useState(INITIAL_MESSAGE_COUNT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isLoadingMoreRef = useRef(false);
+  const topReachedHandledRef = useRef(false);
 
   // Reset displayed count when switching sessions (messages array changes drastically)
   useEffect(() => {
@@ -40,11 +42,25 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
   // Build list items including streaming content and real-time events
   const listItems = useMemo<ListItem[]>(() => {
     const items: ListItem[] = [];
+    const transientToolInvocationIds = new Set(
+      toolUseMessages.flatMap(msg =>
+        msg.metadata?.tool_invocations?.map(inv => inv.id).filter(Boolean) ?? []
+      )
+    );
 
     // Determine how many historical messages to show
     const totalHistoricalMessages = messages.length;
     const hiddenMessageCount = Math.max(0, totalHistoricalMessages - displayedMessageCount);
-    const visibleMessages = messages.slice(hiddenMessageCount);
+    const visibleMessages = messages
+      .slice(hiddenMessageCount)
+      .filter(msg => {
+        if (!isStreaming || msg.role !== "tool_use") {
+          return true;
+        }
+
+        const persistedToolId = msg.metadata?.tool_invocations?.[0]?.id;
+        return !persistedToolId || !transientToolInvocationIds.has(persistedToolId);
+      });
 
     // Add loading indicator at top if there are hidden messages and currently loading
     if (hiddenMessageCount > 0 && isLoadingMore) {
@@ -98,8 +114,8 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
   // Note: Auto-scroll is handled by Virtuoso's followOutput prop
   // No manual scrolling needed
 
-  const handleLoadMore = async () => {
-    if (isLoadingMore) return;
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMoreRef.current) return;
 
     const totalMessages = messages.length;
     const hiddenCount = Math.max(0, totalMessages - displayedMessageCount);
@@ -107,25 +123,41 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
     // Don't load if no more messages
     if (hiddenCount === 0) return;
 
+    isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
 
     // Simulate loading delay for UX
     await new Promise(resolve => setTimeout(resolve, 300));
 
     setDisplayedMessageCount(prev => prev + LOAD_MORE_COUNT);
+    isLoadingMoreRef.current = false;
     setIsLoadingMore(false);
-  };
+  }, [displayedMessageCount, messages.length]);
 
   // Handle scroll to top - auto load more messages
-  const handleAtTopStateChange = (atTop: boolean) => {
-    if (atTop && !isLoadingMore) {
-      const totalMessages = messages.length;
-      const hiddenCount = Math.max(0, totalMessages - displayedMessageCount);
-      if (hiddenCount > 0) {
-        handleLoadMore();
-      }
+  const handleAtTopStateChange = useCallback((atTop: boolean) => {
+    if (!atTop) {
+      topReachedHandledRef.current = false;
+      return;
     }
-  };
+
+    if (topReachedHandledRef.current || isLoadingMoreRef.current) {
+      return;
+    }
+
+    const totalMessages = messages.length;
+    const hiddenCount = Math.max(0, totalMessages - displayedMessageCount);
+    if (hiddenCount > 0) {
+      topReachedHandledRef.current = true;
+      setTimeout(() => {
+        void handleLoadMore();
+      }, 0);
+    }
+  }, [displayedMessageCount, handleLoadMore, messages.length]);
+
+  const followOutput = useCallback((isAtBottom: boolean) => {
+    return isAtBottom ? "smooth" : false;
+  }, []);
 
   // Mark when we've done initial mount
   useEffect(() => {
@@ -140,13 +172,7 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
       style={{ height: "100%" }}
       totalCount={listItems.length}
       alignToBottom
-      followOutput={(isAtBottom) => {
-        // Auto-scroll only when user is at bottom
-        if (isAtBottom) {
-          return "smooth";
-        }
-        return false;
-      }}
+      followOutput={followOutput}
       atTopStateChange={handleAtTopStateChange}
       itemContent={(index) => {
         const item = listItems[index];

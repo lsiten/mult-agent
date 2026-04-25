@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, X, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { AttachmentButtons } from "./AttachmentButtons";
@@ -40,6 +40,13 @@ export function InputArea({
   const [toolElapsedTime, setToolElapsedTime] = useState(0);
   const [isComposing, setIsComposing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const restoreFocus = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (!disabled && textareaRef.current && document.activeElement !== textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    });
+  }, [disabled]);
 
   // Update elapsed time every second when a tool is running
   useEffect(() => {
@@ -55,12 +62,19 @@ export function InputArea({
     return () => clearInterval(interval);
   }, [currentTool]);
 
-  const canSend = !disabled && (input.trim() || (attachments.length > 0 && allUploaded));
+  // Re-focus when the input becomes available again, but do not
+  // force focus on every keystroke to avoid visible flicker.
+  useEffect(() => {
+    restoreFocus();
+  }, [restoreFocus]);
 
   // Dynamic placeholder based on selected skills
   const placeholder = selectedSkills.length > 0
     ? `${t.chat.placeholder} (${selectedSkills.length} ${t.chat.skillSelector.selected})`
     : t.chat.placeholder;
+  const canSend =
+    !disabled &&
+    (input.trim().length > 0 || (attachments.length > 0 && allUploaded));
 
   const handleSend = () => {
     if (!canSend) return;
@@ -68,6 +82,7 @@ export function InputArea({
     // Allow sending with just attachments or with text
     onSendMessage(input || "");
     setInput("");
+    restoreFocus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -248,7 +263,10 @@ export function InputArea({
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               onCompositionStart={() => setIsComposing(true)}
-              onCompositionEnd={() => setIsComposing(false)}
+              onCompositionEnd={() => {
+                setIsComposing(false);
+                restoreFocus();
+              }}
               placeholder={placeholder}
               className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-background/40 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none outline-none px-3 py-3"
               disabled={disabled}

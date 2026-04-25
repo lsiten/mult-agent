@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { api, type SessionInfo } from "@/lib/api";
+import { api, type SessionInfo, type SessionListResponse } from "@/lib/api";
 import { useAgent } from "@/contexts/AgentContext";
+
+function getLastSessionStorageKey(agentId: number | null): string {
+  return `lastSessionId:${agentId ?? "master"}`;
+}
 
 export interface GroupedSessions {
   today: SessionInfo[];
@@ -15,18 +19,20 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isReady } = useAgent();
+  const storageKey = getLastSessionStorageKey(agentId);
 
-  const loadSessions = useCallback(async (limit = 20, offset = 0) => {
+  const loadSessions = useCallback(async (limit = 20, offset = 0): Promise<SessionListResponse> => {
     setIsLoading(true);
     setError(null);
     try {
       const response = await api.listSessions({ limit, offset, source });
-      console.log("[useSessions] Loaded sessions:", response.sessions.map(s => ({ id: s.id, title: s.title })));
       setSessions(response.sessions);
 
       // Don't auto-select any session - let user explicitly choose
+      return response;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -68,7 +74,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
 
       setSessions(prev => [newSession, ...prev]);
       setCurrentSessionId(response.session_id);
-      localStorage.setItem("lastSessionId", response.session_id);
+      localStorage.setItem(storageKey, response.session_id);
 
       return response.session_id;
     } catch (err) {
@@ -77,12 +83,12 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
     } finally {
       setIsLoading(false);
     }
-  }, [source, agentId]);
+  }, [source, agentId, storageKey]);
 
   const switchSession = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
-    localStorage.setItem("lastSessionId", sessionId);
-  }, []);
+    localStorage.setItem(storageKey, sessionId);
+  }, [storageKey]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
@@ -91,6 +97,11 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
 
       // If deleting current session, switch to another
       if (currentSessionId === sessionId) {
+        try {
+          localStorage.removeItem(storageKey);
+        } catch {
+          // ignore storage errors
+        }
         const remaining = sessions.filter(s => s.id !== sessionId);
         if (remaining.length > 0) {
           switchSession(remaining[0].id);
@@ -102,7 +113,7 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
       setError(err instanceof Error ? err.message : String(err));
       throw err;
     }
-  }, [sessions, currentSessionId, switchSession]);
+  }, [sessions, currentSessionId, switchSession, storageKey]);
 
   const updateSessionTitle = useCallback(async (sessionId: string, title: string) => {
     try {
@@ -141,25 +152,29 @@ export function useSessions(source: string = "electron-chat", agentId: number | 
   // master/sub-agent switches.  ``loadSessions`` is invoked right after so
   // the new scope's list is fetched with the correct ``X-Hermes-Agent-Id``.
   useEffect(() => {
-    console.log(`[useSessions] Agent changed to ${agentId}, isReady=${isReady}`);
     setSessions([]);
     setCurrentSessionId(null);
-    try {
-      localStorage.removeItem("lastSessionId");
-    } catch {
-      // ignore storage errors (Safari private mode, quota, etc.)
-    }
 
     // ⛔ 等待 Agent 就绪后再加载会话列表
     // 防止 Sub Agent 切换时过早发起请求导致加载主 Agent 数据
     if (!isReady) {
-      console.log("[useSessions] Agent not ready, skipping loadSessions");
       return;
     }
 
-    console.log(`[useSessions] Loading sessions for agentId=${agentId}`);
-    loadSessions();
-  }, [loadSessions, isReady, agentId]);
+    void loadSessions().then((response) => {
+      try {
+        const lastSessionId = localStorage.getItem(storageKey);
+        if (!lastSessionId) {
+          return;
+        }
+        if (response.sessions.some(session => session.id === lastSessionId)) {
+          setCurrentSessionId(lastSessionId);
+        }
+      } catch {
+        // ignore storage errors (Safari private mode, quota, etc.)
+      }
+    });
+  }, [loadSessions, isReady, agentId, storageKey]);
 
   return {
     sessions,

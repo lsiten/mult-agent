@@ -25,7 +25,19 @@ function readGatewayToken() {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: "inject-hermes-session-token",
+      transformIndexHtml(html) {
+        const token = readGatewayToken();
+        if (!token) return html;
+        const snippet = `<script>window.__HERMES_SESSION_TOKEN__=${JSON.stringify(token)};</script>`;
+        return html.includes("</head>") ? html.replace("</head>", `  ${snippet}\n</head>`) : `${snippet}\n${html}`;
+      },
+    },
+  ],
 
   // Electron environment adaptation: file:// protocol requires relative paths
   base: process.env.ELECTRON ? './' : '/',

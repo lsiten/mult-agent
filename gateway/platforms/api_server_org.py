@@ -64,6 +64,11 @@ class OrganizationAPIHandlers:
     async def handle_get_tree(self, request: web.Request) -> web.Response:
         return await self._handle(request, self._service.get_tree)
 
+    async def handle_get_company_tree(self, request: web.Request) -> web.Response:
+        """Get full organization tree for a specific company only (data isolation)."""
+        company_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.get_company_tree(company_id))
+
     async def handle_create_company(self, request: web.Request) -> web.Response:
         data = await self._json_body(request)
         return await self._handle(request, lambda: self._service.create_company(data))

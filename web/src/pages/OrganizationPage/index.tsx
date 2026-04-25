@@ -33,7 +33,7 @@ export default function OrganizationPage() {
           type={page.dialog.type}
           item={page.dialog.item}
           parent={page.dialog.parent}
-          tree={page.tree}
+          tree={{ companies: page.companies }}
           saving={page.saving}
           t={page.t}
           onOpenChange={page.handleDialogOpenChange}

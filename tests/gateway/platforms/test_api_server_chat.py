@@ -114,3 +114,54 @@ async def test_safe_write_sse_returns_false_for_closing_transport():
     )
 
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_stream_listener_snapshot_exposes_unsaved_tail_and_current_tool():
+    handlers = ChatAPIHandlers("test-token")
+    stream_state = handlers._new_stream_state()
+    stream_state["current_text_segment"] = "hello world"
+    stream_state["saved_segment_chars"] = 6
+    stream_state["current_tool"] = {"name": "read_file", "startTime": 123}
+    stream_state["tool_invocations"] = [
+        {
+            "id": "tool_1",
+            "tool": "read_file",
+            "args": {"path": "/tmp/demo"},
+            "status": "pending",
+            "start_time": 100.0,
+        }
+    ]
+
+    queue, snapshot = await handlers._add_stream_listener(stream_state)
+
+    assert snapshot["streaming_content"] == "world"
+    assert snapshot["current_tool"] == {"name": "read_file", "startTime": 123}
+    assert snapshot["tool_invocations"] == [
+        {
+            "id": "tool_1",
+            "tool": "read_file",
+            "args": {"path": "/tmp/demo"},
+            "result": None,
+            "status": "pending",
+            "duration": None,
+        }
+    ]
+
+    await handlers._remove_stream_listener(stream_state, queue)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_stream_event_fans_out_and_marks_done():
+    handlers = ChatAPIHandlers("test-token")
+    stream_state = handlers._new_stream_state()
+
+    queue, _ = await handlers._add_stream_listener(stream_state)
+
+    await handlers._broadcast_stream_event(stream_state, "content", {"delta": "hi"})
+    assert await queue.get() == ("content", {"delta": "hi"})
+    assert stream_state["done"] is False
+
+    await handlers._broadcast_stream_event(stream_state, "done", {"finish_reason": "stop"})
+    assert await queue.get() == ("done", {"finish_reason": "stop"})
+    assert stream_state["done"] is True

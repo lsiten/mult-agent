@@ -999,6 +999,76 @@ class OrganizationService:
             result.append(item)
         return {"companies": result}
 
+    def get_company_tree(self, company_id: int) -> dict[str, Any]:
+        """Get full organization tree for a specific company only.
+        
+        Data isolation: only returns data that belongs to this company,
+        no other companies' data is exposed.
+        """
+        # Get the specific company only
+        company = self.store.query_one("SELECT * FROM companies WHERE id = ?", (company_id,))
+        if not company:
+            raise OrganizationError(f"Company {company_id} not found", 404)
+        
+        # Get ONLY departments that belong to this company (data isolation)
+        departments = self.store.query_all(
+            "SELECT * FROM departments WHERE company_id = ? ORDER BY sort_order, id", 
+            (company_id,)
+        )
+        # Get ONLY positions that belong to departments of this company
+        department_ids = [d["id"] for d in departments]
+        placeholders = ",".join("?" for _ in department_ids)
+        positions = self.store.query_all(
+            f"SELECT * FROM positions WHERE department_id IN ({placeholders}) ORDER BY sort_order, id",
+            department_ids
+        )
+        # Get ONLY agents that belong to positions of this company
+        position_ids = [p["id"] for p in positions]
+        if position_ids:
+            placeholders = ",".join("?" for _ in position_ids)
+            agents = self.store.query_all(
+                f"SELECT * FROM agents WHERE position_id IN ({placeholders}) ORDER BY name, id",
+                position_ids
+            )
+            profiles = self.store.query_all(
+                f"SELECT * FROM profile_agents WHERE agent_id IN ({placeholders})",
+                position_ids
+            )
+        else:
+            agents = []
+            profiles = []
+        
+        profile_by_agent = {p["agent_id"]: p for p in profiles}
+
+        agents_by_position: dict[int, list[dict[str, Any]]] = {}
+        for agent in agents:
+            item = dict(agent)
+            item["profile_agent"] = profile_by_agent.get(agent["id"])
+            agents_by_position.setdefault(agent["position_id"], []).append(item)
+
+        positions_by_department: dict[int, list[dict[str, Any]]] = {}
+        for position in positions:
+            item = dict(position)
+            item["agents"] = agents_by_position.get(position["id"], [])
+            item["agent_count"] = len(item["agents"])
+            positions_by_department.setdefault(position["department_id"], []).append(item)
+
+        # Build the company item with full tree
+        item = dict(company)
+        item["departments"] = []
+        for department in departments:
+            dept_item = dict(department)
+            dept_item["positions"] = positions_by_department.get(department["id"], [])
+            dept_item["position_count"] = len(dept_item["positions"])
+            dept_item["agent_count"] = sum(p["agent_count"] for p in dept_item["positions"])
+            item["departments"].append(dept_item)
+        
+        item["department_count"] = len(item["departments"])
+        item["position_count"] = sum(d["position_count"] for d in item["departments"])
+        item["agent_count"] = sum(d["agent_count"] for d in item["departments"])
+        
+        return {"company": item}
+
     def create_company(self, data: dict[str, Any]) -> dict[str, Any]:
         _require(data, "name", "goal")
 

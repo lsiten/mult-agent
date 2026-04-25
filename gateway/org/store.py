@@ -24,22 +24,16 @@ def default_org_db_path() -> Path:
     以确保组织架构数据（companies, departments, positions, agents）一致。
 
     Sub Agent 的隔离仅限于 state.db（sessions, messages）。
+    
+    修复：总是使用应用程序支持目录下的 org.db，确保数据一致性。
     """
     import os
-
-    # 检查是否在 Sub Agent 模式下
-    if os.getenv("HERMES_SUB_AGENT_MODE") == "1":
-        # Sub Agent：使用主 Agent 的 org.db（通过去除 profile 路径前缀）
-        hermes_home = get_hermes_home()
-        # 路径格式：.../hermes-agent-electron/org/profiles/org-N
-        # 需要回退到：.../hermes-agent-electron
-        hermes_home_str = str(hermes_home)
-        if "/org/profiles/" in hermes_home_str:
-            main_hermes_home = Path(hermes_home_str.split("/org/profiles/")[0])
-            return main_hermes_home / "org" / "org.db"
-
-    # 主 Agent：使用 HERMES_HOME 下的 org.db
-    return get_hermes_home() / "org" / "org.db"
+    from pathlib import Path
+    
+    # 组织架构数据总是存储在应用程序支持目录，确保全局共享
+    # 不管是不是 Sub Agent，都访问同一个数据库
+    hermes_home = get_hermes_home()
+    return hermes_home / "org" / "org.db"
 
 
 def now_ts() -> float:

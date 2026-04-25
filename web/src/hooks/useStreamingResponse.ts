@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { api, type SessionMessage } from "@/lib/api";
 
 export interface ToolCall {
@@ -9,72 +9,206 @@ export interface ToolCall {
   status: "pending" | "success" | "error";
 }
 
-export function useStreamingResponse() {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
-  const [toolUseMessages, setToolUseMessages] = useState<SessionMessage[]>([]);
-  const [skillUseMessages, setSkillUseMessages] = useState<SessionMessage[]>([]);
-  const [authRequestMessages, setAuthRequestMessages] = useState<SessionMessage[]>([]);
-  const [textSegments, setTextSegments] = useState<SessionMessage[]>([]); // Completed text segments
-  const [currentTool, setCurrentTool] = useState<{ name: string; startTime: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+interface SessionStreamingState {
+  isStreaming: boolean;
+  streamingContent: string;
+  toolCalls: ToolCall[];
+  toolUseMessages: SessionMessage[];
+  skillUseMessages: SessionMessage[];
+  authRequestMessages: SessionMessage[];
+  textSegments: SessionMessage[];
+  currentTool: { name: string; startTime: number } | null;
+  error: string | null;
+  // Saved parameters for resume
+  lastMessage: string | null;
+  lastAttachments: Array<{id: string, name: string, type: string, size: number, url: string}> | undefined;
+  lastSelectedSkills: string[] | undefined;
+  lastAgentId: number | null;
+  retryCount: number;
+  stopRequested: boolean;
+}
+
+type StreamingAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  url: string;
+};
+
+type ToolInvocation = NonNullable<
+  NonNullable<SessionMessage["metadata"]>["tool_invocations"]
+>[number];
+
+const defaultSessionState: SessionStreamingState = {
+  isStreaming: false,
+  streamingContent: "",
+  toolCalls: [],
+  toolUseMessages: [],
+  skillUseMessages: [],
+  authRequestMessages: [],
+  textSegments: [],
+  currentTool: null,
+  error: null,
+  lastMessage: null,
+  lastAttachments: undefined,
+  lastSelectedSkills: undefined,
+  lastAgentId: null,
+  retryCount: 0,
+  stopRequested: false,
+};
+
+export function useStreamingResponse(currentSessionId: string | null = null) {
+  // Store streaming state per session, so switching sessions restores correct state
+  const [sessionStates, setSessionStates] = useState<Map<string, SessionStreamingState>>(new Map());
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentSessionRef = useRef<string | null>(null);
+  const currentMessageRef = useRef<string | null>(null);
+  const currentAttachmentsRef = useRef<StreamingAttachment[] | undefined>(undefined);
+  const currentSelectedSkillsRef = useRef<string[] | undefined>(undefined);
+  const currentAgentIdRef = useRef<number | null>(null);
   const retryCountRef = useRef(0);
   const stopRequestedRef = useRef(false);
   const maxRetries = 3;
 
-  const startStreaming = useCallback(async (
+  // Get current session state
+  const currentState = useMemo(() => {
+    if (!currentSessionId) return defaultSessionState;
+    return sessionStates.get(currentSessionId) ?? defaultSessionState;
+  }, [currentSessionId, sessionStates]);
+
+  const updateSessionState = useCallback((
     sessionId: string,
-    message: string,
-    attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>,
-    selectedSkills?: string[],
-    agentId?: number | null,
-    isRetry = false
+    updater: (prev: SessionStreamingState) => Partial<SessionStreamingState>,
   ) => {
-    if (!isRetry) {
-      retryCountRef.current = 0;
+    setSessionStates(prev => {
+      const next = new Map(prev);
+      const prevState = prev.get(sessionId) ?? defaultSessionState;
+      next.set(sessionId, { ...prevState, ...updater(prevState) });
+      return next;
+    });
+  }, []);
+
+  const closeCurrentEventSource = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
-    stopRequestedRef.current = false;
+  }, []);
 
-    setIsStreaming(true);
-    setStreamingContent("");
-    setToolCalls([]);
-    setToolUseMessages([]);
-    setSkillUseMessages([]);
-    setAuthRequestMessages([]);
-    setTextSegments([]);
-    setCurrentTool(null);
-    setError(null);
+  useEffect(() => {
+    return () => {
+      closeCurrentEventSource();
+    };
+  }, [closeCurrentEventSource]);
 
-    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills, agentId);
-    console.log("[SSE] Starting stream from:", url, isRetry ? `(retry ${retryCountRef.current}/${maxRetries})` : "");
+  const {
+    isStreaming,
+    streamingContent,
+    toolCalls,
+    toolUseMessages,
+    skillUseMessages,
+    authRequestMessages,
+    textSegments,
+    currentTool,
+    error,
+  } = currentState;
+
+  const connectStream = useCallback(async function connectStreamImpl({
+    sessionId,
+    url,
+    message,
+    attachments,
+    selectedSkills,
+    agentId,
+    isRetry = false,
+    isResume = false,
+  }: {
+    sessionId: string;
+    url: string;
+    message?: string | null;
+    attachments?: StreamingAttachment[];
+    selectedSkills?: string[];
+    agentId?: number | null;
+    isRetry?: boolean;
+    isResume?: boolean;
+  }): Promise<string> {
+    console.log("[SSE] Connecting:", url, isResume ? "(resume)" : "(new)", isRetry ? `(retry ${retryCountRef.current}/${maxRetries})` : "");
+    closeCurrentEventSource();
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
-    currentSessionRef.current = sessionId;
 
     return new Promise<string>((resolve, reject) => {
-      let fullContent = "";
+      let fullContent = isResume ? (sessionStates.get(sessionId)?.streamingContent ?? "") : "";
+      let serverErrorHandled = false;
 
-      console.log("[SSE] Starting stream from:", url);
+      const closeEventSource = () => {
+        eventSource.close();
+        if (eventSourceRef.current === eventSource) {
+          eventSourceRef.current = null;
+        }
+      };
 
-      // Listen for content events
-      eventSource.addEventListener("content", (event) => {
+      eventSource.addEventListener("connected", () => {
+        console.log("[SSE] Connected:", sessionId, isResume ? "(resume)" : "(new)");
+        updateSessionState(sessionId, prev => ({
+          ...prev,
+          isStreaming: true,
+          error: null,
+        }));
+      });
+
+      eventSource.addEventListener("resume_state", (event) => {
         try {
-          console.log("[SSE] Content event received:", event.data);
           const data = JSON.parse(event.data);
-          if (data.delta) {
-            fullContent += data.delta;
-            setStreamingContent(fullContent);
-            console.log("[SSE] Updated content, length:", fullContent.length);
-          }
+          const resumedInvocations = Array.isArray(data.tool_invocations) ? data.tool_invocations : [];
+          const resumedMessages: SessionMessage[] = resumedInvocations.map((inv: ToolInvocation) => ({
+            role: "tool_use",
+            content: null,
+            timestamp: Date.now() / 1000,
+            metadata: { tool_invocations: [inv] },
+          }));
+
+          fullContent = typeof data.streaming_content === "string" ? data.streaming_content : "";
+
+          updateSessionState(sessionId, prev => ({
+            ...prev,
+            isStreaming: true,
+            error: null,
+            streamingContent: fullContent,
+            toolUseMessages: resumedMessages,
+            currentTool: data.current_tool
+              ? {
+                  name: data.current_tool.name,
+                  startTime: Number(data.current_tool.startTime) || Date.now(),
+                }
+              : null,
+          }));
         } catch (err) {
-          console.error("Failed to parse content event:", err);
+          console.error("Failed to parse resume_state event:", err);
         }
       });
 
-      // Listen for tool_call events (legacy)
+      eventSource.addEventListener("content", (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.delta) {
+            fullContent += data.delta;
+            updateSessionState(sessionId, () => ({
+              streamingContent: fullContent,
+            }));
+          }
+        } catch (err) {
+          console.error("Failed to parse content event:", err);
+          updateSessionState(sessionId, () => ({
+            ...defaultSessionState,
+            error: "Failed to parse server response",
+          }));
+          closeEventSource();
+          reject(new Error("Failed to parse content event from server"));
+        }
+      });
+
       eventSource.addEventListener("tool_call", (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -85,37 +219,20 @@ export function useStreamingResponse() {
               args: data.args,
               status: "pending",
             };
-            setToolCalls(prev => [...prev, toolCall]);
+            updateSessionState(sessionId, prev => ({
+              toolCalls: [...prev.toolCalls, toolCall],
+            }));
           }
         } catch (err) {
           console.error("Failed to parse tool_call event:", err);
         }
       });
 
-      // Listen for tool_use events (new) - receives incremental updates
-      // Each invocation is now a separate message for chronological ordering
       eventSource.addEventListener("tool_use", (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("[SSE] tool_use event received:", data);
-
           const newInvocations = data.invocations || [];
-
-          // Before adding tool messages, save current streaming text as a completed segment
-          setStreamingContent(current => {
-            if (current.trim()) {
-              console.log("[SSE] Saving text segment before tool:", current.length, "chars");
-              setTextSegments(prev => [...prev, {
-                role: "assistant",
-                content: current,
-                timestamp: Date.now() / 1000,
-              }]);
-            }
-            return ""; // Clear streaming content for next segment
-          });
-
-          // Create separate tool_use message for each new invocation
-          const newMessages: SessionMessage[] = newInvocations.map((inv: any) => ({
+          const newMessages: SessionMessage[] = newInvocations.map((inv: ToolInvocation) => ({
             role: "tool_use",
             content: null,
             timestamp: Date.now() / 1000,
@@ -124,32 +241,34 @@ export function useStreamingResponse() {
             },
           }));
 
-          setToolUseMessages(prev => [...prev, ...newMessages]);
+          updateSessionState(sessionId, prev => {
+            const nextTextSegments = prev.streamingContent.trim()
+              ? [
+                  ...prev.textSegments,
+                  {
+                    role: "assistant" as const,
+                    content: prev.streamingContent,
+                    timestamp: Date.now() / 1000,
+                  },
+                ]
+              : prev.textSegments;
+
+            return {
+              streamingContent: "",
+              textSegments: nextTextSegments,
+              toolUseMessages: [...prev.toolUseMessages, ...newMessages],
+            };
+          });
+          fullContent = "";
         } catch (err) {
           console.error("Failed to parse tool_use event:", err);
         }
       });
 
-      // Listen for skill_loaded events
       eventSource.addEventListener("skill_loaded", (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("[SSE] skill_loaded event received:", data);
-
-          // Save current text segment before skill message
-          setStreamingContent(current => {
-            if (current.trim()) {
-              console.log("[SSE] Saving text segment before skill:", current.length, "chars");
-              setTextSegments(prev => [...prev, {
-                role: "assistant",
-                content: current,
-                timestamp: Date.now() / 1000,
-              }]);
-            }
-            return "";
-          });
-
-          const message: SessionMessage = {
+          const skillMessage: SessionMessage = {
             role: "skill_use",
             content: null,
             timestamp: Date.now() / 1000,
@@ -157,32 +276,34 @@ export function useStreamingResponse() {
               skills: data.skills || [],
             },
           };
-          setSkillUseMessages(prev => [...prev, message]);
+          updateSessionState(sessionId, prev => {
+            const nextTextSegments = prev.streamingContent.trim()
+              ? [
+                  ...prev.textSegments,
+                  {
+                    role: "assistant" as const,
+                    content: prev.streamingContent,
+                    timestamp: Date.now() / 1000,
+                  },
+                ]
+              : prev.textSegments;
+
+            return {
+              streamingContent: "",
+              textSegments: nextTextSegments,
+              skillUseMessages: [...prev.skillUseMessages, skillMessage],
+            };
+          });
+          fullContent = "";
         } catch (err) {
           console.error("Failed to parse skill_loaded event:", err);
         }
       });
 
-      // Listen for authorization_request events
       eventSource.addEventListener("authorization_request", (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("[SSE] authorization_request event received:", data);
-
-          // Save current text segment before authorization request
-          setStreamingContent(current => {
-            if (current.trim()) {
-              console.log("[SSE] Saving text segment before auth request:", current.length, "chars");
-              setTextSegments(prev => [...prev, {
-                role: "assistant",
-                content: current,
-                timestamp: Date.now() / 1000,
-              }]);
-            }
-            return "";
-          });
-
-          const message: SessionMessage = {
+          const authMessage: SessionMessage = {
             role: "authorization_request",
             content: null,
             timestamp: Date.now() / 1000,
@@ -190,183 +311,301 @@ export function useStreamingResponse() {
               authorization: data.authorization || {},
             },
           };
-          setAuthRequestMessages(prev => [...prev, message]);
+          updateSessionState(sessionId, prev => {
+            const nextTextSegments = prev.streamingContent.trim()
+              ? [
+                  ...prev.textSegments,
+                  {
+                    role: "assistant" as const,
+                    content: prev.streamingContent,
+                    timestamp: Date.now() / 1000,
+                  },
+                ]
+              : prev.textSegments;
+
+            return {
+              streamingContent: "",
+              textSegments: nextTextSegments,
+              authRequestMessages: [...prev.authRequestMessages, authMessage],
+            };
+          });
+          fullContent = "";
         } catch (err) {
           console.error("Failed to parse authorization_request event:", err);
         }
       });
 
-      // Listen for tool_progress events
       eventSource.addEventListener("tool_progress", (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("[SSE] tool_progress event received:", data);
 
           if (data.status === "started") {
-            setCurrentTool({ name: data.tool, startTime: Date.now() });
+            updateSessionState(sessionId, () => ({
+              currentTool: { name: data.tool, startTime: Date.now() },
+            }));
           } else if (data.status === "completed") {
-            setCurrentTool(null);
-
-            // Update tool status in toolUseMessages
-            // Since each tool is now a separate message, find the message with matching tool_call_id
-            setToolUseMessages(prev => {
-              if (prev.length === 0) return prev;
-
-              const updated = prev.map(msg => {
-                if (msg.metadata?.tool_invocations) {
-                  const invocations = msg.metadata.tool_invocations;
-                  const toolIndex = invocations.findIndex((inv: any) => inv.id === data.id);
-
-                  if (toolIndex !== -1) {
-                    // Found matching tool, update its status
-                    const updatedInvocations = [...invocations];
-                    updatedInvocations[toolIndex] = {
-                      ...updatedInvocations[toolIndex],
-                      status: "success",
-                      duration: data.duration,
-                    };
-
-                    return {
-                      ...msg,
-                      metadata: {
-                        ...msg.metadata,
-                        tool_invocations: updatedInvocations,
-                      },
-                    };
-                  }
+            updateSessionState(sessionId, prev => ({
+              currentTool: null,
+              toolUseMessages: prev.toolUseMessages.map(msg => {
+                if (!msg.metadata?.tool_invocations) {
+                  return msg;
                 }
-                return msg;
-              });
 
-              return updated;
-            });
+                const updatedInvocations: ToolInvocation[] = msg.metadata.tool_invocations.map(inv =>
+                  inv.id === data.id
+                    ? {
+                        ...inv,
+                        status: "success" as const,
+                        duration: typeof data.duration === "number" ? data.duration : undefined,
+                      }
+                    : inv
+                );
+
+                return {
+                  ...msg,
+                  metadata: {
+                    ...msg.metadata,
+                    tool_invocations: updatedInvocations,
+                  },
+                };
+              }),
+            }));
           }
         } catch (err) {
           console.error("Failed to parse tool_progress event:", err);
         }
       });
 
-      // Listen for done event
       eventSource.addEventListener("done", (event) => {
-        console.log("[SSE] Done event received:", event.data);
+        console.log("[SSE] Completed normally:", event.data);
         stopRequestedRef.current = false;
-        setIsStreaming(false);
-        setStreamingContent(""); // Clear streaming content
-        setTextSegments([]); // Clear completed text segments
-        setToolUseMessages([]); // Clear tool messages
-        setSkillUseMessages([]); // Clear skill messages
-        setAuthRequestMessages([]); // Clear auth messages
-        setCurrentTool(null);
-        eventSource.close();
+        serverErrorHandled = true;
+        updateSessionState(sessionId, () => ({
+          ...defaultSessionState,
+        }));
+        closeEventSource();
         resolve(fullContent);
       });
 
-      // Listen for cancelled event
       eventSource.addEventListener("cancelled", (event) => {
         const messageEvent = event as MessageEvent;
         console.log("[SSE] Cancelled event received:", messageEvent.data);
         stopRequestedRef.current = false;
-        setIsStreaming(false);
-        setStreamingContent("");
-        setTextSegments([]);
-        setToolUseMessages([]);
-        setSkillUseMessages([]);
-        setAuthRequestMessages([]);
-        setCurrentTool(null);
-        eventSource.close();
+        serverErrorHandled = true;
+        updateSessionState(sessionId, () => ({
+          ...defaultSessionState,
+        }));
+        closeEventSource();
         reject(new Error("Task cancelled by user"));
       });
 
-      // Listen for error event
       eventSource.addEventListener("error", (event) => {
         if (stopRequestedRef.current) {
-          console.log("[SSE] Ignoring error event because stop was requested");
           return;
         }
+        serverErrorHandled = true;
         try {
           const messageEvent = event as MessageEvent;
           const data = JSON.parse(messageEvent.data);
-          console.log("[SSE] Error event received:", data);
-          setError(data.error || "Unknown error");
-          setIsStreaming(false);
-          setStreamingContent("");
-          setTextSegments([]);
-          setToolUseMessages([]);
-          setSkillUseMessages([]);
-          setAuthRequestMessages([]);
-          setCurrentTool(null);
-          eventSource.close();
+          updateSessionState(sessionId, () => ({
+            ...defaultSessionState,
+            error: data.error || "Unknown error",
+          }));
+          closeEventSource();
           reject(new Error(data.error || "Unknown error"));
         } catch (err) {
           console.error("Failed to parse error event:", err);
         }
       });
 
-      // Handle connection errors with retry
       eventSource.onerror = (err) => {
-        if (stopRequestedRef.current) {
-          console.log("[SSE] Ignoring EventSource onerror because stop was requested");
+        if (stopRequestedRef.current || serverErrorHandled) {
           return;
         }
-        console.error("[SSE] Error:", err);
-        eventSource.close();
 
-        // Retry logic
+        console.error("[SSE] Error:", err);
+        closeEventSource();
+
         if (retryCountRef.current < maxRetries) {
           retryCountRef.current++;
-          const delay = 1000 * retryCountRef.current; // 1s, 2s, 3s
-          console.log(`[SSE] Retrying in ${delay}ms (attempt ${retryCountRef.current}/${maxRetries})`);
+          const delay = 1000 * retryCountRef.current;
 
-          setError(`连接断开，正在重试 (${retryCountRef.current}/${maxRetries})...`);
+          updateSessionState(sessionId, prev => ({
+            ...prev,
+            error: `连接断开，正在重连 (${retryCountRef.current}/${maxRetries})...`,
+            retryCount: retryCountRef.current,
+          }));
 
           setTimeout(() => {
             if (stopRequestedRef.current) {
-              console.log("[SSE] Skip retry because stop was requested");
               return;
             }
-            startStreaming(sessionId, message, attachments, selectedSkills, agentId, true)
+
+            api.getResumeStreamUrl(sessionId, agentId ?? null)
+              .then((resumeUrl) => connectStreamImpl({
+                sessionId,
+                url: resumeUrl,
+                message,
+                attachments,
+                selectedSkills,
+                agentId,
+                isRetry: true,
+                isResume: true,
+              }))
               .then(resolve)
               .catch(reject);
           }, delay);
         } else {
-          console.error("[SSE] Max retries reached");
-          setError("连接失败，请重试");
-          setIsStreaming(false);
-          setStreamingContent("");
-          setTextSegments([]);
-          setToolUseMessages([]);
-          setSkillUseMessages([]);
-          setAuthRequestMessages([]);
+          updateSessionState(sessionId, () => ({
+            ...defaultSessionState,
+            error: "连接失败，请重试",
+          }));
           reject(new Error("连接失败，已达到最大重试次数"));
         }
       };
     });
-  }, [maxRetries]);
+  }, [closeCurrentEventSource, maxRetries, sessionStates, updateSessionState]);
 
-  const stopStreaming = useCallback(async () => {
-    const sessionId = currentSessionRef.current;
-    stopRequestedRef.current = true;
+  const startStreaming = useCallback(async (
+    sessionId: string,
+    message: string,
+    attachments?: StreamingAttachment[],
+    selectedSkills?: string[],
+    agentId?: number | null,
+    isRetry = false
+  ) => {
+    currentSessionRef.current = sessionId;
+    currentMessageRef.current = message;
+    currentAttachmentsRef.current = attachments;
+    currentSelectedSkillsRef.current = selectedSkills;
+    currentAgentIdRef.current = agentId ?? null;
 
-    // Close event source
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    if (!isRetry) {
+      retryCountRef.current = 0;
+    }
+    stopRequestedRef.current = false;
+
+    updateSessionState(sessionId, () => ({
+      ...defaultSessionState,
+      isStreaming: true,
+      lastMessage: message,
+      lastAttachments: attachments,
+      lastSelectedSkills: selectedSkills,
+      lastAgentId: agentId ?? null,
+      retryCount: retryCountRef.current,
+      stopRequested: false,
+    }));
+
+    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills, agentId);
+    return connectStream({
+      sessionId,
+      url,
+      message,
+      attachments,
+      selectedSkills,
+      agentId,
+      isRetry,
+      isResume: false,
+    });
+  }, [connectStream, updateSessionState]);
+
+  const resumeStreaming = useCallback(async (
+    sessionIdOverride?: string | null,
+    agentIdOverride?: number | null,
+    isRetry = false,
+  ) => {
+    const sessionId = sessionIdOverride ?? currentSessionId ?? currentSessionRef.current;
+    if (!sessionId) {
+      return Promise.resolve("");
     }
 
-    // Call stop API if we have a session
+    const sessionState = sessionStates.get(sessionId) ?? defaultSessionState;
+    const message = sessionState.lastMessage ?? currentMessageRef.current;
+    const attachments = sessionState.lastAttachments ?? currentAttachmentsRef.current;
+    const selectedSkills = sessionState.lastSelectedSkills ?? currentSelectedSkillsRef.current;
+    const agentId = agentIdOverride ?? sessionState.lastAgentId ?? currentAgentIdRef.current;
+
+    currentSessionRef.current = sessionId;
+    currentMessageRef.current = message;
+    currentAttachmentsRef.current = attachments;
+    currentSelectedSkillsRef.current = selectedSkills;
+    currentAgentIdRef.current = agentId ?? null;
+
+    if (!isRetry) {
+      retryCountRef.current = 0;
+    }
+    stopRequestedRef.current = false;
+
+    updateSessionState(sessionId, prev => ({
+      ...defaultSessionState,
+      isStreaming: true,
+      lastMessage: message,
+      lastAttachments: attachments,
+      lastSelectedSkills: selectedSkills,
+      lastAgentId: agentId ?? null,
+      retryCount: retryCountRef.current,
+      stopRequested: false,
+      textSegments: prev.textSegments,
+      skillUseMessages: prev.skillUseMessages,
+      authRequestMessages: prev.authRequestMessages,
+    }));
+
+    const url = await api.getResumeStreamUrl(sessionId, agentId);
+    return connectStream({
+      sessionId,
+      url,
+      message,
+      attachments,
+      selectedSkills,
+      agentId,
+      isRetry,
+      isResume: true,
+    });
+  }, [connectStream, currentSessionId, sessionStates, updateSessionState]);
+
+  const stopStreaming = useCallback(async () => {
+    const sessionId = currentSessionId ?? currentSessionRef.current;
+    stopRequestedRef.current = true;
+
+    closeCurrentEventSource();
+    console.log("[SSE] Connection closed due to manual stop");
+
     if (sessionId) {
       try {
         await api.stopStream(sessionId);
-        console.log("[SSE] Stop request sent for session:", sessionId);
-      } catch (err) {
-        console.error("[SSE] Failed to stop stream:", err);
+      } catch (error) {
+        console.error("[SSE] Failed to stop task:", error);
       }
+
+      updateSessionState(sessionId, () => ({
+        ...defaultSessionState,
+      }));
     }
 
-    setIsStreaming(false);
-    setCurrentTool(null);
     currentSessionRef.current = null;
-  }, []);
+  }, [closeCurrentEventSource, currentSessionId, updateSessionState]);
+
+  const resetStreamingState = useCallback((sessionId?: string | null) => {
+    const targetSessionId = sessionId ?? currentSessionId ?? currentSessionRef.current;
+    if (!targetSessionId) {
+      return;
+    }
+
+    if (currentSessionRef.current === targetSessionId) {
+      closeCurrentEventSource();
+      currentSessionRef.current = null;
+      currentMessageRef.current = null;
+      currentAttachmentsRef.current = undefined;
+      currentSelectedSkillsRef.current = undefined;
+      currentAgentIdRef.current = null;
+      retryCountRef.current = 0;
+      stopRequestedRef.current = false;
+    }
+
+    updateSessionState(targetSessionId, () => ({
+      ...defaultSessionState,
+    }));
+  }, [closeCurrentEventSource, currentSessionId, updateSessionState]);
 
   return {
     isStreaming,
@@ -379,6 +618,8 @@ export function useStreamingResponse() {
     currentTool,
     error,
     startStreaming,
+    resumeStreaming,
     stopStreaming,
+    resetStreamingState,
   };
 }

@@ -11,7 +11,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 from aiohttp import web
 
@@ -129,6 +129,111 @@ class ChatAPIHandlers:
                 _log.warning("Could not send %s (%s): %s", event_name, log_context, exc)
                 return False
             raise
+
+    @staticmethod
+    def _new_stream_state() -> Dict[str, Any]:
+        return {
+            "task": None,
+            "agent": None,
+            "listeners": set(),
+            "lock": asyncio.Lock(),
+            "done": False,
+            "current_tool": None,
+            "tool_invocations": [],
+            "current_text_segment": "",
+            "saved_segment_chars": 0,
+        }
+
+    @staticmethod
+    def _sanitize_tool_invocations(invocations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        sanitized = []
+        for inv in invocations:
+            sanitized.append({
+                "id": inv.get("id"),
+                "tool": inv.get("tool"),
+                "args": inv.get("args", {}),
+                "result": inv.get("result"),
+                "status": inv.get("status", "pending"),
+                "duration": inv.get("duration"),
+            })
+        return sanitized
+
+    async def _add_stream_listener(self, stream_state: Dict[str, Any]) -> Tuple[asyncio.Queue, Dict[str, Any]]:
+        queue: asyncio.Queue = asyncio.Queue()
+        async with stream_state["lock"]:
+            stream_state["listeners"].add(queue)
+            current_segment = stream_state.get("current_text_segment", "") or ""
+            saved_segment_chars = int(stream_state.get("saved_segment_chars", 0) or 0)
+            snapshot = {
+                "streaming_content": current_segment[saved_segment_chars:],
+                "current_tool": stream_state.get("current_tool"),
+                "tool_invocations": self._sanitize_tool_invocations(
+                    stream_state.get("tool_invocations", [])
+                ),
+            }
+        return queue, snapshot
+
+    async def _remove_stream_listener(self, stream_state: Dict[str, Any], queue: asyncio.Queue) -> None:
+        async with stream_state["lock"]:
+            stream_state["listeners"].discard(queue)
+
+    async def _broadcast_stream_event(
+        self,
+        stream_state: Dict[str, Any],
+        event_name: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        async with stream_state["lock"]:
+            if event_name in {"done", "cancelled", "error"}:
+                stream_state["done"] = True
+            listeners = list(stream_state["listeners"])
+
+        for queue in listeners:
+            await queue.put((event_name, payload))
+
+    async def _stream_from_state(
+        self,
+        response: web.StreamResponse,
+        stream_state: Dict[str, Any],
+        *,
+        send_resume_state: bool,
+        log_context: str,
+    ) -> None:
+        queue, snapshot = await self._add_stream_listener(stream_state)
+        try:
+            # Send an immediate first SSE frame so browser/proxy layers do not
+            # treat a long model/tool warm-up as an idle connection and abort it.
+            ok = await self._safe_write_sse(
+                response,
+                "connected",
+                {"ok": True},
+                log_context=f"{log_context}: connected",
+            )
+            if not ok:
+                return
+
+            if send_resume_state:
+                ok = await self._safe_write_sse(
+                    response,
+                    "resume_state",
+                    snapshot,
+                    log_context=f"{log_context}: resume_state",
+                )
+                if not ok:
+                    return
+
+            while True:
+                event_name, payload = await queue.get()
+                ok = await self._safe_write_sse(
+                    response,
+                    event_name,
+                    payload,
+                    log_context=f"{log_context}: {event_name}",
+                )
+                if not ok or event_name in {"done", "cancelled", "error"}:
+                    break
+        finally:
+            await self._remove_stream_listener(stream_state, queue)
 
     @staticmethod
     def _extract_model_settings(config: Dict[str, Any]) -> tuple[str, Optional[str], Optional[str]]:
@@ -263,6 +368,17 @@ class ChatAPIHandlers:
                 if source:
                     all_sessions = [s for s in all_sessions if s.get("source") == source]
 
+                # Surface the authoritative in-memory stream state so the UI
+                # can resume long-running sessions after a refresh. DB-level
+                # ``is_active`` only reflects recent activity, not whether an
+                # SSE task is still alive right now.
+                for session in all_sessions:
+                    sid = session.get("id")
+                    has_active_stream = bool(sid and sid in self._active_streams)
+                    session["has_active_stream"] = has_active_stream
+                    if has_active_stream:
+                        session["is_active"] = True
+
                 # Apply pagination
                 sessions = all_sessions[offset:offset + limit]
                 total = len(all_sessions)
@@ -345,6 +461,7 @@ class ChatAPIHandlers:
 
         session_id = request.match_info["session_id"]
         message = request.query.get("message", "")
+        resume_requested = str(request.query.get("resume", "")).lower() in {"1", "true", "yes"}
 
         # Parse attachments from query parameter
         attachments = None
@@ -405,6 +522,35 @@ class ChatAPIHandlers:
                 if not sid:
                     error_event = f'event: error\ndata: {json.dumps({"error": "Session not found"})}\n\n'
                     await response.write(error_event.encode())
+                    return response
+
+                if resume_requested:
+                    stream_state = self._active_streams.get(sid)
+                    if not stream_state or stream_state.get("done"):
+                        await self._safe_write_sse(
+                            response,
+                            "error",
+                            {"error": "No active stream to resume"},
+                            log_context=f"resume request for session {sid}",
+                        )
+                        return response
+
+                    await self._stream_from_state(
+                        response,
+                        stream_state,
+                        send_resume_state=True,
+                        log_context=f"resume session {sid}",
+                    )
+                    return response
+
+                existing_stream = self._active_streams.get(sid)
+                if existing_stream and not existing_stream.get("done"):
+                    await self._safe_write_sse(
+                        response,
+                        "error",
+                        {"error": "Session already has an active stream"},
+                        log_context=f"duplicate stream start for session {sid}",
+                    )
                     return response
 
                 # Save user message with attachments
@@ -736,7 +882,6 @@ class ChatAPIHandlers:
                     # Track current text segment for message splitting
                     current_text_segment = []
                     segment_saved = False  # Track if current segment was saved
-                    client_disconnected = False
 
                     def on_delta(text: str):
                         """Callback for streaming deltas from agent."""
@@ -799,14 +944,12 @@ class ChatAPIHandlers:
                     from concurrent.futures import ThreadPoolExecutor
 
                     executor = ThreadPoolExecutor(max_workers=1)
+                    stream_state = self._new_stream_state()
+                    stream_state["tool_invocations"] = tool_invocations
 
                     async def stream_agent_response():
                         loop = asyncio.get_event_loop()
 
-                        # Create agent instance with explicit credentials.
-                        # ``profile_home`` is set only when the caller is
-                        # conversing AS an org sub-agent so its provisioned
-                        # SOUL.md / context wins over the master identity.
                         agent = AIAgent(
                             session_id=sid,
                             stream_delta_callback=on_delta,
@@ -825,8 +968,6 @@ class ChatAPIHandlers:
                         if sid in self._active_streams:
                             self._active_streams[sid]["agent"] = agent
 
-                        # Send skill_loaded event if skills are selected
-                        # Use selected_skills from query parameter to show which skills were loaded
                         if selected_skills:
                             skills_info = []
                             hermes_home = get_hermes_home()
@@ -834,12 +975,8 @@ class ChatAPIHandlers:
 
                             for skill_name in selected_skills:
                                 skill_path = skills_dir / skill_name
-                                # Check if skill exists and is enabled
-                                status = "loaded"
-                                if not skill_path.exists():
-                                    status = "unavailable"
+                                status = "loaded" if skill_path.exists() else "unavailable"
 
-                                # Try to read category from skill.yaml
                                 category = "other"
                                 yaml_path = skill_path / "skill.yaml"
                                 if yaml_path.exists():
@@ -858,12 +995,14 @@ class ChatAPIHandlers:
                                 })
 
                             if skills_info:
-                                skill_event = f'event: skill_loaded\ndata: {json.dumps({"skills": skills_info})}\n\n'
-                                await response.write(skill_event.encode())
-                                _log.info("Sent skill_loaded event: %s", skills_info)
+                                await self._broadcast_stream_event(
+                                    stream_state,
+                                    "skill_loaded",
+                                    {"skills": skills_info},
+                                )
+                                _log.info("Broadcast skill_loaded event: %s", skills_info)
 
-                        # Run agent in thread pool with formatted message
-                        result = await loop.run_in_executor(
+                        return await loop.run_in_executor(
                             executor,
                             lambda: agent.run_conversation(
                                 user_message=user_message_content,
@@ -871,39 +1010,16 @@ class ChatAPIHandlers:
                             )
                         )
 
-                        return result
+                    async def run_stream_pipeline():
+                        from hermes_state import SessionDB
+                        nonlocal segment_saved
 
-                    # Start streaming with real agent
-                    try:
-                        # Store active stream for cancellation
-                        self._active_streams[sid] = {"task": None, "agent": None}
-
-                        # Stream deltas as they arrive
-                        agent_task = asyncio.create_task(stream_agent_response())
-                        self._active_streams[sid]["task"] = agent_task
-                        _log.info("Started streaming task for session %s", sid)
-
-                        # Poll for deltas and send SSE events
+                        pipeline_db = SessionDB()
+                        conversation_task = asyncio.create_task(stream_agent_response())
                         last_sent = 0
                         last_tool_sent = 0
-                        last_saved = 0  # Track last saved content length
-                        assistant_msg_id = None  # Track assistant message ID for updates
-                        skill_use_msg_saved = False  # Track if skill_use message is saved
-                        tool_use_msg_id = None  # Track tool_use message ID for updates
-
-                        async def send_sse_event(event_name: str, payload: Dict[str, Any], *, log_context: str) -> bool:
-                            nonlocal client_disconnected
-                            if client_disconnected:
-                                return False
-                            ok = await self._safe_write_sse(
-                                response,
-                                event_name,
-                                payload,
-                                log_context=log_context,
-                            )
-                            if not ok:
-                                client_disconnected = True
-                            return ok
+                        assistant_msg_id = None
+                        skill_use_msg_saved = False
 
                         async def process_tool_events() -> None:
                             nonlocal segment_saved, assistant_msg_id
@@ -915,307 +1031,310 @@ class ChatAPIHandlers:
                                     if event_type == "start":
                                         _, tool_call_id, tool_name = event
 
-                                        # Save current text segment before tool starts
                                         if current_text_segment and not segment_saved:
                                             segment_text = "".join(current_text_segment)
-                                            db.append_message(
+                                            pipeline_db.append_message(
                                                 session_id=sid,
                                                 role="assistant",
                                                 content=segment_text
                                             )
                                             _log.info("[MESSAGE_SPLIT] Saved text segment (%d chars) before tool %s", len(segment_text), tool_name)
                                             current_text_segment.clear()
+                                            stream_state["current_text_segment"] = ""
+                                            stream_state["saved_segment_chars"] = 0
                                             segment_saved = True
-                                            assistant_msg_id = None  # Reset for next segment
+                                            assistant_msg_id = None
 
-                                        await send_sse_event(
+                                        pending_invocation = next(
+                                            (inv for inv in tool_invocations if inv.get("id") == tool_call_id),
+                                            None,
+                                        )
+                                        stream_state["current_tool"] = {
+                                            "name": tool_name,
+                                            "startTime": int(
+                                                1000 * (
+                                                    pending_invocation.get("start_time", time.time())
+                                                    if pending_invocation else time.time()
+                                                )
+                                            ),
+                                        }
+                                        await self._broadcast_stream_event(
+                                            stream_state,
                                             "tool_progress",
                                             {"tool": tool_name, "status": "started", "id": tool_call_id},
-                                            log_context=f"tool_progress start for {tool_name}",
                                         )
-                                        if not client_disconnected:
-                                            _log.info("[SSE] Sent tool_progress start: %s", tool_name)
+                                        _log.info("[SSE] Broadcast tool_progress start: %s", tool_name)
                                     elif event_type == "complete":
                                         _, tool_call_id, tool_name, duration = event
-                                        await send_sse_event(
+                                        stream_state["current_tool"] = None
+                                        await self._broadcast_stream_event(
+                                            stream_state,
                                             "tool_progress",
                                             {"tool": tool_name, "status": "completed", "id": tool_call_id, "duration": duration},
-                                            log_context=f"tool_progress complete for {tool_name}",
                                         )
-                                        if not client_disconnected:
-                                            _log.info("[SSE] Sent tool_progress complete: %s (%dms)", tool_name, duration)
+                                        _log.info("[SSE] Broadcast tool_progress complete: %s (%dms)", tool_name, duration)
                                 except asyncio.QueueEmpty:
                                     break
                                 except Exception as e:
                                     _log.warning("Failed to process tool event: %s", e)
 
-                        # Save skill_use message immediately if skills were selected
-                        if selected_skills and not skill_use_msg_saved:
-                            skills_info = []
-                            hermes_home = get_hermes_home()
-                            skills_dir = hermes_home / "skills"
-
-                            for skill_name in selected_skills:
-                                skill_path = skills_dir / skill_name
-                                status = "loaded" if skill_path.exists() else "unavailable"
-
-                                # Try to read category from skill.yaml
-                                category = "other"
-                                yaml_path = skill_path / "skill.yaml"
-                                if yaml_path.exists():
-                                    try:
-                                        import yaml
-                                        with open(yaml_path) as f:
-                                            skill_yaml = yaml.safe_load(f) or {}
-                                            category = skill_yaml.get("category", "other")
-                                    except Exception:
-                                        pass
-
-                                skills_info.append({
-                                    "name": skill_name,
-                                    "status": status,
-                                    "category": category,
-                                })
-
-                            if skills_info:
-                                db.append_message(
-                                    session_id=sid,
-                                    role="skill_use",
-                                    content=None,
-                                    metadata={"skills": skills_info}
-                                )
-                                skill_use_msg_saved = True
-                                _log.info("Saved skill_use message immediately: %s", skills_info)
-
-                        while not agent_task.done():
-                            try:
-                                # Process tool events from queue (non-blocking)
-                                await process_tool_events()
-
-                                if len(full_response) > last_sent:
-                                    # Send accumulated new content
-                                    new_content = "".join(full_response[last_sent:])
-                                    if await send_sse_event(
-                                        "content",
-                                        {"delta": new_content},
-                                        log_context=f"content delta for session {sid}",
-                                    ):
-                                        last_sent = len(full_response)
-
-                                    # Save/update current segment assistant message every 10 deltas to reduce DB writes
-                                    if len(current_text_segment) >= 10 and not segment_saved:
-                                        current_content = "".join(current_text_segment)
-                                        if assistant_msg_id is None:
-                                            # Create new assistant message for this segment
-                                            assistant_msg_id = db.append_message(
-                                                session_id=sid,
-                                                role="assistant",
-                                                content=current_content
-                                            )
-                                        else:
-                                            # Update existing assistant message
-                                            db.update_message_content(assistant_msg_id, current_content)
-
-                                # Send tool invocation updates and save to DB (each tool as separate message)
-                                if len(tool_invocations) > last_tool_sent:
-                                    new_invocations = tool_invocations[last_tool_sent:]
-
-                                    # Send SSE event with new invocations
-                                    await send_sse_event(
-                                        "tool_use",
-                                        {"invocations": new_invocations},
-                                        log_context=f"tool_use update for session {sid}",
-                                    )
-
-                                    # Save each new tool invocation as a separate message
-                                    for inv in new_invocations:
-                                        db.append_message(
-                                            session_id=sid,
-                                            role="tool_use",
-                                            content=None,
-                                            metadata={"tool_invocations": [inv]}
-                                        )
-                                        _log.info("[MESSAGE_SPLIT] Saved tool_use message: %s", inv["tool"])
-
-                                    last_tool_sent = len(tool_invocations)
-                                    tool_use_msg_id = None  # Reset since we're creating separate messages
-
-                                await asyncio.sleep(0.05)  # Check for new content every 50ms
-
-                            except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
-                                # Client disconnected, stop streaming but let agent finish
-                                _log.warning("Client disconnected during streaming for session %s", sid)
-                                client_disconnected = True
-                                break
-                            except Exception as e:
-                                # Unexpected error, log but continue
-                                _log.error("Error during streaming loop: %s", e)
-                                break
-
-                        # Drain any tool events queued right before agent completion.
-                        await process_tool_events()
-
-                        # Send any remaining content
-                        if len(full_response) > last_sent:
-                            new_content = "".join(full_response[last_sent:])
-                            if await send_sse_event(
-                                "content",
-                                {"delta": new_content},
-                                log_context=f"final content delta for session {sid}",
-                            ):
-                                last_sent = len(full_response)
-
-                        # Send any remaining tool invocations
-                        if len(tool_invocations) > last_tool_sent:
-                            new_invocations = tool_invocations[last_tool_sent:]
-                            await send_sse_event(
-                                "tool_use",
-                                {"invocations": new_invocations},
-                                log_context=f"final tool_use update for session {sid}",
-                            )
-
-                            # Save remaining tool invocations as separate messages
-                            for inv in new_invocations:
-                                db.append_message(
-                                    session_id=sid,
-                                    role="tool_use",
-                                    content=None,
-                                    metadata={"tool_invocations": [inv]}
-                                )
-                                _log.info("[MESSAGE_SPLIT] Saved final tool_use message: %s", inv["tool"])
-                            last_tool_sent = len(tool_invocations)
-
-                        # Update tool statuses in their individual messages
-                        # (tool status may have changed after initial save)
-                        if tool_invocations:
-                            cursor = db._conn.execute(
-                                "SELECT id, metadata FROM messages WHERE session_id = ? AND role = 'tool_use' ORDER BY timestamp",
-                                (sid,)
-                            )
-                            tool_messages = cursor.fetchall()
-
-                            # Match tool messages with updated tool_invocations by tool_call_id
-                            for tool_msg in tool_messages:
-                                msg_id = tool_msg["id"]
-                                metadata = json.loads(tool_msg["metadata"]) if tool_msg["metadata"] else {}
-                                msg_invocations = metadata.get("tool_invocations", [])
-
-                                if msg_invocations:
-                                    # Find matching invocation in tool_invocations by id
-                                    msg_tool_id = msg_invocations[0].get("id")
-                                    updated_inv = next((inv for inv in tool_invocations if inv["id"] == msg_tool_id), None)
-
-                                    if updated_inv:
-                                        # Update with latest status
-                                        db.update_message_metadata(msg_id, {"tool_invocations": [updated_inv]})
-                                        _log.debug("[MESSAGE_SPLIT] Updated tool_use message status: %s -> %s",
-                                                  updated_inv["tool"], updated_inv["status"])
-
-                        # Get final result
-                        result = await agent_task
-
-                        # Save or update final text message
-                        if not full_response:
-                            result_text = ""
-                            if isinstance(result, dict):
-                                result_text = result.get("final_response") or ""
-                                if not result_text and result.get("error"):
-                                    result_text = f"API call failed: {result.get('error')}"
-
-                            if result_text.strip():
-                                full_response.append(result_text)
-                                await send_sse_event(
-                                    "content",
-                                    {"delta": result_text},
-                                    log_context=f"final fallback content for session {sid}",
-                                )
-
-                        final_text = "".join(full_response)
-                        if final_text.strip():
-                            if assistant_msg_id is not None:
-                                # Already have a message from streaming saves, update it with final content
-                                db.update_message_content(assistant_msg_id, final_text)
-                                _log.info("[MESSAGE_SPLIT] Updated final assistant message (%d chars)", len(final_text))
-                            elif current_text_segment and not segment_saved:
-                                # Text segment was never saved (no tools called), save it now
-                                db.append_message(
-                                    session_id=sid,
-                                    role="assistant",
-                                    content=final_text
-                                )
-                                _log.info("[MESSAGE_SPLIT] Saved final text segment (%d chars)", len(final_text))
-                            # else: text was already saved when tools were called
-
-                        # Generate session title if this is the first assistant response
-                        # Since messages are now split, check if title was already generated
                         try:
-                            cursor = db._conn.execute(
-                                "SELECT title FROM sessions WHERE id = ?",
-                                (sid,)
-                            )
-                            row = cursor.fetchone()
-                            if row:
-                                current_title = row["title"]
+                            if selected_skills and not skill_use_msg_saved:
+                                skills_info = []
+                                hermes_home = get_hermes_home()
+                                skills_dir = hermes_home / "skills"
 
-                                # Check if title is still default (not yet generated)
-                                # Default title format: "新对话 MM/DD HH:MM" or empty
-                                is_default_title = (
-                                    not current_title or
-                                    current_title.strip() == "" or
-                                    current_title.startswith("新对话 ")
+                                for skill_name in selected_skills:
+                                    skill_path = skills_dir / skill_name
+                                    status = "loaded" if skill_path.exists() else "unavailable"
+
+                                    category = "other"
+                                    yaml_path = skill_path / "skill.yaml"
+                                    if yaml_path.exists():
+                                        try:
+                                            import yaml
+                                            with open(yaml_path) as f:
+                                                skill_yaml = yaml.safe_load(f) or {}
+                                                category = skill_yaml.get("category", "other")
+                                        except Exception:
+                                            pass
+
+                                    skills_info.append({
+                                        "name": skill_name,
+                                        "status": status,
+                                        "category": category,
+                                    })
+
+                                if skills_info:
+                                    pipeline_db.append_message(
+                                        session_id=sid,
+                                        role="skill_use",
+                                        content=None,
+                                        metadata={"skills": skills_info}
+                                    )
+                                    skill_use_msg_saved = True
+                                    _log.info("Saved skill_use message immediately: %s", skills_info)
+
+                            while not conversation_task.done():
+                                try:
+                                    await process_tool_events()
+
+                                    if len(full_response) > last_sent:
+                                        new_content = "".join(full_response[last_sent:])
+                                        last_sent = len(full_response)
+                                        stream_state["current_text_segment"] = "".join(current_text_segment)
+                                        await self._broadcast_stream_event(
+                                            stream_state,
+                                            "content",
+                                            {"delta": new_content},
+                                        )
+
+                                        if current_text_segment and not segment_saved:
+                                            current_content = "".join(current_text_segment)
+                                            if assistant_msg_id is None:
+                                                assistant_msg_id = pipeline_db.append_message(
+                                                    session_id=sid,
+                                                    role="assistant",
+                                                    content=current_content
+                                                )
+                                            else:
+                                                pipeline_db.update_message_content(assistant_msg_id, current_content)
+                                            stream_state["saved_segment_chars"] = len(current_content)
+
+                                    if len(tool_invocations) > last_tool_sent:
+                                        new_invocations = tool_invocations[last_tool_sent:]
+                                        await self._broadcast_stream_event(
+                                            stream_state,
+                                            "tool_use",
+                                            {"invocations": self._sanitize_tool_invocations(new_invocations)},
+                                        )
+
+                                        for inv in new_invocations:
+                                            pipeline_db.append_message(
+                                                session_id=sid,
+                                                role="tool_use",
+                                                content=None,
+                                                metadata={"tool_invocations": [inv]}
+                                            )
+                                            _log.info("[MESSAGE_SPLIT] Saved tool_use message: %s", inv["tool"])
+
+                                        last_tool_sent = len(tool_invocations)
+
+                                    await asyncio.sleep(0.05)
+
+                                except Exception as e:
+                                    _log.error("Error during streaming loop: %s", e)
+                                    break
+
+                            await process_tool_events()
+
+                            if len(full_response) > last_sent:
+                                new_content = "".join(full_response[last_sent:])
+                                last_sent = len(full_response)
+                                stream_state["current_text_segment"] = "".join(current_text_segment)
+                                await self._broadcast_stream_event(
+                                    stream_state,
+                                    "content",
+                                    {"delta": new_content},
                                 )
 
-                                if is_default_title:
-                                    # Use first 30 chars of user message as title
-                                    title = message[:30] + ("..." if len(message) > 30 else "")
-                                    db._conn.execute(
-                                        "UPDATE sessions SET title = ? WHERE id = ?",
-                                        (title, sid)
+                            if len(tool_invocations) > last_tool_sent:
+                                new_invocations = tool_invocations[last_tool_sent:]
+                                await self._broadcast_stream_event(
+                                    stream_state,
+                                    "tool_use",
+                                    {"invocations": self._sanitize_tool_invocations(new_invocations)},
+                                )
+
+                                for inv in new_invocations:
+                                    pipeline_db.append_message(
+                                        session_id=sid,
+                                        role="tool_use",
+                                        content=None,
+                                        metadata={"tool_invocations": [inv]}
                                     )
-                                    db._conn.commit()
-                                    _log.info("Generated title for session %s: %s", sid, title)
-                        except Exception as title_error:
-                            _log.warning("Failed to generate session title: %s", title_error)
+                                    _log.info("[MESSAGE_SPLIT] Saved final tool_use message: %s", inv["tool"])
+                                last_tool_sent = len(tool_invocations)
 
-                        # skill_use and tool_use messages are now saved during streaming
-                        # No need to save again here
+                            if tool_invocations:
+                                cursor = pipeline_db._conn.execute(
+                                    "SELECT id, metadata FROM messages WHERE session_id = ? AND role = 'tool_use' ORDER BY timestamp",
+                                    (sid,)
+                                )
+                                tool_messages = cursor.fetchall()
 
-                        # Send done event (may fail if client disconnected, but data is already saved)
-                        if await send_sse_event(
-                            "done",
-                            {"finish_reason": "stop"},
-                            log_context=f"done event for session {sid}",
-                        ):
-                            _log.info("Sent done event for session %s", sid)
-                        elif client_disconnected:
-                            _log.warning("Could not send done event (client disconnected), but data saved for session %s", sid)
+                                for tool_msg in tool_messages:
+                                    msg_id = tool_msg["id"]
+                                    metadata = json.loads(tool_msg["metadata"]) if tool_msg["metadata"] else {}
+                                    msg_invocations = metadata.get("tool_invocations", [])
 
-                    except asyncio.CancelledError:
-                        _log.info("Agent task cancelled for session %s", sid)
-                        # Send cancelled event
-                        await self._safe_write_sse(
-                            response,
-                            "cancelled",
-                            {"message": "Task stopped by user"},
-                            log_context=f"cancelled event for session {sid}",
-                        )
-                        raise  # Re-raise to properly clean up
+                                    if msg_invocations:
+                                        msg_tool_id = msg_invocations[0].get("id")
+                                        updated_inv = next((inv for inv in tool_invocations if inv["id"] == msg_tool_id), None)
 
-                    except Exception as agent_error:
-                        _log.exception("Agent execution failed: %s", agent_error)
-                        # Send error event
-                        await self._safe_write_sse(
-                            response,
-                            "error",
-                            {"error": str(agent_error)},
-                            log_context=f"error event for session {sid}",
-                        )
+                                        if updated_inv:
+                                            pipeline_db.update_message_metadata(msg_id, {"tool_invocations": [updated_inv]})
+                                            _log.debug("[MESSAGE_SPLIT] Updated tool_use message status: %s -> %s",
+                                                      updated_inv["tool"], updated_inv["status"])
 
-                    finally:
-                        # Clean up active stream
-                        if sid in self._active_streams:
-                            del self._active_streams[sid]
-                            _log.info("Cleaned up streaming task for session %s", sid)
+                            result = await conversation_task
+
+                            if not full_response:
+                                result_text = ""
+                                if isinstance(result, dict):
+                                    result_text = result.get("final_response") or ""
+                                    if not result_text and result.get("error"):
+                                        result_text = f"API call failed: {result.get('error')}"
+
+                                if result_text.strip():
+                                    full_response.append(result_text)
+                                    current_text_segment.append(result_text)
+                                    segment_saved = False
+                                    stream_state["current_text_segment"] = result_text
+                                    await self._broadcast_stream_event(
+                                        stream_state,
+                                        "content",
+                                        {"delta": result_text},
+                                    )
+
+                            final_text = "".join(full_response)
+                            if final_text.strip():
+                                if assistant_msg_id is not None:
+                                    pipeline_db.update_message_content(assistant_msg_id, final_text)
+                                    _log.info("[MESSAGE_SPLIT] Updated final assistant message (%d chars)", len(final_text))
+                                elif current_text_segment and not segment_saved:
+                                    pipeline_db.append_message(
+                                        session_id=sid,
+                                        role="assistant",
+                                        content=final_text
+                                    )
+                                    _log.info("[MESSAGE_SPLIT] Saved final text segment (%d chars)", len(final_text))
+
+                            try:
+                                cursor = pipeline_db._conn.execute(
+                                    "SELECT title FROM sessions WHERE id = ?",
+                                    (sid,)
+                                )
+                                row = cursor.fetchone()
+                                if row:
+                                    current_title = row["title"]
+                                    is_default_title = (
+                                        not current_title or
+                                        current_title.strip() == "" or
+                                        current_title.startswith("新对话 ")
+                                    )
+
+                                    if is_default_title:
+                                        title = message[:30] + ("..." if len(message) > 30 else "")
+                                        pipeline_db._conn.execute(
+                                            "UPDATE sessions SET title = ? WHERE id = ?",
+                                            (title, sid)
+                                        )
+                                        pipeline_db._conn.commit()
+                                        _log.info("Generated title for session %s: %s", sid, title)
+                            except Exception as title_error:
+                                _log.warning("Failed to generate session title: %s", title_error)
+
+                            stream_state["current_tool"] = None
+                            stream_state["current_text_segment"] = ""
+                            stream_state["saved_segment_chars"] = 0
+                            await self._broadcast_stream_event(
+                                stream_state,
+                                "done",
+                                {"finish_reason": "stop"},
+                            )
+                            _log.info("Broadcast done event for session %s", sid)
+
+                        except asyncio.CancelledError:
+                            _log.info("Agent task cancelled for session %s", sid)
+                            if not conversation_task.done():
+                                conversation_task.cancel()
+                            partial_text = "".join(full_response)
+                            if partial_text.strip():
+                                if assistant_msg_id is not None:
+                                    pipeline_db.update_message_content(assistant_msg_id, partial_text)
+                                    _log.info("[MESSAGE_SPLIT] Saved partial assistant message on cancel (%d chars)", len(partial_text))
+                                elif current_text_segment and not segment_saved:
+                                    pipeline_db.append_message(
+                                        session_id=sid,
+                                        role="assistant",
+                                        content=partial_text
+                                    )
+                                    _log.info("[MESSAGE_SPLIT] Saved partial text segment on cancel (%d chars)", len(partial_text))
+                            stream_state["current_tool"] = None
+                            stream_state["current_text_segment"] = ""
+                            stream_state["saved_segment_chars"] = 0
+                            await self._broadcast_stream_event(
+                                stream_state,
+                                "cancelled",
+                                {"message": "Task stopped by user"},
+                            )
+                            raise
+                        except Exception as agent_error:
+                            _log.exception("Agent execution failed: %s", agent_error)
+                            stream_state["current_tool"] = None
+                            await self._broadcast_stream_event(
+                                stream_state,
+                                "error",
+                                {"error": str(agent_error)},
+                            )
+                        finally:
+                            pipeline_db.close()
+                            executor.shutdown(wait=False)
+                            if sid in self._active_streams and self._active_streams[sid] is stream_state:
+                                del self._active_streams[sid]
+                                _log.info("Cleaned up streaming task for session %s", sid)
+
+                    self._active_streams[sid] = stream_state
+                    pipeline_task = asyncio.create_task(run_stream_pipeline())
+                    stream_state["task"] = pipeline_task
+                    _log.info("Started streaming pipeline for session %s", sid)
+                    await self._stream_from_state(
+                        response,
+                        stream_state,
+                        send_resume_state=False,
+                        log_context=f"stream session {sid}",
+                    )
 
             finally:
                 db.close()

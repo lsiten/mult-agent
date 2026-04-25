@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { Sidebar } from "./ChatPage/Sidebar";
 import { ChatArea } from "./ChatPage/ChatArea";
@@ -14,6 +14,7 @@ export function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { showToast } = useToast();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
+  const attemptedResumeSessionsRef = useRef<Set<string>>(new Set());
   const { selectedSkills, clearSelection: clearSkills } = useSkillSelectionStore();
 
   const location = useLocation();
@@ -51,8 +52,17 @@ export function ChatPage() {
     textSegments,
     currentTool,
     startStreaming,
+    resumeStreaming,
     stopStreaming,
-  } = useStreamingResponse();
+    resetStreamingState,
+  } = useStreamingResponse(currentSessionId);
+  const resumeStreamingRef = useRef(resumeStreaming);
+  const resetStreamingStateRef = useRef(resetStreamingState);
+
+  useEffect(() => {
+    resumeStreamingRef.current = resumeStreaming;
+    resetStreamingStateRef.current = resetStreamingState;
+  }, [resumeStreaming, resetStreamingState]);
 
   const {
     attachments,
@@ -64,6 +74,12 @@ export function ChatPage() {
     isUploading,
   } = useAttachments();
 
+  useEffect(() => {
+    if (currentSessionId) {
+      attemptedResumeSessionsRef.current.delete(currentSessionId);
+    }
+  }, [currentSessionId]);
+
   // Compute grouped sessions
   const groupedSessions = groupSessions(sessions);
 
@@ -71,7 +87,6 @@ export function ChatPage() {
   const currentSessionTitle = useMemo(() => {
     if (!currentSessionId) return null;
     const session = sessions.find(s => s.id === currentSessionId);
-    console.log("[ChatPage] Computing title for session:", currentSessionId, "found:", session?.title);
     // Use title, fallback to preview, then to "新对话"
     return session?.title || session?.preview || "新对话";
   }, [sessions, currentSessionId]);
@@ -88,12 +103,15 @@ export function ChatPage() {
   }, [createSession, showToast]);
 
   const handleSessionSelect = useCallback(async (sessionId: string) => {
+    if (sessionId === currentSessionId) {
+      return;
+    }
     // Refresh sessions list first to get latest titles
-    await loadSessions();
+    await loadSessions(activeAgentId || undefined);
     // Then switch to the selected session
     switchSession(sessionId);
     // Messages will be loaded by useEffect when currentSessionId changes
-  }, [switchSession, loadSessions]);
+  }, [currentSessionId, switchSession, loadSessions, activeAgentId]);
 
   const handleSessionDelete = useCallback(async (sessionId: string) => {
     try {
@@ -121,6 +139,22 @@ export function ChatPage() {
     }
   }, [currentSessionId, handleSessionDelete]);
 
+  const refreshCurrentSessionState = useCallback(async (sessionId: string) => {
+    const [messageResponse, sessionResponse] = await Promise.all([
+      api.getSessionMessages(sessionId),
+      loadSessions(),
+    ]);
+
+    const latestSession = sessionResponse.sessions.find(
+      session => session.id === sessionId
+    );
+
+    return {
+      messages: messageResponse.messages || [],
+      isActive: Boolean(latestSession?.has_active_stream || latestSession?.is_active),
+    };
+  }, [loadSessions]);
+
   const handleSendMessage = async (content: string) => {
     console.log("[ChatPage] handleSendMessage called with:", content);
     let sid = currentSessionId;
@@ -143,6 +177,8 @@ export function ChatPage() {
         return;
       }
     }
+
+    attemptedResumeSessionsRef.current.delete(sid);
 
     // Upload attachments first if any and get the uploaded data
     let attachmentData: Array<{id: string, name: string, type: "file" | "image", size: number, url: string}> | undefined;
@@ -216,6 +252,16 @@ export function ChatPage() {
     } catch (error) {
       console.error("[ChatPage] Streaming error:", error);
 
+      if (error instanceof Error && error.message.includes("Session already has an active stream")) {
+        try {
+          attemptedResumeSessionsRef.current.add(sid);
+          await resumeStreamingRef.current(sid, activeAgentId);
+          return;
+        } catch (resumeError) {
+          console.error("[ChatPage] Failed to resume existing active stream:", resumeError);
+        }
+      }
+
       // Check if error is due to invalid skills
       if (error instanceof Error && error.message.includes("Unknown skills")) {
         showToast("所选技能不可用，请重新选择", "error");
@@ -231,20 +277,42 @@ export function ChatPage() {
     files.forEach(file => addAttachment(file));
   }, [addAttachment]);
 
-  // Load messages when currentSessionId changes
+  // Load messages when the selected session changes.
+  // Do not depend on `isStreaming`, otherwise a newly-sent optimistic user
+  // message gets overwritten by stale backend data right after send.
   useEffect(() => {
+    let cancelled = false;
+
     if (currentSessionId) {
-      // Load messages for the selected session
-      api.getSessionMessages(currentSessionId)
-        .then(data => setMessages(data.messages || []))
+      void refreshCurrentSessionState(currentSessionId)
+        .then(({ messages: nextMessages, isActive }) => {
+          if (cancelled) return;
+
+          setMessages(nextMessages);
+
+          if (isActive && !attemptedResumeSessionsRef.current.has(currentSessionId)) {
+            attemptedResumeSessionsRef.current.add(currentSessionId);
+            void resumeStreamingRef.current(currentSessionId, activeAgentId).catch(error => {
+              console.error("[ChatPage] Failed to resume active session:", error);
+            });
+          } else if (!isActive) {
+            attemptedResumeSessionsRef.current.delete(currentSessionId);
+          }
+        })
         .catch(error => {
+          if (cancelled) return;
           console.error("Failed to load messages:", error);
           setMessages([]);
         });
     } else {
       setMessages([]);
     }
-  }, [currentSessionId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAgentId, currentSessionId, refreshCurrentSessionState]);
+  const effectiveIsStreaming = isStreaming;
 
   // Clear in-memory chat state whenever the active agent identity changes
   // so that stale transcripts from the previous master/sub-agent scope are
@@ -302,7 +370,7 @@ export function ChatPage() {
         sessionTitle={currentSessionTitle}
         messages={messages}
         streamingContent={streamingContent}
-        isStreaming={isStreaming}
+        isStreaming={effectiveIsStreaming}
         toolUseMessages={toolUseMessages}
         skillUseMessages={skillUseMessages}
         authRequestMessages={authRequestMessages}

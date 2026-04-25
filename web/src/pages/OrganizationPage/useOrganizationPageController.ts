@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
-import type { OrganizationTreeResponse } from "@/lib/api";
+import type { OrganizationTreeResponse, OrgCompany } from "@/lib/api";
 import { deleteOrgNode, persistOrgNode, type DialogState } from "./orgActions";
 import type { OrgDialogItem, OrgDialogParent, OrgNodeType, OrgNodeValues } from "./types";
 import { formatReason, formatTemplate, getErrorMessage } from "./utils";
@@ -12,25 +12,26 @@ const EMPTY_TREE: OrganizationTreeResponse = { companies: [] };
 export function useOrganizationPageController() {
   const { t } = useI18n();
   const { toast, showToast } = useToast();
-  const [tree, setTree] = useState<OrganizationTreeResponse>(EMPTY_TREE);
-  const [companyIndex, setCompanyIndex] = useState(0);
+  const [companies, setCompanies] = useState<OrgCompany[]>([]);
+  const [companyId, setCompanyId] = useState<number | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<OrgCompany | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingCompany, setLoadingCompany] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
-  const loadTree = useCallback(
-    async (preferredCompanyId?: number) => {
+  const loadCompaniesList = useCallback(
+    async () => {
       try {
         setLoading(true);
+        // Get list of all companies only (for the dropdown selector)
         const data = await api.getOrgTree();
-        setTree(data);
-        setCompanyIndex((current) => {
-          if (preferredCompanyId) {
-            const preferredIndex = data.companies.findIndex((company) => company.id === preferredCompanyId);
-            return preferredIndex >= 0 ? preferredIndex : 0;
-          }
-          return data.companies[current] ? current : 0;
-        });
+        setCompanies(data.companies);
+        // Auto-select the first company or the last created
+        if (data.companies.length > 0) {
+          const lastCompany = data.companies[data.companies.length - 1];
+          setCompanyId(lastCompany.id);
+        }
       } catch {
         showToast(t.organization.loadFailed, "error");
       } finally {
@@ -40,15 +41,40 @@ export function useOrganizationPageController() {
     [showToast, t.organization.loadFailed],
   );
 
+  const loadSelectedCompany = useCallback(
+    async (id: number) => {
+      try {
+        setLoadingCompany(true);
+        // Load ONLY the selected company's full tree (data isolation)
+        // Only returns data belonging to this company, no other companies exposed
+        const data = await api.getOrgCompanyTree(id);
+        setSelectedCompany(data.company);
+      } catch {
+        showToast(t.organization.loadFailed, "error");
+        setSelectedCompany(null);
+      } finally {
+        setLoadingCompany(false);
+      }
+    },
+    [showToast, t.organization.loadFailed],
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadTree();
+      void loadCompaniesList();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadTree]);
+  }, [loadCompaniesList]);
 
-  const selectedCompany = tree.companies[companyIndex] ?? tree.companies[0] ?? null;
-  const multipleCompanies = tree.companies.length > 1;
+  useEffect(() => {
+    if (companyId !== null) {
+      void loadSelectedCompany(companyId);
+    } else {
+      setSelectedCompany(null);
+    }
+  }, [companyId, loadSelectedCompany]);
+
+  const multipleCompanies = companies.length > 1;
 
   const companyContext = useMemo(() => {
     return selectedCompany ? { company: selectedCompany } : {};
@@ -73,15 +99,21 @@ export function useOrganizationPageController() {
   };
 
   const moveCompany = (direction: -1 | 1) => {
-    setCompanyIndex((current) => {
-      const total = tree.companies.length;
-      if (total <= 1) return current;
-      return (current + direction + total) % total;
+    setCompanyId((currentId) => {
+      const currentIndex = companies.findIndex(c => c.id === currentId);
+      const total = companies.length;
+      if (total <= 1) return currentId;
+      const newIndex = (currentIndex + direction + total) % total;
+      return companies[newIndex].id;
     });
   };
 
   const refreshSelectedCompany = () => {
-    void loadTree(selectedCompany?.id);
+    if (companyId) {
+      void loadSelectedCompany(companyId);
+    } else {
+      void loadCompaniesList();
+    }
   };
 
   const saveDialog = async (values: OrgNodeValues) => {
@@ -91,7 +123,11 @@ export function useOrganizationPageController() {
       const preferredCompanyId = await persistOrgNode(dialog, values, selectedCompany);
       closeDialog();
       showToast(t.organization.saved, "success");
-      await loadTree(preferredCompanyId);
+      // After saving, reload company list and refresh selected company
+      await loadCompaniesList();
+      if (preferredCompanyId) {
+        setCompanyId(preferredCompanyId);
+      }
     } catch (error) {
       showToast(formatReason(t.organization.saveFailedWithReason, getErrorMessage(error)), "error");
     } finally {
@@ -121,7 +157,11 @@ export function useOrganizationPageController() {
       setSaving(true);
       await deleteOrgNode(type, item.id);
       showToast(t.organization.deleted, "success");
-      await loadTree(type === "company" ? undefined : selectedCompany?.id);
+      // After deleting, reload company list
+      await loadCompaniesList();
+      if (type === "company" && selectedCompany) {
+        // If we deleted the selected company, the list will update and companyId will auto-select
+      }
     } catch (error) {
       showToast(formatReason(t.organization.deleteFailedWithReason, getErrorMessage(error)), "error");
     } finally {
@@ -130,15 +170,17 @@ export function useOrganizationPageController() {
   };
 
   return {
+    companies,
+    companyId,
     deleteNode,
     dialog,
     loading,
+    loadingCompany,
     multipleCompanies,
     saving,
     selectedCompany,
     t,
     toast,
-    tree,
     handleDialogOpenChange,
     moveCompany,
     openCreate,

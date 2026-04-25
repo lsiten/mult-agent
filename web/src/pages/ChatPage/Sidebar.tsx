@@ -77,6 +77,17 @@ export function Sidebar({
       const target = e.target as HTMLElement;
       const isInInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
 
+      // Never hijack Enter/Arrow keys from the chat composer or other inputs.
+      if (isInInput) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setSearchQuery("");
+          searchInputRef.current?.blur();
+          setFocusedIndex(-1);
+        }
+        return;
+      }
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIndex(prev => {
@@ -95,12 +106,7 @@ export function Sidebar({
         if (session) {
           onSessionSelect(session.id);
         }
-      } else if (e.key === "Escape" && isInInput) {
-        e.preventDefault();
-        setSearchQuery("");
-        searchInputRef.current?.blur();
-        setFocusedIndex(-1);
-      } else if (e.key === "?" && !isInInput) {
+      } else if (e.key === "?") {
         e.preventDefault();
         setShowShortcutsHelp(true);
       }
