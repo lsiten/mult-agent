@@ -1,4 +1,5 @@
 import { initPageController } from '../agent/RemotePageController.content'
+import { initSkillBridge, handleSkillControlMessage } from '../agent/SkillController.content'
 
 const DEBUG_PREFIX = '[Content]'
 
@@ -9,6 +10,14 @@ export default defineContentScript({
 	main() {
 		console.debug(`${DEBUG_PREFIX} Loaded on ${window.location.href}`)
 		initPageController()
+		initSkillBridge()
+
+		chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+			if (message.type === 'SKILL_CONTROL') {
+				handleSkillControlMessage(message, sendResponse)
+				return true
+			}
+		})
 
 		chrome.storage.local.get('PageAgentExtUserAuthToken').then((result) => {
 			const extToken = result.PageAgentExtUserAuthToken

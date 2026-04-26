@@ -1,4 +1,5 @@
 import { handlePageControlMessage } from '../agent/RemotePageController.background'
+import { handleSkillControlMessage } from '../agent/SkillController.background'
 import { handleTabControlMessage, setupTabEventsPort } from '../agent/TabsController.background'
 
 export default defineBackground(() => {
@@ -18,6 +19,8 @@ export default defineBackground(() => {
 			return handleTabControlMessage(message, sender, sendResponse)
 		} else if (message.type === 'PAGE_CONTROL') {
 			return handlePageControlMessage(message, sender, sendResponse)
+		} else if (message.type === 'SKILL_CONTROL') {
+			return handleSkillControlMessage(message, sender, sendResponse)
 		} else {
 			sendResponse({ error: 'Unknown message type' })
 			return
