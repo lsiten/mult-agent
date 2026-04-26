@@ -1,0 +1,79 @@
+{
+  "name": "page-agent",
+  "version": "1.0.0",
+  "description": "Control browser pages, click elements, fill forms, and automate web interactions through the Page Agent Chrome extension",
+  "author": "Page Agent Team",
+  "tags": ["browser", "automation", "web", "scrape", "test"],
+  "topics": ["browser-automation", "web-interaction", "form-filling", "web-scraping"],
+  "examples": [
+    "Navigate to github.com and login with username and password",
+    "Fill out a contact form on the current page",
+    "Click the submit button on a web form",
+    "Scroll down on a webpage to load more content",
+    "Get information about the current page"
+  ],
+  "tools": {
+    "page-agent": {
+      "description": "Main tool for browser automation through Page Agent extension",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "navigate",
+              "click",
+              "fill",
+              "scroll",
+              "get_info",
+              "submit",
+              "select",
+              "hover",
+              "type",
+              "press",
+              "screenshot"
+            ],
+            "description": "The action to perform"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL to navigate to (for navigate action)"
+          },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector of the element to interact with"
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to fill or type"
+          },
+          "value": {
+            "type": "string",
+            "description": "Value to select in a dropdown"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["up", "down"],
+            "description": "Scroll direction"
+          },
+          "key": {
+            "type": "string",
+            "description": "Keyboard key to press (e.g., Enter, Escape, Tab)"
+          },
+          "delay": {
+            "type": "number",
+            "description": "Delay in milliseconds between keystrokes (for type action)"
+          }
+        },
+        "required": ["action"]
+      }
+    }
+  },
+  "requirements": {
+    "chrome_extension": {
+      "id": "page-agent-ext",
+      "name": "Page Agent (MCP)",
+      "permissions": ["activeTab", "scripting", "storage"]
+    }
+  }
+}
