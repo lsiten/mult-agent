@@ -2,12 +2,12 @@
   "name": "page-agent-skill",
   "version": "1.0.0",
   "description": "Claude Skill for browser automation through Page Agent Chrome extension",
-  "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/types.d.ts",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests yet\""
+    "test": "node test.js"
   },
   "keywords": [
     "claude",
