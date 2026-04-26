@@ -13,6 +13,9 @@ declare global {
       type: (selector: string, text: string, delay?: number) => Promise<SkillControlResponse>
       press: (key: string) => Promise<SkillControlResponse>
       screenshot: () => Promise<SkillControlResponse>
+      find: (selector: string) => Promise<SkillControlResponse>
+      exists: (selector: string) => Promise<SkillControlResponse>
+      evaluate: (code: string) => Promise<SkillControlResponse>
     }
   }
 }
@@ -80,6 +83,24 @@ export function handleSkillControlMessage(
 
     case 'screenshot':
       handleScreenshot()
+        .then(sendResponse)
+        .catch((err) => sendResponse({ success: false, output: String(err) }))
+      break
+
+    case 'find':
+      handleFind(params.selector as string)
+        .then(sendResponse)
+        .catch((err) => sendResponse({ success: false, output: String(err) }))
+      break
+
+    case 'exists':
+      handleExists(params.selector as string)
+        .then(sendResponse)
+        .catch((err) => sendResponse({ success: false, output: String(err) }))
+      break
+
+    case 'evaluate':
+      handleEvaluate(params.code as string)
         .then(sendResponse)
         .catch((err) => sendResponse({ success: false, output: String(err) }))
       break
@@ -211,6 +232,47 @@ async function handleScreenshot(): Promise<SkillControlResponse> {
   }
 }
 
+async function handleFind(selector: string): Promise<SkillControlResponse> {
+  const elements = document.querySelectorAll(selector)
+  const results = Array.from(elements).slice(0, 10).map((el, i) => ({
+    index: i,
+    tag: el.tagName,
+    text: el.textContent?.slice(0, 50),
+    visible: el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0,
+  }))
+  return {
+    success: true,
+    output: `Found ${elements.length} elements matching "${selector}"`,
+    data: { count: elements.length, elements: results },
+  }
+}
+
+async function handleExists(selector: string): Promise<SkillControlResponse> {
+  const element = document.querySelector(selector)
+  const exists = !!element
+  return {
+    success: true,
+    output: exists ? `Element exists: ${selector}` : `Element not found: ${selector}`,
+    data: exists,
+  }
+}
+
+async function handleEvaluate(code: string): Promise<SkillControlResponse> {
+  try {
+    const result = eval(code)
+    return {
+      success: true,
+      output: `Evaluated successfully`,
+      data: result,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      output: `Evaluation error: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
 export function initSkillBridge() {
   window.__pageAgentSkills = {
     click: handleClick,
@@ -223,5 +285,8 @@ export function initSkillBridge() {
     type: handleType,
     press: handlePress,
     screenshot: handleScreenshot,
+    find: handleFind,
+    exists: handleExists,
+    evaluate: handleEvaluate,
   }
 }
