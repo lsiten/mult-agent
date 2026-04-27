@@ -1,7 +1,0 @@
-interface:
-  display_name: "招聘文件转 JSON"
-  short_description: "从招聘截图、PDF 或文档中抽取岗位信息并输出 JSON"
-  default_prompt: "Load job-posting-image-json with skill_view. Extract company, role, and hiring requirements from a recruitment screenshot, PDF, or JD file into JSON, covering all relevant PDF pages by default."
-
-policy:
-  allow_implicit_invocation: true

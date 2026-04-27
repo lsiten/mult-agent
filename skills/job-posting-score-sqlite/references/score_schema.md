@@ -58,7 +58,11 @@
 - 当 `records[*].status = 已发布` 时，应生成正式权重 JSON
 - 当状态不是 `已发布` 时，如果用户仍要求生成，可生成预览版权重 JSON
 
-## Suggested File Naming
+## Suggested File And Database Naming
 
 - `job.json` -> `job.score.json`
 - `solution_architect.json` -> `solution_architect.score.json`
+- 默认 SQLite 数据库：`job_postings.sqlite`
+- 岗位表：`job_postings`
+- 权重表：`job_posting_scores`
+- SQLite 写入规则见 [../../job-posting-image-sqlite/references/sqlite_storage.md](../../job-posting-image-sqlite/references/sqlite_storage.md)

@@ -1,13 +1,13 @@
 ---
-name: job-posting-image-json
-description: Use when the user provides one or more job-posting files and wants structured JSON output or storage. This skill supports screenshots, photos, PDFs, DOCX, TXT, and recruitment posters from Boss直聘、智联招聘、猎聘、拉勾、前程无忧或企业招聘文档, especially for extracting company, job title, salary, city, experience, education, skills, benefits, responsibilities, and explicit hiring requirements.
+name: job-posting-image-sqlite
+description: Use when the user provides one or more job-posting files and wants structured JSON output, JSON export, or SQLite storage. This skill supports screenshots, photos, PDFs, DOCX, TXT, and recruitment posters from Boss直聘、智联招聘、猎聘、拉勾、前程无忧或企业招聘文档, especially for extracting company, job title, salary, city, experience, education, skills, benefits, responsibilities, explicit hiring requirements, and writing extracted job records into a SQLite job_postings table for later scoring.
 ---
 
 # Job Posting File JSON
 
 ## Overview
 
-这个 skill 用于把招聘截图、招聘海报、岗位照片、PDF、DOCX、TXT 等招聘文件中的信息提取为稳定的 JSON。
+这个 skill 用于把招聘截图、招聘海报、岗位照片、PDF、DOCX、TXT 等招聘文件中的信息提取为稳定的 JSON，并在需要时写入 SQLite。
 
 适用场景：
 
@@ -16,7 +16,7 @@ description: Use when the user provides one or more job-posting files and wants 
 - 用户给出岗位 JD PDF、招聘说明 PDF、岗位说明书导出的 PDF
 - 用户给出 DOCX、TXT、Markdown 等文本型招聘文档
 - 用户希望按统一字段存储“什么公司、招什么岗位、具体要求是什么”
-- 用户后续还要做筛选、统计、导入数据库或批量整理
+- 用户后续还要做筛选、统计、写入 SQLite 或批量整理
 
 ## Workflow Decision Tree
 
@@ -25,7 +25,8 @@ description: Use when the user provides one or more job-posting files and wants 
 3. 文本型 `pdf`、`docx`、`txt`：优先走文本提取路径。
 4. 无论哪种路径，都按 [references/job_posting_schema.md](references/job_posting_schema.md) 输出。
 5. 字段缺失时使用 `null`、空数组 `[]` 或空字符串，不要编造。
-6. 默认返回 JSON；如果用户明确要求“保存”，则把结果写入当前工作区的 `.json` 文件。
+6. 默认返回 JSON；如果用户明确要求“保存为文件”，则把结果写入当前工作区的 `.json` 文件。
+7. 如果用户要求“落库”“写入数据库”“SQLite”“保存到表”，则按 [references/sqlite_storage.md](references/sqlite_storage.md) 写入当前工作区的 SQLite 数据库。
 
 ## PDF Workflow
 
@@ -87,6 +88,16 @@ description: Use when the user provides one or more job-posting files and wants 
 - 如果原文明确表示“停止招聘”“岗位关闭”“已下线”“终止招聘”等，写 `已终止`。
 - 如果无法可靠判断，不要猜，优先写 `未完善`。
 
+## SQLite Storage Rules
+
+- 只有在用户明确要求保存到 SQLite、数据库、表，或要求后续基于数据库生成权重时，才执行 SQLite 写入。
+- 默认数据库路径为当前工作区的 `job_postings.sqlite`；如果用户指定路径，使用用户指定的 SQLite 文件。
+- 每个 `records[*]` 对应 `job_postings` 表中的一行，不要把多个岗位合并进同一行。
+- 必须把完整岗位记录序列化到 `raw_json`，同时把常用检索字段拆到独立列。
+- 写入前必须 `CREATE TABLE IF NOT EXISTS`；执行写入时使用 SQLite 参数化语句。
+- 写入成功后，用中文摘要说明数据库路径、表名、写入记录数和生成的 `job_postings.id`。
+- 详细表结构、字段映射和同库权重表约定见 [references/sqlite_storage.md](references/sqlite_storage.md)。
+
 ## Output Contract
 
 默认输出以下根结构：
@@ -126,3 +137,5 @@ description: Use when the user provides one or more job-posting files and wants 
 字段定义、示例 JSON、薪资拆解规则见 [references/job_posting_schema.md](references/job_posting_schema.md)。
 
 PDF 处理细则、分页策略、文本层与 OCR 路由见 [references/pdf_processing.md](references/pdf_processing.md)。
+
+SQLite 建表、岗位写入、权重表关联规则见 [references/sqlite_storage.md](references/sqlite_storage.md)。

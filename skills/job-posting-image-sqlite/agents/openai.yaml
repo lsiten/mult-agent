@@ -1,0 +1,7 @@
+interface:
+  display_name: "招聘岗位写入 SQLite"
+  short_description: "从招聘截图、PDF 或文档中抽取岗位信息，输出 JSON 或写入 SQLite"
+  default_prompt: "Load job-posting-image-sqlite with skill_view. Extract company, role, and hiring requirements from a recruitment screenshot, PDF, or JD file into JSON, covering all relevant PDF pages by default; when storage is requested, write records into SQLite."
+
+policy:
+  allow_implicit_invocation: true

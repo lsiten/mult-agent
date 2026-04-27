@@ -1,13 +1,13 @@
 ---
-name: job-posting-score-json
-description: Use when the user already has a job-posting JSON and wants a companion score or weight JSON with the same keys but numeric values from 0 to 1. This skill is for ranking, filtering, and matching jobs, especially when a record status becomes 已发布 and the user wants default mainstream field weights, a review summary, and the ability to confirm or edit specific weights.
+name: job-posting-score-sqlite
+description: Use when the user already has a job-posting JSON or a SQLite job_postings record and wants a companion score or weight JSON with the same keys but numeric values from 0 to 1. This skill is for ranking, filtering, and matching jobs, especially when a record status becomes 已发布 and the user wants default mainstream field weights, a review summary, confirmation or editing of specific weights, and writing the generated weights into the same SQLite database.
 ---
 
 # Job Posting Score JSON
 
 ## Overview
 
-这个 skill 不负责抽取岗位内容，而是基于已有的岗位 JSON 生成一份对应的权重 JSON。
+这个 skill 不负责抽取岗位内容，而是基于已有的岗位 JSON 或 SQLite 岗位记录生成一份对应的权重 JSON，并可写入同一个 SQLite 数据库。
 
 适用场景：
 
@@ -16,12 +16,15 @@ description: Use when the user already has a job-posting JSON and wants a compan
 - 用户希望做岗位筛选、打分、排序、推荐或匹配
 - 用户希望在 `status` 变成 `已发布` 后，自动生成对应的权重 JSON
 - 用户希望先看默认权重，再确认或只修改某几个字段
+- 用户希望基于 `job_postings` 表中的岗位记录生成权重，并写入 `job_posting_scores` 表
 
 ## Input Requirement
 
-- 输入优先使用 [job-posting-image-json](../job-posting-image-json/SKILL.md) 生成的岗位 JSON
+- 输入优先使用 [job-posting-image-sqlite](../job-posting-image-sqlite/SKILL.md) 生成的岗位 JSON
 - 如果不是该 skill 生成的 JSON，也必须尽量兼容其字段结构
 - 如果输入缺少关键字段，仍可生成权重 JSON，但必须说明哪些字段是兼容推断
+- 如果用户要求基于数据库记录生成权重，优先从当前工作区 `job_postings.sqlite` 的 `job_postings` 表读取岗位记录
+- 如果用户提供 `job_postings.id`、`record_uid`、公司名或岗位名，用它定位对应岗位；无法唯一定位时先列出候选项让用户确认
 
 ## Output Contract
 
@@ -50,12 +53,13 @@ description: Use when the user already has a job-posting JSON and wants a compan
 ## Workflow
 
 1. 读取源岗位 JSON
-2. 检查 `records[*].status`
-3. 套用默认权重，生成同结构的权重 JSON
-4. 先向用户展示一份“关键字段默认权重摘要”
-5. 等用户确认，或根据用户要求只修改指定字段
-6. 每次生成成功或修改成功后，先输出“本次操作摘要”
-7. 用户确认后，再输出或保存最终版权重 JSON
+2. 如果输入来自 SQLite，先从 `job_postings.raw_json` 还原岗位 JSON，并记录 `job_posting_id`
+3. 检查 `records[*].status`
+4. 套用默认权重，生成同结构的权重 JSON
+5. 先向用户展示一份“关键字段默认权重摘要”
+6. 等用户确认，或根据用户要求只修改指定字段
+7. 每次生成成功或修改成功后，先输出“本次操作摘要”
+8. 用户确认后，再输出、保存为文件，或写入同一个 SQLite 数据库
 
 ## Confirmation Rule
 
@@ -156,9 +160,21 @@ description: Use when the user already has a job-posting JSON and wants a compan
 
 ## Save Rule
 
-- 如果用户要求保存，默认保存为与源文件同目录的 `*.score.json`
+- 如果用户要求保存为文件，默认保存为与源文件同目录的 `*.score.json`
+- 如果用户要求写入 SQLite、数据库、表，默认写入当前工作区 `job_postings.sqlite` 的 `job_posting_scores` 表
+- 写入 SQLite 时必须关联 `job_postings.id`，不要生成无法追溯到岗位记录的孤立权重
+- 同一个岗位多次生成或修改权重时，默认保留历史版本，并把最新版本标记为 active
 - 不要覆盖原始岗位 JSON，除非用户明确要求覆盖
 - 保存成功后，必须给用户一个保存摘要
+
+## SQLite Storage Rule
+
+- 基于 SQLite 岗位记录生成权重时，必须使用和岗位记录相同的 SQLite 数据库。
+- `records[*].status = 已发布` 时写入 `正式权重`；其他状态只有用户明确要求时写入 `预览权重`。
+- 写入前确保 `job_posting_scores` 表存在，并开启 SQLite 外键约束。
+- `score_json` 保存完整同结构权重 JSON；摘要视图可以是中文星级，但不要替代数据库中的数字权重。
+- 保存摘要必须包含数据库路径、表名、`job_posting_id`、`score_id`、模式和关联岗位状态。
+- 详细建表、字段映射和版本规则见 [../job-posting-image-sqlite/references/sqlite_storage.md](../job-posting-image-sqlite/references/sqlite_storage.md)。
 
 ## Quality Rules
 

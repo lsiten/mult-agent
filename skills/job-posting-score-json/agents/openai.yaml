@@ -1,7 +1,0 @@
-interface:
-  display_name: "岗位权重 JSON"
-  short_description: "把岗位 JSON 转成 0 到 1 的同结构权重 JSON"
-  default_prompt: "Load job-posting-score-json with skill_view. Generate a same-key score JSON with default weights for a published job record, and always show a Chinese success summary with five-star importance before asking for confirmation or saving."
-
-policy:
-  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "岗位权重写入 SQLite"
+  short_description: "把岗位 JSON 或 SQLite 岗位记录转成同结构权重，并可写入 SQLite"
+  default_prompt: "Load job-posting-score-sqlite with skill_view. Generate a same-key score JSON with default weights for a published job record or SQLite job_postings record, show a Chinese five-star success summary, and write weights into the same SQLite database when storage is requested."
+
+policy:
+  allow_implicit_invocation: true
