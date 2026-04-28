@@ -8,10 +8,24 @@ declare global {
   interface Window {
     __HERMES_SESSION_TOKEN__?: string;
     electronAPI?: {
+      getOnboardingStatus?: () => Promise<{ needsOnboarding: boolean }>;
+      onOnboardingStatus?: (callback: (status: { needsOnboarding: boolean }) => void) => void;
+      markOnboardingComplete?: () => Promise<{ ok: boolean }>;
+      resetOnboarding?: () => Promise<{ ok: boolean }>;
+      getPythonStatus?: (options?: { includeMetrics?: boolean }) => Promise<any>;
+      restartPython?: (reason?: string) => Promise<{ ok: boolean }>;
+      openExternal?: (url: string) => Promise<void>;
       getGatewayAuthToken?: () => Promise<{ data?: { token?: string }; token?: string } | null>;
       subAgent?: {
-        getOrStart?: (agentId: number) => Promise<{ data?: { port?: number; success?: boolean }; error?: string }>;
-        getPort?: (agentId: number) => Promise<{ data?: { port?: number | null; found?: boolean }; error?: string }>;
+        getOrStart?: (agentId: number) => Promise<{ ok?: boolean; data?: { port?: number; success?: boolean; agentId?: number }; error?: string }>;
+        stop?: (agentId: number) => Promise<{ ok?: boolean; data?: { success?: boolean }; error?: string }>;
+        getPort?: (agentId: number) => Promise<{ ok?: boolean; data?: { port?: number | null; found?: boolean }; error?: string }>;
+        getAllMetrics?: () => Promise<{ ok?: boolean; data?: { metrics?: any[] }; error?: string }>;
+        syncFromMaster?: (agentId: number) => Promise<{ ok?: boolean; data?: { success?: boolean; message?: string; port?: number }; error?: string }>;
+      };
+      electron?: {
+        getServices?: () => Promise<{ ok: boolean; data?: { services: Array<{ id: string; name: string; status: string; dependencies: string[] }> }; error?: string }>;
+        getIPCHandlers?: () => Promise<{ ok: boolean; data?: { handlers: Array<{ channel: string; description: string | null }> }; error?: string }>;
       };
     };
   }
@@ -172,21 +186,23 @@ function isOrgRelatedAPI(url: string): boolean {
     '/api/departments',
     '/api/positions',
     '/api/workspaces',
+    '/api/recruit/',
   ];
   return orgAPIPrefixes.some(prefix => url.startsWith(prefix));
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
+  const forceMaster = headers.get("X-Hermes-Force-Master") === "true";
+  headers.delete("X-Hermes-Force-Master");
 
   // ⛔ 路由策略：
   // 1. 组织架构API（/api/org/、/api/agents/等）始终走主Gateway
   // 2. 会话数据API（/api/chat/、/api/sessions/等）根据activeAgentId路由
   let requestBase: string;
-  if (isOrgRelatedAPI(url)) {
+  if (forceMaster || isOrgRelatedAPI(url)) {
     // 组织架构API：强制使用主Gateway（8642）
     requestBase = isElectronRuntime() ? GATEWAY_BASE : '';
-    console.log(`[API] Org-related request routed to main Gateway: ${url}`);
   } else {
     // 会话数据API：根据activeAgentId路由
     requestBase = await getRequestBase().catch((error) => {
@@ -219,7 +235,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> 
   // can scope themselves to the sub-agent's Profile workspace.  We only
   // send the header when it's set and when the caller did not already
   // specify one (e.g. when explicitly targeting a different agent).
-  if (!headers.has("X-Hermes-Agent-Id") && _activeAgentId != null) {
+  if (!forceMaster && !headers.has("X-Hermes-Agent-Id") && _activeAgentId != null) {
     headers.set("X-Hermes-Agent-Id", String(_activeAgentId));
   }
 
@@ -247,6 +263,10 @@ export const api = {
     fetchJSON<PaginatedSessions>(`/api/sessions?limit=${limit}&offset=${offset}`),
   getSessionMessages: (id: string) =>
     fetchJSON<SessionMessagesResponse>(`/api/sessions/${encodeURIComponent(id)}/messages`),
+  getMasterSessionMessages: (id: string) =>
+    fetchJSON<SessionMessagesResponse>(`/api/sessions/${encodeURIComponent(id)}/messages`, {
+      headers: { "X-Hermes-Force-Master": "true" },
+    }),
   deleteSession: (id: string) =>
     fetchJSON<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -370,6 +390,60 @@ export const api = {
     if (params.source) qs.set("source", params.source);
     return fetchJSON<SessionListResponse>(`/api/chat/sessions?${qs.toString()}`);
   },
+  getRecruitWorkspace: () =>
+    fetchJSON<RecruitWorkspaceResponse>("/api/recruit/workspace"),
+  createRecruitWorkspaceSession: () =>
+    fetchJSON<{ session: SessionInfo }>("/api/recruit/workspace/session", {
+      method: "POST",
+    }),
+  ensureRecruitWorkspaceSession: () =>
+    fetchJSON<{ session: SessionInfo }>("/api/recruit/workspace/session", {
+      method: "POST",
+    }),
+  listRecruitPostings: (params: { limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString();
+    return fetchJSON<RecruitPostingsResponse>(`/api/recruit/postings${query ? `?${query}` : ""}`);
+  },
+  listRecruitCandidates: (params: { limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString();
+    return fetchJSON<RecruitCandidatesResponse>(`/api/recruit/candidates${query ? `?${query}` : ""}`);
+  },
+  getRecruitPosting: (postingId: number) =>
+    fetchJSON<RecruitPostingDetailResponse>(`/api/recruit/postings/${encodeURIComponent(String(postingId))}`),
+  upsertRecruitPostings: (payload: Record<string, unknown>) =>
+    fetchJSON<{ ok: boolean; database_path: string; table: string; count: number; ids: number[] }>("/api/recruit/postings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  createRecruitScore: (
+    postingId: number,
+    payload: {
+      score_json: Record<string, unknown>;
+      summary_json?: Record<string, unknown>;
+      mode?: "正式权重" | "预览权重";
+    },
+  ) =>
+    fetchJSON<{
+      ok: boolean;
+      database_path: string;
+      table: string;
+      job_posting_id: number;
+      score_id: number;
+      mode: "正式权重" | "预览权重";
+      status_at_scoring: string;
+      revision: number;
+    }>(`/api/recruit/postings/${encodeURIComponent(String(postingId))}/scores`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   sendMessage: (sessionId: string, data: { content: string; attachments?: AttachmentInfo[] }) =>
     fetchJSON<SendMessageResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/message`, {
       method: "POST",
@@ -382,6 +456,7 @@ export const api = {
     attachments?: Array<{id: string, name: string, type: string, size: number, url: string}>,
     selectedSkills?: string[],
     agentId?: number | null,
+    forceMaster = false,
   ) => {
     const params = new URLSearchParams({ message });
     if (attachments && attachments.length > 0) {
@@ -400,12 +475,15 @@ export const api = {
       params.append('token', eventSourceToken);
     }
 
-    const requestBase = isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE;
+    const requestBase = forceMaster
+      ? (isElectronRuntime() ? GATEWAY_BASE : '')
+      : (isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE);
     return `${requestBase}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   getResumeStreamUrl: async (
     sessionId: string,
     agentId?: number | null,
+    forceMaster = false,
   ) => {
     const params = new URLSearchParams({ resume: "1" });
     if (agentId != null) {
@@ -417,7 +495,9 @@ export const api = {
       params.append("token", eventSourceToken);
     }
 
-    const requestBase = isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE;
+    const requestBase = forceMaster
+      ? (isElectronRuntime() ? GATEWAY_BASE : '')
+      : (isElectronRuntime() ? await getRequestBase() : GATEWAY_BASE);
     return `${requestBase}/api/sessions/${encodeURIComponent(sessionId)}/stream?${params.toString()}`;
   },
   stopStream: (sessionId: string) =>
@@ -911,6 +991,109 @@ export interface PaginatedSessions {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface RecruitJobPosting {
+  id: number;
+  record_uid: string | null;
+  record_id: string | null;
+  schema_version: string | null;
+  source: {
+    type: string | null;
+    format: string | null;
+    platform: string | null;
+    file_name: string | null;
+    document_title: string | null;
+  };
+  status: "待编辑" | "待评分" | "待发布" | "已完成" | "已暂停";
+  company_name: string | null;
+  position_title: string | null;
+  position_category: string | null;
+  city: string | null;
+  district: string | null;
+  salary: {
+    min: number | null;
+    max: number | null;
+    unit: string | null;
+    months: number | null;
+  };
+  skills: unknown[];
+  must_have: unknown[];
+  responsibilities: unknown[];
+  benefits: unknown[];
+  source_json: Record<string, unknown>;
+  extraction_meta: Record<string, unknown>;
+  raw_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  active_score?: {
+    id: number;
+    mode: "正式权重" | "预览权重";
+    revision: number;
+    created_at: string;
+  } | null;
+}
+
+export interface RecruitJobScore {
+  id: number;
+  job_posting_id: number;
+  mode: "正式权重" | "预览权重";
+  status_at_scoring: string | null;
+  score_json: Record<string, unknown>;
+  summary_json: Record<string, unknown> | null;
+  is_active: boolean;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecruitCandidateRecord {
+  id: number;
+  candidate_uid: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  current_role: string | null;
+  current_company: string | null;
+  experience_years: number | null;
+  status: string | null;
+  skills: unknown[];
+  summary: string | null;
+  source_json: Record<string, unknown>;
+  raw_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecruitWorkspaceResponse {
+  workspace_session: SessionInfo;
+  workspace_sessions: SessionInfo[];
+  postings: RecruitJobPosting[];
+  candidates: RecruitCandidateRecord[];
+  database_path: string;
+}
+
+export interface RecruitPostingsResponse {
+  postings: RecruitJobPosting[];
+  total: number;
+  limit: number;
+  offset: number;
+  database_path: string;
+}
+
+export interface RecruitPostingDetailResponse {
+  posting: RecruitJobPosting;
+  scores: RecruitJobScore[];
+  database_path: string;
+}
+
+export interface RecruitCandidatesResponse {
+  candidates: RecruitCandidateRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  database_path: string;
 }
 
 export interface EnvVarInfo {

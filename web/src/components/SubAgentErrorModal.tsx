@@ -1,5 +1,3 @@
-import { useI18n } from "@/i18n";
-
 interface SubAgentErrorModalProps {
   agentId: number;
   error: string;
@@ -18,8 +16,6 @@ export function SubAgentErrorModal({
   onRetry,
   onCancel,
 }: SubAgentErrorModalProps) {
-  const { t } = useI18n();
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg bg-[#1a1a1a] border border-red-500/30 p-6 shadow-xl">

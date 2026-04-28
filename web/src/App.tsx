@@ -22,21 +22,12 @@ import { api } from "@/lib/api";
 import { emitEnvRefresh } from "@/lib/envRefresh";
 import { PROVIDER_CONFIGS } from "@/lib/providers";
 import type { RegisteredPlugin } from "@/plugins";
-
-// Type definition for Electron API
-declare global {
-  interface Window {
-    electronAPI?: {
-      getOnboardingStatus: () => Promise<{ needsOnboarding: boolean }>;
-      onOnboardingStatus: (callback: (status: { needsOnboarding: boolean }) => void) => void;
-      markOnboardingComplete: () => Promise<{ ok: boolean }>;
-      resetOnboarding: () => Promise<{ ok: boolean }>;
-      getPythonStatus: () => Promise<any>;
-      restartPython: () => Promise<{ ok: boolean }>;
-      getGatewayAuthToken: () => Promise<{ token: string | null }>;
-    };
-  }
-}
+import RecruitWorkspacePage from "@/pages/RecruitWorkspacePage";
+import RecruitRequirementPage from "@/pages/RecruitRequirementPage";
+import RecruitCandidatePage from "@/pages/RecruitCandidatePage";
+import RecruitPlaceholderPage from "@/pages/RecruitPlaceholderPage";
+import { useEntryShortcutManager } from "@/hooks/useEntryShortcutManager";
+import type { RecruitPageId } from "@/pages/recruitNavigation";
 
 // Lazy load non-critical pages
 const CronPage = lazy(() => import("@/pages/CronPage"));
@@ -126,7 +117,7 @@ function buildNavItems(builtIn: NavItem[], plugins: RegisteredPlugin[]): NavItem
 // App
 // ---------------------------------------------------------------------------
 
-export default function App() {
+function HermesApp() {
   const { t } = useI18n();
   const { plugins } = usePlugins();
   const navigate = useNavigate();
@@ -512,4 +503,24 @@ export default function App() {
       </div>
     </AgentProvider>
   );
+}
+
+export default function App() {
+  const { mode } = useEntryShortcutManager();
+  const [recruitPage, setRecruitPage] = useState<RecruitPageId>("workspace");
+
+  if (mode === "recruit") {
+    if (recruitPage === "requirements") {
+      return <RecruitRequirementPage currentPage={recruitPage} onNavigate={setRecruitPage} />;
+    }
+    if (recruitPage === "talent") {
+      return <RecruitCandidatePage currentPage={recruitPage} onNavigate={setRecruitPage} />;
+    }
+    if (recruitPage === "dashboard" || recruitPage === "settings") {
+      return <RecruitPlaceholderPage currentPage={recruitPage} onNavigate={setRecruitPage} />;
+    }
+    return <RecruitWorkspacePage currentPage={recruitPage} onNavigate={setRecruitPage} />;
+  }
+
+  return <HermesApp />;
 }

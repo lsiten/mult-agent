@@ -67,7 +67,7 @@ export default function PerformancePage() {
   }, []);
 
   const handleRestart = async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI?.restartPython) return;
 
     setRestarting(true);
     const oldPid = status?.pid;

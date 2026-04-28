@@ -2562,6 +2562,7 @@ class APIServerAdapter(BasePlatformAdapter):
         from gateway.platforms.api_server_attachments import AttachmentsAPIHandlers
         from gateway.platforms.api_server_stt import STTAPIHandlers
         from gateway.platforms.api_server_org import OrganizationAPIHandlers
+        from gateway.platforms.api_server_recruit import RecruitAPIHandlers
 
         status_h = StatusAPIHandlers(self._session_token)
         config_h = ConfigAPIHandlers(self._session_token)
@@ -2579,6 +2580,7 @@ class APIServerAdapter(BasePlatformAdapter):
         attachments_h = AttachmentsAPIHandlers(self._session_token)
         stt_h = STTAPIHandlers(self._session_token)
         org_h = OrganizationAPIHandlers(self._session_token)
+        recruit_h = RecruitAPIHandlers(self._session_token)
 
         # Register all Dashboard API routes
         # Status API
@@ -2671,6 +2673,16 @@ class APIServerAdapter(BasePlatformAdapter):
         self._app.router.add_get("/api/sessions/{session_id}/stream", chat_h.handle_stream_messages)
         self._app.router.add_post("/api/sessions/{session_id}/stop", chat_h.handle_stop_stream)
         self._app.router.add_get("/api/sessions/{session_id}/messages", chat_h.handle_get_session_messages)
+
+        # RecruitAI API
+        self._app.router.add_get("/api/recruit/workspace", recruit_h.handle_get_workspace)
+        self._app.router.add_post("/api/recruit/workspace/session", recruit_h.handle_create_workspace_session)
+        self._app.router.add_get("/api/recruit/postings", recruit_h.handle_list_postings)
+        self._app.router.add_post("/api/recruit/postings", recruit_h.handle_upsert_postings)
+        self._app.router.add_get("/api/recruit/postings/{posting_id}", recruit_h.handle_get_posting)
+        self._app.router.add_get("/api/recruit/candidates", recruit_h.handle_list_candidates)
+        self._app.router.add_get("/api/recruit/scores", recruit_h.handle_list_scores)
+        self._app.router.add_post("/api/recruit/postings/{posting_id}/scores", recruit_h.handle_create_score)
 
         # Attachments API
         self._app.router.add_post("/api/attachments/upload", attachments_h.handle_upload_attachment)

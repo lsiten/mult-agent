@@ -1,6 +1,6 @@
 ---
 name: job-posting-score-sqlite
-description: Use when the user already has a job-posting JSON or a SQLite job_postings record and wants a companion score or weight JSON with the same keys but numeric values from 0 to 1. This skill is for ranking, filtering, and matching jobs, especially when a record status becomes 已发布 and the user wants default mainstream field weights, a review summary, confirmation or editing of specific weights, and writing the generated weights into the same SQLite database.
+description: Use when the user already has a job-posting JSON or a SQLite job_postings record and wants a companion score or weight JSON with the same keys but numeric values from 0 to 1. This skill is for ranking, filtering, and matching jobs, especially when a record status becomes 待评分 or 待发布 and the user wants default mainstream field weights, a review summary, confirmation or editing of specific weights, and writing the generated weights into the same SQLite database.
 ---
 
 # Job Posting Score JSON
@@ -14,7 +14,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 - 用户已经有岗位提取 JSON
 - 用户希望保留相同字段结构，生成一份 `0` 到 `1` 的权重 JSON
 - 用户希望做岗位筛选、打分、排序、推荐或匹配
-- 用户希望在 `status` 变成 `已发布` 后，自动生成对应的权重 JSON
+- 用户希望在 `status` 变成 `待评分` 或 `待发布` 后，自动生成对应的权重 JSON
 - 用户希望先看默认权重，再确认或只修改某几个字段
 - 用户希望基于 `job_postings` 表中的岗位记录生成权重，并写入 `job_posting_scores` 表
 
@@ -23,7 +23,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 - 输入优先使用 [job-posting-image-sqlite](../job-posting-image-sqlite/SKILL.md) 生成的岗位 JSON
 - 如果不是该 skill 生成的 JSON，也必须尽量兼容其字段结构
 - 如果输入缺少关键字段，仍可生成权重 JSON，但必须说明哪些字段是兼容推断
-- 如果用户要求基于数据库记录生成权重，优先从当前工作区 `job_postings.sqlite` 的 `job_postings` 表读取岗位记录
+- 如果用户要求基于数据库记录生成权重，优先从同一个 RecruitAI SQLite 库的 `job_postings` 表读取岗位记录：用户指定路径 > `HERMES_RECRUIT_DB_PATH` > `$HERMES_HOME/job_postings.sqlite` > 当前工作区 `job_postings.sqlite`
 - 如果用户提供 `job_postings.id`、`record_uid`、公司名或岗位名，用它定位对应岗位；无法唯一定位时先列出候选项让用户确认
 
 ## Output Contract
@@ -46,9 +46,9 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 
 ## Trigger Rule
 
-- 当岗位 `status` 为 `已发布` 时，默认应生成或更新对应的权重 JSON
-- 当岗位 `status` 为 `未发布`、`未完善`、`已终止` 时，只有在用户明确要求时才生成预览版或草稿版权重 JSON
-- 如果用户明确说“现在就生成权重 JSON”，即使 `status` 不是 `已发布` 也可以执行，但要提醒当前只是预览或草稿权重
+- 当岗位 `status` 为 `待评分`、`待发布` 或 `已完成` 时，默认应生成或更新对应的权重 JSON
+- 当岗位 `status` 为 `待编辑` 或 `已暂停` 时，只有在用户明确要求时才生成预览版或草稿版权重 JSON
+- 如果用户明确说“现在就生成权重 JSON”，即使 `status` 不是 `待评分`、`待发布` 或 `已完成` 也可以执行，但要提醒当前只是预览或草稿权重
 
 ## Workflow
 
@@ -94,7 +94,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
    - `正式权重`
    - `预览权重`
 3. 关联岗位状态：
-   - 如 `已发布`、`未发布`
+   - 如 `待评分`、`待发布`、`已完成`
 4. 本次涉及的记录数
 5. 本次重点权重摘要：
    - 必须使用“中文解释 + 星级”
@@ -161,7 +161,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 ## Save Rule
 
 - 如果用户要求保存为文件，默认保存为与源文件同目录的 `*.score.json`
-- 如果用户要求写入 SQLite、数据库、表，默认写入当前工作区 `job_postings.sqlite` 的 `job_posting_scores` 表
+- 如果用户要求写入 SQLite、数据库、表，默认写入同一个 RecruitAI SQLite 库的 `job_posting_scores` 表：用户指定路径 > `HERMES_RECRUIT_DB_PATH` > `$HERMES_HOME/job_postings.sqlite` > 当前工作区 `job_postings.sqlite`
 - 写入 SQLite 时必须关联 `job_postings.id`，不要生成无法追溯到岗位记录的孤立权重
 - 同一个岗位多次生成或修改权重时，默认保留历史版本，并把最新版本标记为 active
 - 不要覆盖原始岗位 JSON，除非用户明确要求覆盖
@@ -170,7 +170,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 ## SQLite Storage Rule
 
 - 基于 SQLite 岗位记录生成权重时，必须使用和岗位记录相同的 SQLite 数据库。
-- `records[*].status = 已发布` 时写入 `正式权重`；其他状态只有用户明确要求时写入 `预览权重`。
+- `records[*].status` 为 `待发布` 或 `已完成` 时写入 `正式权重`；其他状态只有用户明确要求时写入 `预览权重`。
 - 写入前确保 `job_posting_scores` 表存在，并开启 SQLite 外键约束。
 - `score_json` 保存完整同结构权重 JSON；摘要视图可以是中文星级，但不要替代数据库中的数字权重。
 - 保存摘要必须包含数据库路径、表名、`job_posting_id`、`score_id`、模式和关联岗位状态。
@@ -180,7 +180,7 @@ description: Use when the user already has a job-posting JSON or a SQLite job_po
 
 - 不要因为默认模板存在，就忽略用户后续修改
 - 不要把缺失字段直接打成 `1`
-- 不要把 `status` 为 `未完善` 或 `未发布` 的岗位直接当成正式上线岗位处理
+- 不要把 `status` 为 `待编辑`、`待评分` 或 `已暂停` 的岗位直接当成正式上线岗位处理
 - 如果某字段在源 JSON 中不存在，应尽量保持兼容结构，而不是随意发明新字段
 - 不要在生成成功后直接沉默返回文件结果而没有摘要
 - 不要在摘要里默认只给英文路径和数字权重

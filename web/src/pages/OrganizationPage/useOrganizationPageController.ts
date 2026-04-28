@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
-import type { OrganizationTreeResponse, OrgCompany } from "@/lib/api";
+import type { OrgCompany } from "@/lib/api";
 import { deleteOrgNode, persistOrgNode, type DialogState } from "./orgActions";
 import type { OrgDialogItem, OrgDialogParent, OrgNodeType, OrgNodeValues } from "./types";
 import { formatReason, formatTemplate, getErrorMessage } from "./utils";
-
-const EMPTY_TREE: OrganizationTreeResponse = { companies: [] };
 
 export function useOrganizationPageController() {
   const { t } = useI18n();

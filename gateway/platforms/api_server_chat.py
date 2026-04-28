@@ -158,6 +158,66 @@ class ChatAPIHandlers:
             })
         return sanitized
 
+    @staticmethod
+    def _build_selected_skill_context(
+        selected_skills: Optional[List[str]],
+    ) -> Tuple[str, List[Dict[str, str]]]:
+        """Load selected skills and build the prompt fragment used by AIAgent.
+
+        The chat UI passes selected skills as SSE query metadata.  Emitting a
+        ``skill_loaded`` event is not enough by itself: the model also needs
+        the actual SKILL.md instructions injected into its prompt for this turn.
+        """
+        normalized = []
+        for raw in selected_skills or []:
+            skill_name = str(raw).strip()
+            if skill_name:
+                normalized.append(skill_name)
+        if not normalized:
+            return "", []
+
+        try:
+            from agent.skill_commands import build_preloaded_skills_prompt
+
+            prompt, loaded_names, missing_names = build_preloaded_skills_prompt(normalized)
+        except Exception as exc:
+            _log.warning("Failed to load selected skills %s: %s", normalized, exc)
+            return "", [
+                {
+                    "name": skill_name,
+                    "status": "failed",
+                    "category": "other",
+                    "error": str(exc),
+                }
+                for skill_name in normalized
+            ]
+
+        loaded_set = set(loaded_names)
+        missing_set = set(missing_names)
+        skills_info: List[Dict[str, str]] = []
+        for skill_name in normalized:
+            if skill_name in loaded_set:
+                status = "loaded"
+            elif skill_name in missing_set:
+                status = "unavailable"
+            else:
+                status = "loaded" if skill_name not in missing_set and prompt else "unavailable"
+            skills_info.append({
+                "name": skill_name,
+                "status": status,
+                "category": "other",
+            })
+
+        for loaded_name in loaded_names:
+            if loaded_name not in {item["name"] for item in skills_info}:
+                skills_info.append({
+                    "name": loaded_name,
+                    "status": "loaded",
+                    "category": "other",
+                })
+
+        return prompt, skills_info
+
     async def _add_stream_listener(self, stream_state: Dict[str, Any]) -> Tuple[asyncio.Queue, Dict[str, Any]]:
         queue: asyncio.Queue = asyncio.Queue()
         async with stream_state["lock"]:
@@ -876,6 +936,14 @@ class ChatAPIHandlers:
                     # Capture event loop reference in main thread
                     main_loop = asyncio.get_running_loop()
 
+                    selected_skill_prompt, selected_skills_info = self._build_selected_skill_context(selected_skills)
+                    if selected_skills and not selected_skill_prompt:
+                        _log.warning(
+                            "No selected skill prompt was loaded for session %s: %s",
+                            sid,
+                            selected_skills,
+                        )
+
                     # Track assistant message timestamp for proper ordering
                     assistant_msg_timestamp = time.time()
 
@@ -964,43 +1032,18 @@ class ChatAPIHandlers:
                                 if org_profile and org_profile.is_ready()
                                 else None
                             ),
+                            ephemeral_system_prompt=selected_skill_prompt or None,
                         )
                         if sid in self._active_streams:
                             self._active_streams[sid]["agent"] = agent
 
-                        if selected_skills:
-                            skills_info = []
-                            hermes_home = get_hermes_home()
-                            skills_dir = hermes_home / "skills"
-
-                            for skill_name in selected_skills:
-                                skill_path = skills_dir / skill_name
-                                status = "loaded" if skill_path.exists() else "unavailable"
-
-                                category = "other"
-                                yaml_path = skill_path / "skill.yaml"
-                                if yaml_path.exists():
-                                    try:
-                                        import yaml
-                                        with open(yaml_path) as f:
-                                            skill_yaml = yaml.safe_load(f) or {}
-                                            category = skill_yaml.get("category", "other")
-                                    except Exception:
-                                        pass
-
-                                skills_info.append({
-                                    "name": skill_name,
-                                    "status": status,
-                                    "category": category,
-                                })
-
-                            if skills_info:
-                                await self._broadcast_stream_event(
-                                    stream_state,
-                                    "skill_loaded",
-                                    {"skills": skills_info},
-                                )
-                                _log.info("Broadcast skill_loaded event: %s", skills_info)
+                        if selected_skills_info:
+                            await self._broadcast_stream_event(
+                                stream_state,
+                                "skill_loaded",
+                                {"skills": selected_skills_info},
+                            )
+                            _log.info("Broadcast skill_loaded event: %s", selected_skills_info)
 
                         return await loop.run_in_executor(
                             executor,
@@ -1079,41 +1122,15 @@ class ChatAPIHandlers:
                                     _log.warning("Failed to process tool event: %s", e)
 
                         try:
-                            if selected_skills and not skill_use_msg_saved:
-                                skills_info = []
-                                hermes_home = get_hermes_home()
-                                skills_dir = hermes_home / "skills"
-
-                                for skill_name in selected_skills:
-                                    skill_path = skills_dir / skill_name
-                                    status = "loaded" if skill_path.exists() else "unavailable"
-
-                                    category = "other"
-                                    yaml_path = skill_path / "skill.yaml"
-                                    if yaml_path.exists():
-                                        try:
-                                            import yaml
-                                            with open(yaml_path) as f:
-                                                skill_yaml = yaml.safe_load(f) or {}
-                                                category = skill_yaml.get("category", "other")
-                                        except Exception:
-                                            pass
-
-                                    skills_info.append({
-                                        "name": skill_name,
-                                        "status": status,
-                                        "category": category,
-                                    })
-
-                                if skills_info:
-                                    pipeline_db.append_message(
-                                        session_id=sid,
-                                        role="skill_use",
-                                        content=None,
-                                        metadata={"skills": skills_info}
-                                    )
-                                    skill_use_msg_saved = True
-                                    _log.info("Saved skill_use message immediately: %s", skills_info)
+                            if selected_skills_info and not skill_use_msg_saved:
+                                pipeline_db.append_message(
+                                    session_id=sid,
+                                    role="skill_use",
+                                    content=None,
+                                    metadata={"skills": selected_skills_info}
+                                )
+                                skill_use_msg_saved = True
+                                _log.info("Saved skill_use message immediately: %s", selected_skills_info)
 
                             while not conversation_task.done():
                                 try:

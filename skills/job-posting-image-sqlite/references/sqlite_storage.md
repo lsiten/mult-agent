@@ -4,13 +4,16 @@
 
 Use this reference when the user asks to save extracted job postings or generated score weights into SQLite.
 
-Default database path:
+Default database path priority:
 
 ```text
+user-provided path
+HERMES_RECRUIT_DB_PATH
+$HERMES_HOME/job_postings.sqlite
 <current working directory>/job_postings.sqlite
 ```
 
-If the user provides a database path, use that path instead. Both job records and score records must live in the same SQLite database.
+Both job records and score records must live in the same SQLite database. In the RecruitAI workspace, this must be the same database read by `/api/recruit/workspace`.
 
 ## Tables
 
@@ -34,7 +37,7 @@ CREATE TABLE IF NOT EXISTS job_postings (
   source_platform TEXT,
   source_file_name TEXT,
   source_document_title TEXT,
-  status TEXT NOT NULL CHECK (status IN ('未完善', '未发布', '已发布', '已终止')),
+  status TEXT NOT NULL CHECK (status IN ('待编辑', '待评分', '待发布', '已完成', '已暂停')),
   company_name TEXT,
   position_title TEXT,
   position_category TEXT,
@@ -83,6 +86,8 @@ CREATE INDEX IF NOT EXISTS idx_job_posting_scores_job_active
 
 For each `records[*]`, insert or update one `job_postings` row.
 
+The assistant response must still include the complete extracted posting JSON, preferably in a fenced `json` block. The RecruitAI workspace uses that JSON as a fallback write path when the skill runtime cannot directly access SQLite.
+
 Recommended column mapping:
 
 - `record_id` <- `record.record_id`
@@ -92,7 +97,7 @@ Recommended column mapping:
 - `source_platform` <- root `source.platform`
 - `source_file_name` <- root `source.file_name`
 - `source_document_title` <- root `source.document_title`
-- `status` <- `record.status`
+- `status` <- `record.status`，允许值：`待编辑`、`待评分`、`待发布`、`已完成`、`已暂停`
 - `company_name` <- `record.company.name`
 - `position_title` <- `record.position.title`
 - `position_category` <- `record.position.category`
@@ -119,7 +124,7 @@ When `job-posting-score-sqlite` writes a score, insert one `job_posting_scores` 
 Recommended mapping:
 
 - `job_posting_id` <- target `job_postings.id`
-- `mode` <- `正式权重` when the linked posting status is `已发布`; otherwise `预览权重`
+- `mode` <- `正式权重` when the linked posting status is `待发布` or `已完成`; otherwise `预览权重`
 - `status_at_scoring` <- linked `job_postings.status`
 - `score_json` <- JSON string of the complete same-key weight JSON
 - `summary_json` <- optional JSON string for Chinese labels, stars, and changed fields

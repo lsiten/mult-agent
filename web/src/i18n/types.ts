@@ -79,6 +79,319 @@ export interface Translations {
     };
   };
 
+  // ── RecruitAI candidate preview ──
+  recruitCandidate: {
+    brand: string;
+    systemLabel: string;
+    breadcrumb: string;
+    recruiterInitials: string;
+    nav: {
+      dashboard: string;
+      workspace: string;
+      requirements: string;
+      talent: string;
+      settings: string;
+    };
+    mobileNav: {
+      home: string;
+      workspace: string;
+      talent: string;
+      settings: string;
+    };
+    actions: {
+      back: string;
+      publishRequirement: string;
+      shareProfile: string;
+      downloadResume: string;
+      markCommunicated: string;
+      markAdvanced: string;
+      markRejected: string;
+    };
+    candidate: {
+      initials: string;
+      badge: string;
+      name: string;
+      email: string;
+      phone: string;
+      location: string;
+    };
+    stats: {
+      experienceLabel: string;
+      experienceValue: string;
+      currentRoleLabel: string;
+      currentRoleValue: string;
+      currentCompanyLabel: string;
+      currentCompanyValue: string;
+      matchLabel: string;
+      matchValue: string;
+    };
+    status: {
+      label: string;
+      value: string;
+    };
+    communication: {
+      methods: string[];
+    };
+    resume: {
+      title: string;
+      educationLabel: string;
+      school: string;
+      degreePeriod: string;
+      skillsLabel: string;
+      skills: string[];
+      summaryLabel: string;
+      summary: string;
+    };
+    timeline: {
+      title: string;
+      items: Array<{
+        time: string;
+        title: string;
+        description: string;
+        pending?: boolean;
+      }>;
+    };
+    note: {
+      placeholder: string;
+      save: string;
+    };
+    sql: {
+      emptyTitle: string;
+      emptyDescription: string;
+      noValue: string;
+      candidateRecords: string;
+      jobRecords: string;
+      databasePath: string;
+      candidateStatus: string;
+      email: string;
+      phone: string;
+      location: string;
+      skillsEmpty: string;
+      summaryEmpty: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+  };
+
+  // ── RecruitAI requirement detail preview ──
+  recruitRequirement: {
+    brand: string;
+    nav: {
+      dashboard: string;
+      workspace: string;
+      requirements: string;
+      talent: string;
+      settings: string;
+    };
+    header: {
+      title: string;
+      tabs: string[];
+      notifications: string;
+      avatarInitials: string;
+    };
+    actions: {
+      publishRequirement: string;
+      shareJob: string;
+    };
+    requirement: {
+      status: string;
+      title: string;
+    };
+    description: {
+      title: string;
+      body: string;
+      requirements: string[];
+    };
+    stats: {
+      title: string;
+      foundLabel: string;
+      foundValue: string;
+      change: string;
+      screened: string;
+      hired: string;
+    };
+    sources: {
+      title: string;
+      items: string[];
+    };
+    panel: {
+      tabs: {
+        details: string;
+        automation: string;
+      };
+    };
+    config: {
+      title: string;
+      rows: Array<{
+        label: string;
+        value: string;
+        highlight?: boolean;
+      }>;
+    };
+    task: {
+      title: string;
+      status: string;
+      progressLabel: string;
+      progressValue: string;
+      runNow: string;
+      edit: string;
+      stop: string;
+    };
+    history: {
+      title: string;
+      viewAll: string;
+      items: Array<{
+        time: string;
+        status: string;
+        result: string;
+      }>;
+    };
+    footer: {
+      prefix: string;
+      highlight: string;
+      suffix: string;
+    };
+    sql: {
+      emptyTitle: string;
+      emptyDescription: string;
+      noValue: string;
+      databasePath: string;
+      postingCount: string;
+      scoreCount: string;
+      noRequirements: string;
+      noSources: string;
+      noHistory: string;
+      company: string;
+      location: string;
+      salary: string;
+      activeScore: string;
+    };
+  };
+
+  // ── RecruitAI workspace preview ──
+  recruitWorkspace: {
+    brand: string;
+    nav: {
+      dashboard: string;
+      workspace: string;
+      requirements: string;
+      talent: string;
+      settings: string;
+    };
+    header: {
+      searchPlaceholder: string;
+      avatarInitials: string;
+    };
+    actions: {
+      newRequirement: string;
+      newChat: string;
+    };
+    history: {
+      title: string;
+      empty: string;
+      fallbackTitle: string;
+    };
+    chat: {
+      title: string;
+      idleStatus: string;
+      processingStatus: string;
+      userMessage: string;
+      assistantMessage: string;
+      inputPlaceholder: string;
+    };
+    sqlPreview: {
+      title: string;
+      description: string;
+      tableName: string;
+      close: string;
+    };
+    draft: {
+      label: string;
+      status: string;
+      title: string;
+      fields: Array<{
+        label: string;
+        value?: string;
+        tags?: string[];
+        full?: boolean;
+        highlight?: boolean;
+      }>;
+      descriptionLabel: string;
+      description: string;
+      modify: string;
+      confirm: string;
+    };
+    skills: {
+      title: string;
+      subtitle: string;
+      actions: Array<{
+        skillName: string;
+        title: string;
+        description: string;
+        prompt: string;
+        cta: string;
+        tone: "extract" | "score";
+      }>;
+    };
+    requirements: {
+      title: string;
+      activeCount: string;
+      activeCountLabel: string;
+      searchPlaceholder: string;
+      fallbackCompany: string;
+      fallbackTitle: string;
+      fallbackSalary: string;
+      empty: string;
+      groups: Array<{
+        company: string;
+        items: Array<{
+          title: string;
+          status: string;
+          statusTone: "success" | "pending" | "closed";
+          salary: string;
+          people: string;
+          muted?: boolean;
+          active?: boolean;
+        }>;
+      }>;
+    };
+    footer: {
+      successRateLabel: string;
+      successRateValue: string;
+      cycleLabel: string;
+      cycleValue: string;
+    };
+  };
+
+  recruitPlaceholder: {
+    brand: string;
+    nav: {
+      dashboard: string;
+      workspace: string;
+      requirements: string;
+      talent: string;
+      settings: string;
+    };
+    dashboard: {
+      title: string;
+      subtitle: string;
+      cards: Array<{
+        label: string;
+        value: string;
+        detail: string;
+      }>;
+    };
+    settings: {
+      title: string;
+      subtitle: string;
+      cards: Array<{
+        label: string;
+        value: string;
+        detail: string;
+      }>;
+    };
+  };
+
   // ── Status page ──
   status: {
     agent: string;

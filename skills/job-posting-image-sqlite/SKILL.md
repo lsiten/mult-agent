@@ -26,7 +26,7 @@ description: Use when the user provides one or more job-posting files and wants 
 4. 无论哪种路径，都按 [references/job_posting_schema.md](references/job_posting_schema.md) 输出。
 5. 字段缺失时使用 `null`、空数组 `[]` 或空字符串，不要编造。
 6. 默认返回 JSON；如果用户明确要求“保存为文件”，则把结果写入当前工作区的 `.json` 文件。
-7. 如果用户要求“落库”“写入数据库”“SQLite”“保存到表”，则按 [references/sqlite_storage.md](references/sqlite_storage.md) 写入当前工作区的 SQLite 数据库。
+7. 如果用户要求“落库”“写入数据库”“SQLite”“保存到表”，则按 [references/sqlite_storage.md](references/sqlite_storage.md) 写入 RecruitAI 工作台使用的 SQLite 数据库。
 
 ## PDF Workflow
 
@@ -66,7 +66,7 @@ description: Use when the user provides one or more job-posting files and wants 
 
 ## Extraction Rules
 
-- 每个 `record` 必须包含 `status` 字段，允许值只有：`未完善`、`未发布`、`已发布`、`已终止`。
+- 每个 `record` 必须包含 `status` 字段，允许值只有：`待编辑`、`待评分`、`待发布`、`已完成`、`已暂停`。
 - `company.name`、`position.title`、`salary.original_text` 优先保留原文。
 - `age_limit` 用于记录岗位年龄要求，如 `35岁以下`、`25-35岁`；如果原文没有明确年龄限制，写 `null`。
 - `requirements.must_have` 仅放“任职要求/岗位要求/任职资格”等硬性要求。
@@ -82,20 +82,22 @@ description: Use when the user provides one or more job-posting files and wants 
 ## Status Rules
 
 - `status` 是岗位状态字段，不是文件状态字段。
-- 如果提取结果不完整、仍缺少较多关键字段、或覆盖范围不确定，默认写 `未完善`。
-- 如果来源明确是内部 JD、草稿、待发布内容，写 `未发布`。
-- 如果来源明确是公开招聘页面、已上线岗位、且提取覆盖完整，可写 `已发布`。
-- 如果原文明确表示“停止招聘”“岗位关闭”“已下线”“终止招聘”等，写 `已终止`。
-- 如果无法可靠判断，不要猜，优先写 `未完善`。
+- 如果提取结果不完整、仍缺少较多关键字段、或覆盖范围不确定，默认写 `待编辑`。
+- 如果岗位内容已经结构化但还没有生成权重，写 `待评分`。
+- 如果岗位已完成权重确认、等待发布，写 `待发布`。
+- 如果岗位流程已经完成，写 `已完成`。
+- 如果原文明确表示“停止招聘”“岗位关闭”“已下线”“终止招聘”等，写 `已暂停`。
+- 如果无法可靠判断，不要猜，优先写 `待编辑`。
 
 ## SQLite Storage Rules
 
 - 只有在用户明确要求保存到 SQLite、数据库、表，或要求后续基于数据库生成权重时，才执行 SQLite 写入。
-- 默认数据库路径为当前工作区的 `job_postings.sqlite`；如果用户指定路径，使用用户指定的 SQLite 文件。
+- 默认数据库路径优先级：用户指定路径 > `HERMES_RECRUIT_DB_PATH` > `$HERMES_HOME/job_postings.sqlite` > 当前工作区 `job_postings.sqlite`。
 - 每个 `records[*]` 对应 `job_postings` 表中的一行，不要把多个岗位合并进同一行。
 - 必须把完整岗位记录序列化到 `raw_json`，同时把常用检索字段拆到独立列。
 - 写入前必须 `CREATE TABLE IF NOT EXISTS`；执行写入时使用 SQLite 参数化语句。
 - 写入成功后，用中文摘要说明数据库路径、表名、写入记录数和生成的 `job_postings.id`。
+- 即使执行了 SQLite 写入，也必须在回复中保留完整的岗位 JSON（优先使用 ```json 代码块）；RecruitAI 工作台会读取这段 JSON 作为自动入库和卡片刷新的兜底来源。
 - 详细表结构、字段映射和同库权重表约定见 [references/sqlite_storage.md](references/sqlite_storage.md)。
 
 ## Output Contract
@@ -126,7 +128,7 @@ description: Use when the user provides one or more job-posting files and wants 
 - 不要在没有明确原文依据时猜测 `age_limit`。
 - 不要因为 PDF 只看了前几页，就默认后续页没有信息。
 - 不要把“默认检查前两页”误解成“默认只提取两页”。
-- 不要在没有证据时把 `status` 写成 `已发布` 或 `已终止`。
+- 不要在没有证据时把 `status` 写成 `已完成` 或 `已暂停`。
 - 如果字段有不确定性，保留原文到 `extraction_meta.raw_snippets`，同时降低 `extraction_meta.confidence`。
 - `extraction_meta.confidence` 取值范围为 `0` 到 `1`。
 - `extraction_meta.coverage_status` 只能在真正覆盖完整岗位信息时写 `complete`。

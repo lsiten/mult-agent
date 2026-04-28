@@ -62,7 +62,7 @@
 
 - `job.json` -> `job.score.json`
 - `solution_architect.json` -> `solution_architect.score.json`
-- 默认 SQLite 数据库：`job_postings.sqlite`
+- 默认 SQLite 数据库优先级：用户指定路径 > `HERMES_RECRUIT_DB_PATH` > `$HERMES_HOME/job_postings.sqlite` > 当前工作区 `job_postings.sqlite`
 - 岗位表：`job_postings`
 - 权重表：`job_posting_scores`
 - SQLite 写入规则见 [../../job-posting-image-sqlite/references/sqlite_storage.md](../../job-posting-image-sqlite/references/sqlite_storage.md)

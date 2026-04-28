@@ -100,6 +100,38 @@ def test_tool_invocations_handle_out_of_order_completion():
     assert completed_b["result"] == "ok-b"
 
 
+def test_selected_skill_context_loads_prompt_and_status(monkeypatch):
+    handlers = ChatAPIHandlers("test-token")
+
+    def fake_build_preloaded_skills_prompt(skill_names):
+        assert skill_names == ["job-posting-image-sqlite", "missing-skill"]
+        return "loaded skill prompt", ["job-posting-image-sqlite"], ["missing-skill"]
+
+    monkeypatch.setattr(
+        "agent.skill_commands.build_preloaded_skills_prompt",
+        fake_build_preloaded_skills_prompt,
+    )
+
+    prompt, skills_info = handlers._build_selected_skill_context([
+        "job-posting-image-sqlite",
+        "missing-skill",
+    ])
+
+    assert prompt == "loaded skill prompt"
+    assert skills_info == [
+        {
+            "name": "job-posting-image-sqlite",
+            "status": "loaded",
+            "category": "other",
+        },
+        {
+            "name": "missing-skill",
+            "status": "unavailable",
+            "category": "other",
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_safe_write_sse_returns_false_for_closing_transport():
     handlers = ChatAPIHandlers("test-token")

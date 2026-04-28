@@ -121,6 +121,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
     attachments,
     selectedSkills,
     agentId,
+    forceMaster = false,
     isRetry = false,
     isResume = false,
   }: {
@@ -130,6 +131,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
     attachments?: StreamingAttachment[];
     selectedSkills?: string[];
     agentId?: number | null;
+    forceMaster?: boolean;
     isRetry?: boolean;
     isResume?: boolean;
   }): Promise<string> {
@@ -140,6 +142,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
 
     return new Promise<string>((resolve, reject) => {
       let fullContent = isResume ? (sessionStates.get(sessionId)?.streamingContent ?? "") : "";
+      const completedTextSegments: string[] = [];
       let serverErrorHandled = false;
 
       const closeEventSource = () => {
@@ -147,6 +150,13 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
         if (eventSourceRef.current === eventSource) {
           eventSourceRef.current = null;
         }
+      };
+
+      const flushFullContentSegment = () => {
+        if (fullContent.trim()) {
+          completedTextSegments.push(fullContent);
+        }
+        fullContent = "";
       };
 
       eventSource.addEventListener("connected", () => {
@@ -259,7 +269,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
               toolUseMessages: [...prev.toolUseMessages, ...newMessages],
             };
           });
-          fullContent = "";
+          flushFullContentSegment();
         } catch (err) {
           console.error("Failed to parse tool_use event:", err);
         }
@@ -294,7 +304,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
               skillUseMessages: [...prev.skillUseMessages, skillMessage],
             };
           });
-          fullContent = "";
+          flushFullContentSegment();
         } catch (err) {
           console.error("Failed to parse skill_loaded event:", err);
         }
@@ -329,7 +339,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
               authRequestMessages: [...prev.authRequestMessages, authMessage],
             };
           });
-          fullContent = "";
+          flushFullContentSegment();
         } catch (err) {
           console.error("Failed to parse authorization_request event:", err);
         }
@@ -384,7 +394,11 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
           ...defaultSessionState,
         }));
         closeEventSource();
-        resolve(fullContent);
+        const finalSegments = [...completedTextSegments];
+        if (fullContent.trim()) {
+          finalSegments.push(fullContent);
+        }
+        resolve(finalSegments.join("\n\n"));
       });
 
       eventSource.addEventListener("cancelled", (event) => {
@@ -441,7 +455,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
               return;
             }
 
-            api.getResumeStreamUrl(sessionId, agentId ?? null)
+            api.getResumeStreamUrl(sessionId, agentId ?? null, forceMaster)
               .then((resumeUrl) => connectStreamImpl({
                 sessionId,
                 url: resumeUrl,
@@ -449,6 +463,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
                 attachments,
                 selectedSkills,
                 agentId,
+                forceMaster,
                 isRetry: true,
                 isResume: true,
               }))
@@ -472,6 +487,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
     attachments?: StreamingAttachment[],
     selectedSkills?: string[],
     agentId?: number | null,
+    forceMaster = false,
     isRetry = false
   ) => {
     currentSessionRef.current = sessionId;
@@ -496,7 +512,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
       stopRequested: false,
     }));
 
-    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills, agentId);
+    const url = await api.getStreamUrl(sessionId, message, attachments, selectedSkills, agentId, forceMaster);
     return connectStream({
       sessionId,
       url,
@@ -504,6 +520,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
       attachments,
       selectedSkills,
       agentId,
+      forceMaster,
       isRetry,
       isResume: false,
     });
@@ -512,6 +529,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
   const resumeStreaming = useCallback(async (
     sessionIdOverride?: string | null,
     agentIdOverride?: number | null,
+    forceMaster = false,
     isRetry = false,
   ) => {
     const sessionId = sessionIdOverride ?? currentSessionId ?? currentSessionRef.current;
@@ -550,7 +568,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
       authRequestMessages: prev.authRequestMessages,
     }));
 
-    const url = await api.getResumeStreamUrl(sessionId, agentId);
+    const url = await api.getResumeStreamUrl(sessionId, agentId, forceMaster);
     return connectStream({
       sessionId,
       url,
@@ -558,6 +576,7 @@ export function useStreamingResponse(currentSessionId: string | null = null) {
       attachments,
       selectedSkills,
       agentId,
+      forceMaster,
       isRetry,
       isResume: true,
     });

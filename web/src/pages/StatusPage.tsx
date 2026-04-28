@@ -10,7 +10,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { PlatformStatus, SessionInfo, StatusResponse } from "@/lib/api";
+import type { PlatformStatus, SessionInfo } from "@/lib/api";
 import { timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
