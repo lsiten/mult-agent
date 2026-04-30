@@ -1379,3 +1379,136 @@ export interface StreamEvent {
   message_id?: string;
   error?: string;
 }
+
+// ── Workflow API ──
+
+export interface WorkflowApiResponse {
+  workflow: Workflow | null;
+}
+
+export interface Workflow {
+  id: number;
+  company_id: number;
+  name: string;
+  description: string;
+  status: "draft" | "active" | "archived";
+  created_at: number;
+  updated_at: number;
+  edges?: WorkflowEdge[];
+}
+
+export interface WorkflowEdge {
+  id: number;
+  workflow_id: number;
+  source_department_id: number;
+  target_department_id: number;
+  action_description: string;
+  trigger_condition?: string;
+  sort_order: number;
+  created_at: number;
+}
+
+export interface WorkflowInstance {
+  id: number;
+  workflow_id: number;
+  company_id: number;
+  task_id: number;
+  current_edge_id?: number;
+  status: "running" | "completed" | "failed";
+  started_at: number;
+  completed_at?: number;
+}
+
+export async function getWorkflow(companyId: number): Promise<Workflow | null> {
+  const base = await getRequestBase();
+  const token = await getGatewayAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(
+    `${base}/api/org/companies/${companyId}/workflow`,
+    { headers }
+  );
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new Error(`Failed to fetch workflow: ${res.statusText}`);
+  }
+  const data: WorkflowApiResponse = await res.json();
+  return data.workflow;
+}
+
+export async function generateWorkflow(companyId: number): Promise<Workflow> {
+  const base = await getRequestBase();
+  const token = await getGatewayAuthToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(
+    `${base}/api/org/companies/${companyId}/workflow/generate`,
+    { method: "POST", headers }
+  );
+  if (!res.ok) throw new Error(`Failed to generate workflow: ${res.statusText}`);
+  const data: WorkflowApiResponse = await res.json();
+  return data.workflow!;
+}
+
+export async function createWorkflow(data: {
+  company_id: number;
+  name: string;
+  description?: string;
+}): Promise<Workflow> {
+  const base = await getRequestBase();
+  const token = await getGatewayAuthToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${base}/api/org/workflows`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to create workflow: ${res.statusText}`);
+  return await res.json();
+}
+
+export async function updateWorkflow(
+  id: number,
+  data: {
+    name?: string;
+    description?: string;
+    status?: string;
+    edges?: Array<{
+      source_department_id: number;
+      target_department_id: number;
+      action_description: string;
+      trigger_condition?: string;
+      sort_order?: number;
+    }>;
+  }
+): Promise<Workflow> {
+  const base = await getRequestBase();
+  const token = await getGatewayAuthToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${base}/api/org/workflows/${id}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to update workflow: ${res.statusText}`);
+  return await res.json();
+}
+
+export async function deleteWorkflow(id: number): Promise<void> {
+  const base = await getRequestBase();
+  const token = await getGatewayAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${base}/api/org/workflows/${id}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (!res.ok) throw new Error(`Failed to delete workflow: ${res.statusText}`);
+}
