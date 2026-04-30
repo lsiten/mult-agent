@@ -4,7 +4,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from tools.org_creation_tool import create_department, create_position
+from tools.org_creation_tool import create_department, create_position, create_agent
 
 
 class TestCreateDepartment:
@@ -95,3 +95,47 @@ class TestCreatePosition:
         call_args = mock_service.create_position.call_args[0][0]
         assert call_args["is_management_position"] is True
         assert call_args["headcount"] == 1
+
+
+class TestCreateAgent:
+    def test_create_agent_success(self):
+        """Test successful agent creation."""
+        mock_service = MagicMock()
+        mock_service.create_agent.return_value = {
+            "id": 1,
+            "name": "agent-eng-001",
+            "display_name": "Engineer",
+            "role_summary": "Software engineer",
+            "status": "active",
+        }
+
+        with patch("tools.org_creation_tool._get_org_service", return_value=mock_service):
+            result_json = create_agent(
+                position_id=1,
+                name="agent-eng-001",
+                role_summary="Software engineer",
+            )
+            result = json.loads(result_json)
+
+        assert "error" not in result
+        assert result["name"] == "agent-eng-001"
+        mock_service.create_agent.assert_called_once()
+
+    def test_create_agent_with_manager(self):
+        """Test creating an agent with a manager."""
+        mock_service = MagicMock()
+        mock_service.create_agent.return_value = {"id": 2, "name": "agent-2"}
+
+        with patch("tools.org_creation_tool._get_org_service", return_value=mock_service):
+            result_json = create_agent(
+                position_id=1,
+                name="agent-2",
+                role_summary="Developer",
+                manager_agent_id=1,
+                employee_no="EMP-002",
+            )
+            result = json.loads(result_json)
+
+        call_args = mock_service.create_agent.call_args[0][0]
+        assert call_args["manager_agent_id"] == 1
+        assert call_args["employee_no"] == "EMP-002"

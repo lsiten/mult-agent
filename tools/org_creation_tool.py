@@ -180,3 +180,80 @@ registry.register(
     check_fn=lambda: True,
     emoji="📋",
 )
+
+# ============================================================
+# 3. create_agent
+# ============================================================
+
+AGENT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "create_agent",
+        "description": "Create an agent. Calls AgentProvisionService.create_agent() with profile auto-configuration and workspace initialization.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "position_id": {"type": "integer", "description": "Position ID this agent belongs to"},
+                "name": {"type": "string", "description": "Agent name/identifier"},
+                "role_summary": {"type": "string", "description": "Brief summary of the agent's role"},
+                "manager_agent_id": {"type": "integer", "description": "Direct manager agent ID (optional)"},
+                "employee_no": {"type": "string", "description": "Employee number (optional)"},
+            },
+            "required": ["position_id", "name", "role_summary"],
+        },
+    },
+}
+
+
+def create_agent(
+    position_id: int,
+    name: str,
+    role_summary: str,
+    manager_agent_id: int = None,
+    employee_no: str = None,
+    parent_agent=None,
+) -> str:
+    """
+    [创建 Agent] 调用 OrganizationService.create_agent()。
+
+    Args:
+        position_id: 所属岗位 ID
+        name: Agent 名称
+        role_summary: 角色摘要
+        manager_agent_id: 直属管理者 ID（可选）
+        employee_no: 工号（可选）
+        parent_agent: 调用此工具的父 Agent（自动注入）
+
+    Returns:
+        JSON 字符串包含创建的 Agent 详情（含 profile 信息）
+    """
+    try:
+        service = _get_org_service()
+        result = service.create_agent({
+            "position_id": position_id,
+            "name": name,
+            "role_summary": role_summary,
+            "manager_agent_id": manager_agent_id,
+            "employee_no": employee_no,
+        })
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        logger.exception("Error creating agent")
+        return json.dumps({"error": f"Failed to create agent: {e}"}, ensure_ascii=False)
+
+
+registry.register(
+    name="create_agent",
+    toolset="org_creation",
+    schema=AGENT_SCHEMA,
+    handler=lambda args, **kw: create_agent(
+        position_id=args.get("position_id"),
+        name=args.get("name"),
+        role_summary=args.get("role_summary"),
+        manager_agent_id=args.get("manager_agent_id"),
+        employee_no=args.get("employee_no"),
+        parent_agent=kw.get("parent_agent"),
+    ),
+    check_fn=lambda: True,
+    emoji="🤖",
+)
