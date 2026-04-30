@@ -1,3 +1,4 @@
+# gateway/platforms/api_server_workflow.py
 """Workflow API handlers for the dashboard."""
 
 from __future__ import annotations
@@ -22,8 +23,7 @@ class WorkflowAPIHandlers:
         self._store = workflow_store
 
     def _check_auth(self, request: web.Request) -> bool:
-        import os
-        if os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
+        if __import__("os").getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
             return True
         auth = request.headers.get("Authorization", "")
         expected = f"Bearer {self._session_token}"
@@ -40,23 +40,28 @@ class WorkflowAPIHandlers:
             return web.json_response({"error": str(exc)}, status=500)
 
     async def handle_get_workflow(self, request: web.Request) -> web.Response:
+        """GET /api/org/companies/{companyId}/workflow"""
         company_id = int(request.match_info["companyId"])
         return await self._handle(request, lambda: self._get_workflow_by_company(company_id))
 
     async def handle_generate_workflow(self, request: web.Request) -> web.Response:
+        """POST /api/org/companies/{companyId}/workflow/generate"""
         company_id = int(request.match_info["companyId"])
         return await self._handle(request, lambda: self._generate_workflow(company_id))
 
     async def handle_create_workflow(self, request: web.Request) -> web.Response:
+        """POST /api/org/workflows"""
         data = await request.json()
         return await self._handle(request, lambda: self._store.create_workflow(data["company_id"], data))
 
     async def handle_update_workflow(self, request: web.Request) -> web.Response:
+        """PUT /api/org/workflows/{id}"""
         workflow_id = int(request.match_info["id"])
         data = await request.json()
         return await self._handle(request, lambda: self._store.update_workflow(workflow_id, data))
 
     async def handle_delete_workflow(self, request: web.Request) -> web.Response:
+        """DELETE /api/org/workflows/{id}"""
         workflow_id = int(request.match_info["id"])
         return await self._handle(request, lambda: self._store.delete_workflow(workflow_id))
 
@@ -67,20 +72,24 @@ class WorkflowAPIHandlers:
         return {"workflow": workflow}
 
     def _generate_workflow(self, company_id: int):
+        """
+        AI-generate workflow based on company structure.
+        Placeholder: uses rule-based generation for now.
+        """
         conn = self._store._conn
         depts = conn.execute(
             "SELECT id, name FROM departments WHERE company_id = ? AND status = 'active' ORDER BY sort_order",
             (company_id,),
         ).fetchall()
-
+        
         if len(depts) == 0:
             raise ValueError("Company has no active departments to build workflow")
-
+        
         workflow = self._store.create_workflow(company_id, {
             "name": "Auto-Generated Workflow",
             "description": "AI-generated workflow based on company structure",
         })
-
+        
         for i in range(len(depts) - 1):
             self._store.add_edge(workflow["id"], {
                 "source_department_id": depts[i]["id"],
@@ -89,5 +98,5 @@ class WorkflowAPIHandlers:
                 "trigger_condition": "task.status == 'completed'",
                 "sort_order": i,
             })
-
+        
         return self._store.get_workflow_by_company(company_id)

@@ -5,7 +5,7 @@ import {
   MessageSquare, Package, Settings, Puzzle,
   Sparkles, Terminal, Globe, Database, Shield,
   Wrench, Zap, Heart, Star, Code, Eye, MessagesSquare,
-  Loader2, AlertTriangle, Gauge, Building2,
+  Loader2, AlertTriangle, Gauge, Building2, GitBranch,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { AgentIdentitySwitcher } from "@/components/AgentIdentitySwitcher";
@@ -38,6 +38,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const ChatPage = lazy(() => import("@/pages/ChatPage").then(m => ({ default: m.ChatPage })));
 const DevToolsPage = lazy(() => import("@/pages/DevToolsPage"));
 const OrganizationPage = lazy(() => import("@/pages/OrganizationPage/index"));
+const WorkflowsPage = lazy(() => import("@/pages/WorkflowsPage"));
 
 // ---------------------------------------------------------------------------
 // Built-in nav items
@@ -55,6 +56,7 @@ interface NavItem {
 const BUILTIN_NAV: NavItem[] = [
   { path: "/", labelKey: "chat", label: "Chat", icon: MessagesSquare },
   { path: "/organization", labelKey: "organization", label: "Organization", icon: Building2, masterOnly: true },
+  { path: "/workflows", labelKey: "workflows", label: "Workflows", icon: GitBranch, masterOnly: true },
   { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
   { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
   { path: "/settings", labelKey: "settings", label: "Settings", icon: Settings },
@@ -66,7 +68,7 @@ const BUILTIN_NAV: NavItem[] = [
  * attempt to navigate here while a sub-agent is selected is redirected to
  * the chat page for that agent.
  */
-const MASTER_ONLY_PATHS = new Set<string>(["/organization", "/dev-tools"]);
+const MASTER_ONLY_PATHS = new Set<string>(["/organization", "/dev-tools", "/workflows"]);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -495,6 +497,7 @@ function HermesApp() {
             <Routes>
               <Route path="/" element={<ChatPage scope={scope} />} />
               <Route path="/organization" element={<OrganizationPage />} />
+              <Route path="/workflows" element={<WorkflowsPage scope={scope} />} />
               <Route path="/cron" element={<CronPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

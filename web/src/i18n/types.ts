@@ -934,6 +934,50 @@ export interface Translations {
     departmentLeader: string;
     managingDepartmentLeader: string;
     otherDepartmentLeader: string;
+    // Mention extension for chat input
+    mentionSearchPlaceholder: string;
+    noAgentsFound: string;
+    agentCount: string;
+    selectedCompany: string;
+    noCompanies: string;
+  };
+
+  // ── Workflows page ──
+  workflows: {
+    title: string;
+    subtitle: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    emptyNoDepartments: string;
+    generateWorkflow: string;
+    generating: string;
+    viewMode: string;
+    editMode: string;
+    save: string;
+    saving: string;
+    cancel: string;
+    delete: string;
+    deleteConfirm: string;
+    deleted: string;
+    deleteFailed: string;
+    saved: string;
+    saveFailed: string;
+    generated: string;
+    generateFailed: string;
+    loadFailed: string;
+    addConnection: string;
+    editConnection: string;
+    sourceDepartment: string;
+    targetDepartment: string;
+    actionDescription: string;
+    triggerCondition: string;
+    triggerConditionOptional: string;
+    selectDepartment: string;
+    departmentsRequired: string;
+    departmentsHint: string;
+    noWorkflow: string;
+    noWorkflowDescription: string;
+    edgeDeleteConfirm: string;
   };
 
   // ── Language switcher ──

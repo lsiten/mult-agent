@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterable
 
 from hermes_constants import get_hermes_home
 
-SCHEMA_VERSION = 6  # Was 5, now 6 for director_offices table
+SCHEMA_VERSION = 5
 
 # Organization Management Tables (v4)
 from .models import TABLES_SQL, INDEXES_SQL
@@ -1342,53 +1342,3 @@ class AgentPermissionRepository(BaseRepository):
                 conn=conn,
             )
             return self.get(cursor.lastrowid, conn=conn) or {}
-
-
-class DirectorOfficeRepository(BaseRepository):
-    """Repository for director office operations."""
-    table = "director_offices"
-
-    _ALLOWED_UPDATE_FIELDS = {
-        "department_id", "director_agent_id", "office_name",
-        "responsibilities", "status"
-    }
-
-    def create(self, data: dict, *, conn=None) -> dict:
-        """Create a new director office."""
-        _require(data, "company_id", "department_id", "office_name")
-        ts = now_ts()
-        cursor = self.store.execute(
-            """
-            INSERT INTO director_offices(
-                company_id, department_id, director_agent_id,
-                office_name, responsibilities, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                data["company_id"],
-                data["department_id"],
-                data.get("director_agent_id"),
-                data["office_name"],
-                data.get("responsibilities"),
-                data.get("status", "active"),
-                ts, ts
-            ),
-            conn=conn,
-        )
-        return self.get(cursor.lastrowid, conn=conn) or {}
-
-    def list_by_company(self, company_id: int, *, conn=None) -> list:
-        """List all director offices for a company."""
-        return self.store.query_all(
-            "SELECT * FROM director_offices WHERE company_id = ? ORDER BY created_at",
-            (company_id,),
-            conn=conn
-        )
-
-    def update(self, office_id: int, data: dict, *, conn=None) -> dict:
-        """Update a director office."""
-        return super().update(office_id, data, self._ALLOWED_UPDATE_FIELDS, conn=conn)
-
-    def delete(self, office_id: int, *, conn=None) -> int:
-        """Delete a director office."""
-        return super().delete(office_id, conn=conn)

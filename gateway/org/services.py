@@ -1090,6 +1090,7 @@ class OrganizationService:
         self.master_assets = MasterAgentAssetRepository(self.store)
         self.bootstrap_requirements = SubagentBootstrapRequirementRepository(self.store)
         self.profile_templates = ProfileTemplateRepository(self.store)
+        self.tasks = TaskRepository(self.store)
         self.workspace_service = WorkspaceProvisionService(self.store, self.workspaces)
         self.asset_scanner = MasterAgentAssetScanner(self.store, self.master_assets)
         self.validator = BootstrapValidator(
@@ -1389,6 +1390,57 @@ class OrganizationService:
         )
         self._cleanup_paths(resources)
         return {"deleted": agent_id}
+
+    # ----------------------------------------- Task Operations
+
+    def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create a task and optionally route it through the workflow engine."""
+        _require(data, "title", "creator_agent_id", "assignee_agent_id")
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            # Create the task
+            task = self.tasks.create(data, conn=conn)
+
+            # Try to route via workflow engine
+            from gateway.org.workflow_engine import WorkflowEngine
+            engine = WorkflowEngine(self.store)
+            match_result = engine.match_workflow(
+                conn, task["creator_agent_id"], task["title"], task.get("description", "")
+            )
+
+            workflow_instance = None
+            if match_result:
+                instance = engine.create_instance(
+                    match_result["workflow_id"],
+                    match_result["company_id"],
+                    task["id"],
+                    match_result["current_department_id"],
+                )
+                if instance:
+                    workflow_instance = instance
+
+            return {"task": task, "workflow_instance": workflow_instance}
+
+        return self.store.transaction(tx)
+
+    def get_task(self, task_id: int) -> dict[str, Any]:
+        """Get a task by ID."""
+        task = self.tasks.get(task_id)
+        if not task:
+            raise OrganizationError(f"Task {task_id} not found", 404)
+        return {"task": task}
+
+    def update_task(self, task_id: int, data: dict[str, Any]) -> dict[str, Any]:
+        """Update a task."""
+        return self.store.transaction(
+            lambda conn: self.tasks.update(task_id, data, conn=conn)
+        )
+
+    def delete_task(self, task_id: int) -> dict[str, Any]:
+        """Delete a task."""
+        return self.store.transaction(
+            lambda conn: self.tasks.delete(task_id, conn=conn)
+        )
 
     # ----------------------------------------- Quick Actions (快捷操作)
 
