@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterable
 
 from hermes_constants import get_hermes_home
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Organization Management Tables (v4)
 from .models import TABLES_SQL, INDEXES_SQL
@@ -235,6 +235,48 @@ CREATE INDEX IF NOT EXISTS idx_profile_templates_scope
     ON profile_templates(scope_type, scope_id);
 CREATE INDEX IF NOT EXISTS idx_master_assets_type_visibility
     ON master_agent_assets(asset_type, visibility);
+
+# --- Workflow Management Tables (v5) ---
+
+CREATE TABLE IF NOT EXISTS workflows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER UNIQUE NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',  -- draft, active, archived
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    source_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    target_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    action_description TEXT NOT NULL,
+    trigger_condition TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_instances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    current_edge_id INTEGER REFERENCES workflow_edges(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'running',  -- running, completed, failed
+    started_at REAL NOT NULL,
+    completed_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflows_company ON workflows(company_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_edges_workflow ON workflow_edges(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_edges_source ON workflow_edges(source_department_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_edges_target ON workflow_edges(target_department_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_workflow ON workflow_instances(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_task ON workflow_instances(task_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_company ON workflow_instances(company_id);
 """
 
 
@@ -300,6 +342,19 @@ class OrganizationStore:
             "agents": {
                 "accent_color": "TEXT",
                 "leadership_role": "TEXT DEFAULT 'none'",
+            },
+            "workflows": {
+                "status": "TEXT NOT NULL DEFAULT 'draft'",
+                "description": "TEXT",
+            },
+            "workflow_edges": {
+                "action_description": "TEXT NOT NULL",
+                "trigger_condition": "TEXT",
+                "sort_order": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "workflow_instances": {
+                "current_edge_id": "INTEGER REFERENCES workflow_edges(id) ON DELETE SET NULL",
+                "company_id": "INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE",
             },
         }
         for table, columns in additions.items():
