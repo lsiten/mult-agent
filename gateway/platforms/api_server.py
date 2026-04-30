@@ -2742,6 +2742,18 @@ class APIServerAdapter(BasePlatformAdapter):
             "/api/org/profile-templates/{id}",
             org_h.handle_delete_profile_template,
         )
+        # Task API
+        self._app.router.add_post("/api/org/tasks", org_h.handle_create_task)
+        self._app.router.add_get("/api/org/tasks/{id}", org_h.handle_get_task)
+        self._app.router.add_put("/api/org/tasks/{id}", org_h.handle_update_task)
+        self._app.router.add_delete("/api/org/tasks/{id}", org_h.handle_delete_task)
+
+        # Workflow Instance API
+        self._app.router.add_get(
+            "/api/org/workflows/instances/{id}",
+            org_h.handle_get_workflow_instance,
+        )
+
         # Workflow API
         self._app.router.add_get(
             "/api/org/companies/{companyId}/workflow",

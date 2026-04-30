@@ -292,3 +292,50 @@ class OrganizationAPIHandlers:
 
     async def handle_delete_workflow(self, request: web.Request) -> web.Response:
         return await self._workflow_handlers.handle_delete_workflow(request)
+
+    # ------------------------------ Task Operations ------------------------------
+
+    async def handle_create_task(self, request: web.Request) -> web.Response:
+        """POST /api/org/tasks — create task with optional workflow routing."""
+        data = await self._json_body(request)
+        return await self._handle(
+            request,
+            lambda: self._service.create_task(data),
+            success_status=201,
+        )
+
+    async def handle_get_task(self, request: web.Request) -> web.Response:
+        """GET /api/org/tasks/{id}"""
+        task_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.get_task(task_id))
+
+    async def handle_update_task(self, request: web.Request) -> web.Response:
+        """PUT /api/org/tasks/{id}"""
+        task_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        return await self._handle(request, lambda: self._service.update_task(task_id, data))
+
+    async def handle_delete_task(self, request: web.Request) -> web.Response:
+        """DELETE /api/org/tasks/{id}"""
+        task_id = int(request.match_info["id"])
+        return await self._handle(request, lambda: self._service.delete_task(task_id))
+
+    # ------------------------------ Workflow Instance ------------------------------
+
+    async def handle_get_workflow_instance(self, request: web.Request) -> web.Response:
+        """GET /api/org/workflows/instances/{id}"""
+        instance_id = int(request.match_info["id"])
+        return await self._handle(
+            request,
+            lambda: {"instance": self._get_workflow_instance(instance_id)},
+        )
+
+    def _get_workflow_instance(self, instance_id: int) -> dict[str, Any]:
+        """Get workflow instance by ID."""
+        from gateway.org import workflow_store as _ws
+        row = self._workflow_handlers._store._conn.execute(
+            "SELECT * FROM workflow_instances WHERE id = ?", (instance_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Workflow instance {instance_id} not found")
+        return dict(row)
