@@ -276,7 +276,7 @@ class OrganizationAPIHandlers:
             lambda: self._service.delete_profile_template(template_id),
         )
 
-    # ------------------------------ workflow ------------------------------
+    # ------------------------------ workflows ------------------------------
 
     async def handle_get_workflow(self, request: web.Request) -> web.Response:
         return await self._workflow_handlers.handle_get_workflow(request)
