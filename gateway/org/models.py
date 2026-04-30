@@ -117,6 +117,20 @@ class AgentPermission:
         }
 
 
+@dataclass
+class DirectorOffice:
+    """Director office for strategic decision making."""
+    id: Optional[int] = None
+    company_id: int = 0
+    department_id: int = 0
+    director_agent_id: int = 0
+    office_name: str = ""
+    responsibilities: str = ""
+    status: str = "active"  # active, inactive
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 # SQL Table Creation Statements
 TABLES_SQL = {
     "tasks": """
@@ -177,6 +191,54 @@ TABLES_SQL = {
             FOREIGN KEY (agent_id) REFERENCES agents(id)
         )
     """,
+    "workflows": """
+        CREATE TABLE IF NOT EXISTS workflows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER UNIQUE NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """,
+    "workflow_edges": """
+        CREATE TABLE IF NOT EXISTS workflow_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            source_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+            target_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+            action_description TEXT NOT NULL,
+            trigger_condition TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at REAL NOT NULL
+        )
+    """,
+    "workflow_instances": """
+        CREATE TABLE IF NOT EXISTS workflow_instances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            current_edge_id INTEGER REFERENCES workflow_edges(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'running',
+            started_at REAL NOT NULL,
+            completed_at REAL
+        )
+    """,
+    "director_offices": """
+        CREATE TABLE IF NOT EXISTS director_offices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+            director_agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+            office_name TEXT NOT NULL,
+            responsibilities TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """,
 }
 
 # Indexes for performance
@@ -187,4 +249,14 @@ INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_reports_task ON task_reports(task_id)",
     "CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflows_company ON workflows(company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_edges_workflow ON workflow_edges(workflow_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_edges_source ON workflow_edges(source_department_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_edges_target ON workflow_edges(target_department_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_instances_workflow ON workflow_instances(workflow_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_instances_task ON workflow_instances(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_instances_company ON workflow_instances(company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_director_offices_company ON director_offices(company_id)",
+    "CREATE INDEX IF NOT EXISTS idx_director_offices_department ON director_offices(department_id)",
+    "CREATE INDEX IF NOT EXISTS idx_director_offices_director ON director_offices(director_agent_id)",
 ]
