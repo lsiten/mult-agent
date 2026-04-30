@@ -12,6 +12,8 @@ from aiohttp import web
 
 from gateway.org import OrganizationService
 from gateway.org.services import OrganizationError
+from gateway.org.workflow_store import WorkflowStore
+from gateway.platforms.api_server_workflow import WorkflowAPIHandlers
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class OrganizationAPIHandlers:
     def __init__(self, session_token: str, service: OrganizationService | None = None):
         self._session_token = session_token
         self._service = service or OrganizationService()
+        self._workflow_handlers = WorkflowAPIHandlers(session_token, WorkflowStore())
 
     def _check_auth(self, request: web.Request) -> bool:
         if os.getenv("HERMES_ELECTRON_MODE", "").lower() in ("true", "1"):
@@ -272,3 +275,20 @@ class OrganizationAPIHandlers:
             request,
             lambda: self._service.delete_profile_template(template_id),
         )
+
+    # ------------------------------ workflows ------------------------------
+
+    async def handle_get_workflow(self, request: web.Request) -> web.Response:
+        return await self._workflow_handlers.handle_get_workflow(request)
+
+    async def handle_generate_workflow(self, request: web.Request) -> web.Response:
+        return await self._workflow_handlers.handle_generate_workflow(request)
+
+    async def handle_create_workflow(self, request: web.Request) -> web.Response:
+        return await self._workflow_handlers.handle_create_workflow(request)
+
+    async def handle_update_workflow(self, request: web.Request) -> web.Response:
+        return await self._workflow_handlers.handle_update_workflow(request)
+
+    async def handle_delete_workflow(self, request: web.Request) -> web.Response:
+        return await self._workflow_handlers.handle_delete_workflow(request)
