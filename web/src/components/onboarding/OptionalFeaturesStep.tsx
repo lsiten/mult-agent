@@ -18,7 +18,7 @@ interface OptionalFeaturesStepProps {
   onFieldChange: (key: string, value: string) => void;
 }
 
-type BrowserMode = "local" | "cdp" | "browserbase" | null;
+type BrowserMode = "plugin" | "local" | "cdp" | "browserbase" | null;
 
 export function OptionalFeaturesStep({
   selectedProvider,
@@ -37,7 +37,7 @@ export function OptionalFeaturesStep({
   const [browserMode, setBrowserMode] = useState<BrowserMode>(
     formData.BROWSER_CDP_URL || configuredKeys.has("BROWSER_CDP_URL") ? "cdp" :
     formData.BROWSERBASE_API_KEY || configuredKeys.has("BROWSERBASE_API_KEY") ? "browserbase" :
-    null
+    "plugin" // Default to browser plugin
   );
   const [exaEnabled, setExaEnabled] = useState(
     !!formData.EXA_API_KEY || configuredKeys.has("EXA_API_KEY")
@@ -62,6 +62,9 @@ export function OptionalFeaturesStep({
     if (mode !== "browserbase") {
       onFieldChange("BROWSERBASE_API_KEY", "");
       onFieldChange("BROWSERBASE_PROJECT_ID", "");
+    }
+    if (mode !== "local") {
+      onFieldChange("EXTENSION_BRIDGE_ENABLED", "");
     }
   };
 
@@ -228,6 +231,16 @@ export function OptionalFeaturesStep({
               <input
                 type="radio"
                 name="browser-mode"
+                checked={browserMode === "plugin"}
+                onChange={() => handleBrowserModeChange("plugin")}
+              />
+              <span className="text-sm">{t.onboarding.step3.browserModePlugin || "浏览器插件（推荐）"}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="browser-mode"
                 checked={browserMode === "local"}
                 onChange={() => handleBrowserModeChange("local")}
               />
@@ -254,6 +267,51 @@ export function OptionalFeaturesStep({
               <span className="text-sm">{t.onboarding.step3.browserModeBrowserbase}</span>
             </label>
           </div>
+
+          {/* Browser Plugin Installation Guide */}
+          {browserMode === "plugin" && (
+            <div className="ml-6 flex flex-col gap-3 bg-muted/30 p-3 rounded">
+              <div className="text-xs bg-blue-500/10 border border-blue-500/30 p-3 rounded">
+                <p className="font-medium mb-2 text-blue-700 dark:text-blue-400">📦 浏览器插件安装指南</p>
+                <p className="text-muted-foreground mb-2">
+                  请按照以下步骤安装浏览器插件：
+                </p>
+                <ol className="list-decimal list-inside space-y-1 ml-2">
+                  <li>打开浏览器扩展商店</li>
+                  <li>搜索并安装 'Page Agent Browser Plugin'</li>
+                  <li>安装完成后刷新页面</li>
+                  <li>点击浏览器工具栏中的插件图标，授予所需的页面访问权限</li>
+                </ol>
+                <p className="mt-2 text-green-600 dark:text-green-400">
+                  ✓ 验证: 在浏览器扩展列表中看到 'Page Agent Browser Plugin' 且状态为'已启用'
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Extension Bridge Configuration (Legacy) */}
+          {browserMode === "local" && (
+            <div className="ml-6 flex flex-col gap-3 bg-muted/30 p-3 rounded">
+              <div className="text-xs bg-amber-500/10 border border-amber-500/30 p-3 rounded">
+                <p className="font-medium mb-2 text-amber-700 dark:text-amber-400">⚠️ 扩展桥接模式（旧版）</p>
+                <p className="text-muted-foreground mb-2">
+                  此模式需要额外的桥接服务器。推荐使用浏览器插件模式。
+                </p>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="extension-bridge-enabled"
+                    checked={formData.EXTENSION_BRIDGE_ENABLED === "true"}
+                    onCheckedChange={(checked) => {
+                      onFieldChange("EXTENSION_BRIDGE_ENABLED", checked ? "true" : "");
+                    }}
+                  />
+                  <Label htmlFor="extension-bridge-enabled" className="cursor-pointer text-xs">
+                    启用扩展桥接 (EXTENSION_BRIDGE_ENABLED=true)
+                  </Label>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* CDP Configuration */}
           {browserMode === "cdp" && (

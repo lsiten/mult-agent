@@ -38,7 +38,7 @@ export function StoredPostingPreviewDialog({
 }: StoredPostingPreviewDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl border-[#2e2e2e] bg-[#111a14] p-0 text-[#dde4dd]">
+       <DialogContent className="max-w-5xl border-[#2e2e2e] bg-[#111a14] p-0 text-[#dde4dd]" style={{ transform: 'translate(-50%, -45%)' }}>
         <DialogHeader className="border-b border-[#2e2e2e] px-6 py-5 text-left">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">

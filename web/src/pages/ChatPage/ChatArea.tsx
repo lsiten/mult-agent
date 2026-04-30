@@ -25,6 +25,7 @@ interface ChatAreaProps {
   onFileSelect: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   allUploaded: boolean;
+  currentCompanyId?: number;
 }
 
 export function ChatArea({
@@ -47,6 +48,7 @@ export function ChatArea({
   onFileSelect,
   onRemoveAttachment,
   allUploaded,
+  currentCompanyId,
 }: ChatAreaProps) {
   const { t } = useI18n();
 
@@ -98,6 +100,7 @@ export function ChatArea({
           onFileSelect={onFileSelect}
           onRemoveAttachment={onRemoveAttachment}
           allUploaded={allUploaded}
+          currentCompanyId={currentCompanyId}
         />
       </div>
     </div>

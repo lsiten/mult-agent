@@ -79,6 +79,16 @@ export interface Translations {
     };
   };
 
+  // ── Work Selector ──
+  workSelector: {
+    selectWork: string;
+    masterAgent: string;
+    masterAgentHint: string;
+    noCompanies: string;
+    loadingCompanies: string;
+    agents: string;
+  };
+
   // ── RecruitAI candidate preview ──
   recruitCandidate: {
     brand: string;
@@ -981,6 +991,7 @@ export interface Translations {
       falKeyPlaceholder: string;
       browserSection: string;
       browserDescription: string;
+      browserModePlugin: string;
       browserModeLocal: string;
       browserModeCdp: string;
       browserModeBrowserbase: string;

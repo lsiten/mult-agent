@@ -81,6 +81,15 @@ export const en: Translations = {
     },
   },
 
+  workSelector: {
+    selectWork: "Select Work",
+    masterAgent: "Hermes Agent",
+    masterAgentHint: "Main Agent — not tied to any company",
+    noCompanies: "No companies found",
+    loadingCompanies: "Loading...",
+    agents: "Agents",
+  },
+
   recruitCandidate: {
     brand: "RecruitAI",
     systemLabel: "Multi-agent system",
@@ -672,6 +681,12 @@ export const en: Translations = {
     departmentLeader: "Department Leader",
     managingDepartmentLeader: "Managing Department Leader",
     otherDepartmentLeader: "Other Department Leader",
+    // Mention extension for chat input
+    mentionSearchPlaceholder: "Search agents...",
+    noAgentsFound: "No agents found",
+    agentCount: "{count} agents",
+    selectedCompany: "Current Company",
+    noCompanies: "No companies yet, create one first on the Organization page",
   },
 
   config: {
@@ -959,7 +974,8 @@ export const en: Translations = {
       falKeyPlaceholder: "Enter your FAL API Key",
       browserSection: "Browser Automation",
       browserDescription: "Agent automatically operates web pages",
-      browserModeLocal: "Local Chromium (Recommended, Free)",
+      browserModePlugin: "Browser Plugin (Recommended)",
+      browserModeLocal: "Local Chromium (Extension Bridge)",
       browserModeCdp: "CDP Connect to Local Chrome",
       browserModeBrowserbase: "Browserbase Cloud Browser",
       cdpUrlLabel: "CDP WebSocket URL",

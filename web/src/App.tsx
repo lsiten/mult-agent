@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { AgentIdentitySwitcher } from "@/components/AgentIdentitySwitcher";
+import { WorkSelector } from "@/components/WorkSelector";
 import { useAgentSwitcher } from "@/hooks/useAgentSwitcher";
+import { useWorkSelector } from "@/hooks/useWorkSelector";
 import { SubAgentErrorModal } from "@/components/SubAgentErrorModal";
 import { AgentProvider } from "@/contexts/AgentContext";
 // import { ThemeSwitcher } from "@/components/ThemeSwitcher";
@@ -136,6 +138,42 @@ function HermesApp() {
     clearError,
     isReady,
   } = useAgentSwitcher();
+
+  const {
+    scope,
+    companies,
+    loaded: workLoaded,
+    selectScope,
+    agentsForScope,
+  } = useWorkSelector();
+
+  // Get agents for the current scope
+  const scopedAgents = useMemo(() => {
+    if (scope.type === "company") {
+      return agentsForScope[scope.company.id] ?? [];
+    }
+    // Master scope: show all agents
+    return availableAgents;
+  }, [scope, agentsForScope, availableAgents]);
+
+  // When switching to a company, auto-select the highest-ranking manager
+  useEffect(() => {
+    if (scope.type === "company" && scopedAgents.length > 0) {
+      const managerOrder: Record<string, number> = { primary: 0, deputy: 1, none: 2 };
+      const sorted = [...scopedAgents].sort((a, b) => {
+        const aRank = managerOrder[a.leadership_role ?? 'none'] ?? 2;
+        const bRank = managerOrder[b.leadership_role ?? 'none'] ?? 2;
+        return aRank - bRank;
+      });
+      const topManager = sorted[0];
+      if (topManager && activeAgentId !== topManager.id) {
+        switchToAgent(topManager.id);
+      }
+    } else if (scope.type === "master" && activeAgentId !== null) {
+      // When switching to master, clear the agentId
+      switchToAgent(null);
+    }
+  }, [scope.type, scope.type === "company" && (scope as any).company?.id, scopedAgents]);
 
   const isSubAgent = activeAgentId != null;
 
@@ -315,9 +353,13 @@ function HermesApp() {
       <header className="fixed top-0 left-0 right-0 z-40 border-b border-border bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex h-12 max-w-[1400px] items-stretch">
           <div className="flex items-center border-r border-border px-3 sm:px-5 shrink-0">
-            <span className="font-collapse text-lg sm:text-xl font-bold tracking-wider uppercase blend-lighter">
-              H<span className="hidden sm:inline">ermes </span>A<span className="hidden sm:inline">gent</span>
-            </span>
+            <WorkSelector
+              scope={scope}
+              companies={companies}
+              loaded={workLoaded}
+              onSelectScope={selectScope}
+              agentsForScope={agentsForScope}
+            />
           </div>
 
           <nav className="flex items-stretch overflow-x-auto scrollbar-none">
@@ -360,12 +402,14 @@ function HermesApp() {
 
           <div className="ml-auto flex items-center gap-2 px-2 sm:px-4">
             <AgentIdentitySwitcher
+              activeAgentId={activeAgentId}
               activeAgent={activeAgent}
               availableAgents={availableAgents}
               agentsLoaded={agentsLoaded}
               onLoadAgents={loadAgents}
               onSwitchAgent={switchToAgent}
               hasError={!!startupError}
+              companyAgents={scope.type === "company" ? scopedAgents : undefined}
             />
             <span className="hidden h-5 w-px bg-border/70 sm:block" />
             <LanguageSwitcher />
@@ -449,7 +493,7 @@ function HermesApp() {
             </div>
           }>
             <Routes>
-              <Route path="/" element={<ChatPage />} />
+              <Route path="/" element={<ChatPage scope={scope} />} />
               <Route path="/organization" element={<OrganizationPage />} />
               <Route path="/cron" element={<CronPage />} />
               <Route path="/skills" element={<SkillsPage />} />

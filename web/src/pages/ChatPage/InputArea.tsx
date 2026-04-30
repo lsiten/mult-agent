@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, X, Loader2 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
 import { AttachmentButtons } from "./AttachmentButtons";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { VoiceInput } from "./VoiceInput";
 import { SkillSelector } from "@/components/chat/SkillSelector";
 import { SkillBadge } from "@/components/skills/SkillBadge";
+import { TiptapEditor, type TiptapEditorRef } from "@/components/chat/TiptapEditor";
 import { useSkillSelectionStore } from "@/stores/useSkillSelectionStore";
 import { useI18n } from "@/i18n";
 import { type Attachment } from "@/hooks/useAttachments";
@@ -20,6 +20,7 @@ interface InputAreaProps {
   onFileSelect: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   allUploaded: boolean;
+  currentCompanyId?: number;
 }
 
 export function InputArea({
@@ -32,18 +33,19 @@ export function InputArea({
   onFileSelect,
   onRemoveAttachment,
   allUploaded,
+  currentCompanyId,
 }: InputAreaProps) {
   const { t } = useI18n();
   const { skills, selectedSkills, deselectSkill } = useSkillSelectionStore();
   const [input, setInput] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [toolElapsedTime, setToolElapsedTime] = useState(0);
-  const [isComposing, setIsComposing] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<TiptapEditorRef>(null);
+
   const restoreFocus = useCallback(() => {
     requestAnimationFrame(() => {
-      if (!disabled && textareaRef.current && document.activeElement !== textareaRef.current) {
-        textareaRef.current.focus();
+      if (!disabled && editorRef.current) {
+        editorRef.current.focus();
       }
     });
   }, [disabled]);
@@ -62,8 +64,7 @@ export function InputArea({
     return () => clearInterval(interval);
   }, [currentTool]);
 
-  // Re-focus when the input becomes available again, but do not
-  // force focus on every keystroke to avoid visible flicker.
+  // Re-focus when the input becomes available again
   useEffect(() => {
     restoreFocus();
   }, [restoreFocus]);
@@ -72,61 +73,21 @@ export function InputArea({
   const placeholder = selectedSkills.length > 0
     ? `${t.chat.placeholder} (${selectedSkills.length} ${t.chat.skillSelector.selected})`
     : t.chat.placeholder;
+
   const canSend =
     !disabled &&
     (input.trim().length > 0 || (attachments.length > 0 && allUploaded));
 
   const handleSend = () => {
     if (!canSend) return;
-
-    // Allow sending with just attachments or with text
     onSendMessage(input || "");
     setInput("");
+    editorRef.current?.clear();
     restoreFocus();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter") {
-      if (e.shiftKey) {
-        // Shift+Enter: manually insert newline without losing focus
-        e.preventDefault();
-        e.stopPropagation();
-        e.nativeEvent.stopImmediatePropagation();
-
-        const target = e.currentTarget;
-        const start = target.selectionStart;
-        const end = target.selectionEnd;
-        const value = target.value;
-
-        // Insert newline at cursor position
-        const newValue = value.substring(0, start) + '\n' + value.substring(end);
-
-        // Update state
-        setInput(newValue);
-
-        // Restore cursor position after React updates
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
-            textareaRef.current.focus();
-          }
-        });
-
-        return false;
-      }
-
-      // Enter without Shift: send message (but not during IME composition)
-      if (!isComposing) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleSend();
-      }
-    }
-  };
-
   const handleVoiceTranscription = (text: string) => {
-    // Append transcribed text to input
-    setInput(prev => prev ? `${prev}\n${text}` : text);
+    setInput((prev) => (prev ? `${prev}\n${text}` : text));
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -147,23 +108,6 @@ export function InputArea({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(e.clipboardData.items);
-    const imageItems = items.filter(item => item.type.startsWith("image/"));
-
-    if (imageItems.length > 0) {
-      const files: File[] = [];
-      imageItems.forEach(item => {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      });
-
-      if (files.length > 0) {
-        onFileSelect(files);
-      }
-    }
   };
 
   return (
@@ -210,7 +154,7 @@ export function InputArea({
           <div className="mb-2 flex-shrink-0">
             <div className="flex flex-wrap gap-1.5">
               {selectedSkills.map((skillName) => {
-                const skill = skills.find(s => s.name === skillName);
+                const skill = skills.find((s) => s.name === skillName);
                 const unavailable = skill && !skill.enabled;
                 return (
                   <SkillBadge
@@ -255,21 +199,15 @@ export function InputArea({
           </div>
 
           {/* Input + Send button container */}
-          <div className="flex-1 flex items-stretch gap-0 rounded-md shadow-[0_0_0_1px_hsl(var(--border)/0.5)] focus-within:shadow-[0_0_0_1px_hsl(var(--foreground)/0.25)] transition-shadow overflow-hidden">
-            <Textarea
-              ref={textareaRef}
+          <div className="flex-1 flex items-stretch gap-0 rounded-md shadow-[0_0_0_1px_hsl(var(--border)/0.5)] focus-within:shadow-[0_0_0_1px_hsl(var(--foreground)/0.25)] transition-shadow overflow-hidden relative">
+            <TiptapEditor
+              ref={editorRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onCompositionStart={() => setIsComposing(true)}
-              onCompositionEnd={() => {
-                setIsComposing(false);
-                restoreFocus();
-              }}
+              onChange={setInput}
+              onSend={handleSend}
               placeholder={placeholder}
-              className="resize-none min-h-[48px] max-h-[200px] flex-1 bg-background/40 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none outline-none px-3 py-3"
-              disabled={disabled}
+              currentCompanyId={currentCompanyId}
+              className="flex-1"
             />
 
             <button
@@ -286,15 +224,15 @@ export function InputArea({
               type="button"
               className={`w-12 h-full shrink-0 rounded-none inline-flex items-center justify-center transition-colors border-0 outline-none focus:outline-none focus-visible:outline-none ${
                 isStreaming
-                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                  : 'bg-foreground/90 text-background hover:bg-foreground'
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : "bg-foreground/90 text-background hover:bg-foreground"
               } disabled:opacity-50 disabled:pointer-events-none`}
               title={
                 isStreaming
                   ? t.chat.stopTask || "停止任务"
-                  : (!allUploaded && attachments.length > 0
-                      ? t.chat.waitForUpload
-                      : undefined)
+                  : !allUploaded && attachments.length > 0
+                    ? t.chat.waitForUpload
+                    : undefined
               }
             >
               {isStreaming ? (

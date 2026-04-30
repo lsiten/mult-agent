@@ -8,9 +8,10 @@ import { useAttachments } from "@/hooks/useAttachments";
 import { useSkillSelectionStore } from "@/stores/useSkillSelectionStore";
 import { useToast } from "@/hooks/useToast";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import type { WorkScope } from "@/components/WorkSelector";
 import { api, type SessionMessage } from "@/lib/api";
 
-export function ChatPage() {
+export function ChatPage({ scope }: { scope?: WorkScope }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { showToast } = useToast();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -352,6 +353,8 @@ export function ChatPage() {
     },
   ]);
 
+  const currentCompanyId = scope?.type === "company" ? scope.company.id : undefined;
+
   return (
     <div className="flex h-full">
       <Sidebar
@@ -385,6 +388,7 @@ export function ChatPage() {
         onFileSelect={handleFileSelect}
         onRemoveAttachment={removeAttachment}
         allUploaded={allUploaded}
+        currentCompanyId={currentCompanyId}
       />
     </div>
   );

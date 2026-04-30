@@ -81,6 +81,15 @@ export const zh: Translations = {
     },
   },
 
+  workSelector: {
+    selectWork: "选择工作",
+    masterAgent: "Hermes Agent",
+    masterAgentHint: "主 Agent — 不属于任何公司",
+    noCompanies: "未找到公司",
+    loadingCompanies: "加载中...",
+    agents: "个 Agent",
+  },
+
   recruitCandidate: {
     brand: "RecruitAI",
     systemLabel: "多智能体系统",
@@ -671,6 +680,12 @@ export const zh: Translations = {
     departmentLeader: "部门负责人",
     managingDepartmentLeader: "管理部门负责人",
     otherDepartmentLeader: "其他部门负责人",
+    // Mention extension for chat input
+    mentionSearchPlaceholder: "搜索 Agent...",
+    noAgentsFound: "未找到 Agent",
+    agentCount: "{count} 个 Agent",
+    selectedCompany: "当前公司",
+    noCompanies: "暂无公司，请先在组织架构页面创建公司",
   },
 
   config: {
@@ -957,7 +972,8 @@ export const zh: Translations = {
       falKeyPlaceholder: "输入你的 FAL API Key",
       browserSection: "浏览器自动化",
       browserDescription: "Agent 自动操作网页",
-      browserModeLocal: "本地 Chromium（推荐，免费）",
+      browserModePlugin: "浏览器插件（推荐）",
+      browserModeLocal: "本地 Chromium（扩展桥接）",
       browserModeCdp: "CDP 连接本地 Chrome",
       browserModeBrowserbase: "Browserbase 云端浏览器",
       cdpUrlLabel: "CDP WebSocket URL",

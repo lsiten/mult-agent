@@ -7,13 +7,16 @@ import { cn } from "@/lib/utils";
 import { type OrgAgent } from "@/lib/api";
 
 interface AgentIdentitySwitcherProps {
+  activeAgentId: number | null;
   activeAgent: OrgAgent | null;
   availableAgents: OrgAgent[];
   agentsLoaded: boolean;
   onLoadAgents: () => void;
   onSwitchAgent: (agentId: number | null) => void;
   className?: string;
-  hasError?: boolean; // 新增：是否处于错误状态
+  hasError?: boolean;
+  /** When provided, shows only agents for the selected company and defaults to the highest-ranking manager */
+  companyAgents?: OrgAgent[];
 }
 
 const MASTER_ACCENT = "#6366f1";
@@ -27,6 +30,7 @@ const MASTER_ACCENT = "#6366f1";
  * ``ChatHeader`` keeps a single source of truth.
  */
 export function AgentIdentitySwitcher({
+  activeAgentId,
   activeAgent,
   availableAgents,
   agentsLoaded,
@@ -34,21 +38,53 @@ export function AgentIdentitySwitcher({
   onSwitchAgent,
   className,
   hasError = false,
+  companyAgents,
 }: AgentIdentitySwitcherProps) {
   const { t } = useI18n();
 
-  // 错误状态优先：hasError=true时显示主Agent但标红
-  const accent = hasError ? "#ef4444" : (activeAgent?.accent_color || MASTER_ACCENT);
+  // When companyAgents is provided, use it instead of availableAgents
+  const displayAgents = companyAgents ?? availableAgents;
+  
+  // Default to highest-ranking manager if no agent is active and we're in company scope
+  const defaultAgent = useMemo(() => {
+    if (!companyAgents || companyAgents.length === 0) return null;
+    // Find the highest manager: primary > deputy > none
+    const managerOrder: Record<string, number> = { primary: 0, deputy: 1, none: 2 };
+    return [...companyAgents].sort((a, b) => {
+      const aRank = managerOrder[a.leadership_role ?? 'none'] ?? 2;
+      const bRank = managerOrder[b.leadership_role ?? 'none'] ?? 2;
+      return aRank - bRank;
+    })[0] ?? null;
+  }, [companyAgents]);
+
+  // Use activeAgentId to find the current agent from displayAgents
+  // This ensures UI reflects the URL state immediately, even before activeAgent loads
+  const currentAgent = useMemo(() => {
+    if (hasError) return null;
+    
+    // If activeAgent is loaded, use it
+    if (activeAgent) return activeAgent;
+    
+    // Otherwise try to match by activeAgentId from displayAgents
+    if (activeAgentId != null && displayAgents.length > 0) {
+      const matched = displayAgents.find(a => a.id === activeAgentId);
+      if (matched) return matched;
+    }
+    
+    // Fall back to default agent (for company scope) or null (for master scope)
+    return defaultAgent;
+  }, [activeAgentId, activeAgent, displayAgents, defaultAgent, hasError]);
+
+  const accent = hasError ? "#ef4444" : (currentAgent?.accent_color || MASTER_ACCENT);
   const displayName = hasError
     ? `${t.chat.masterAgent} (启动失败)`
-    : (activeAgent ? (activeAgent.display_name || activeAgent.name) : t.chat.masterAgent);
+    : (currentAgent ? (currentAgent.display_name || currentAgent.name) : t.chat.masterAgent);
   const subtitle = hasError
     ? "Sub Agent 启动失败"
-    : (activeAgent ? (activeAgent.role_summary || t.chat.subAgentBadge) : t.chat.masterAgentSubtitle);
-  const isMaster = activeAgent == null && !hasError;
+    : (currentAgent ? (currentAgent.role_summary || t.chat.subAgentBadge) : t.chat.masterAgentSubtitle);
+  const isMaster = currentAgent == null && !hasError;
 
-  const groupedAgents = useMemo(() => availableAgents, [availableAgents]);
-  const profileStatus = activeAgent?.profile_agent?.profile_status ?? "n/a";
+  const profileStatus = currentAgent?.profile_agent?.profile_status ?? "n/a";
 
   return (
     <Popover
@@ -74,7 +110,7 @@ export function AgentIdentitySwitcher({
           {hasError && (
             <AlertCircle className="absolute -top-1 -right-1 h-3 w-3 text-red-500 animate-pulse" />
           )}
-          <AvatarBubble agent={activeAgent} accent={accent} size={22} />
+          <AvatarBubble agent={currentAgent} accent={accent} size={22} />
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="truncate text-[11px] font-semibold tracking-tight">
               {displayName}
@@ -92,7 +128,7 @@ export function AgentIdentitySwitcher({
             {t.chat.chattingAs}
           </div>
           <div className="mt-1 flex items-center gap-2">
-            <AvatarBubble agent={activeAgent} accent={accent} size={28} />
+            <AvatarBubble agent={currentAgent} accent={accent} size={28} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">{displayName}</div>
               <div className="truncate text-[11px] text-muted-foreground">{subtitle}</div>
@@ -100,25 +136,27 @@ export function AgentIdentitySwitcher({
           </div>
         </div>
         <div className="max-h-80 overflow-y-auto py-1">
-          <AgentRow
-            isActive={isMaster}
-            label={t.chat.masterAgent}
-            hint={t.chat.masterAgentHint}
-            accent={MASTER_ACCENT}
-            icon={<UserCircle2 className="h-3.5 w-3.5" />}
-            onClick={() => onSwitchAgent(null)}
-          />
-          {groupedAgents.length === 0 ? (
+          {!companyAgents && (
+            <AgentRow
+              isActive={isMaster}
+              label={t.chat.masterAgent}
+              hint={t.chat.masterAgentHint}
+              accent={MASTER_ACCENT}
+              icon={<UserCircle2 className="h-3.5 w-3.5" />}
+              onClick={() => onSwitchAgent(null)}
+            />
+          )}
+          {displayAgents.length === 0 ? (
             <div className="px-4 py-3 text-xs text-muted-foreground">
               {agentsLoaded ? t.chat.noSubAgents : t.chat.loadingAgents}
             </div>
           ) : (
-            groupedAgents.map((agent) => {
+            displayAgents.map((agent) => {
               const ready = agent.profile_agent?.profile_status === "ready";
               return (
                 <AgentRow
                   key={agent.id}
-                  isActive={activeAgent?.id === agent.id}
+                  isActive={currentAgent?.id === agent.id}
                   label={agent.display_name || agent.name}
                   hint={agent.role_summary || undefined}
                   accent={agent.accent_color || "#94a3b8"}

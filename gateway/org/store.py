@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import threading
@@ -12,7 +13,10 @@ from typing import Any, Callable, Iterable
 
 from hermes_constants import get_hermes_home
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+
+# Organization Management Tables (v4)
+from .models import TABLES_SQL, INDEXES_SQL
 
 
 def default_org_db_path() -> Path:
@@ -306,6 +310,69 @@ class OrganizationStore:
             for name, definition in columns.items():
                 if name not in existing:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+        # v4 migration: Create organization management tables
+        self.run_migrations()
+
+    def run_migrations(self):
+        """Run database migrations for organization management tables.
+
+        Creates: tasks, task_reports, approvals, agent_permissions tables
+        and their indexes. Safe to call multiple times (idempotent).
+        """
+        # Create tables
+        for table_name, sql in TABLES_SQL.items():
+            self._conn.execute(sql)
+
+        # Create indexes
+        for sql in INDEXES_SQL:
+            self._conn.execute(sql)
+
+    def _create_base_tables(self):
+        """Create minimal base tables needed for tests.
+
+        This is only used by unit tests to set up a fresh in-memory database.
+        """
+        conn = self._conn
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS agents (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                display_name TEXT,
+                position_id INTEGER,
+                department_id INTEGER,
+                company_id INTEGER,
+                manager_agent_id INTEGER,
+                leadership_role TEXT DEFAULT 'none',
+                status TEXT DEFAULT 'active',
+                enabled INTEGER DEFAULT 1,
+                workspace_path TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS positions (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                department_id INTEGER,
+                is_management_position INTEGER DEFAULT 0,
+                workspace_path TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS departments (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                company_id INTEGER,
+                workspace_path TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                workspace_path TEXT
+            )
+        """)
 
     def transaction(self, fn: Callable[[sqlite3.Connection], Any]) -> Any:
         with self._lock:
@@ -1008,3 +1075,215 @@ class WorkspaceRepository(BaseRepository):
             (owner_type, owner_id),
             conn,
         )
+
+
+class TaskRepository(BaseRepository):
+    """Repository for task operations."""
+
+    table = "tasks"
+
+    _ALLOWED_UPDATE_FIELDS = {
+        "title", "description", "priority", "status",
+        "parent_task_id", "workspace_path", "deadline_at",
+        "started_at", "completed_at",
+    }
+
+    def create(self, data: dict, *, conn=None) -> dict:
+        """Create a new task."""
+        cursor = self.store.execute(
+            """
+            INSERT INTO tasks (
+                title, description, priority, status,
+                creator_agent_id, assignee_agent_id, parent_task_id,
+                workspace_path, deadline_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                data["title"],
+                data.get("description", ""),
+                data.get("priority", "normal"),
+                data.get("status", "pending"),
+                data["creator_agent_id"],
+                data["assignee_agent_id"],
+                data.get("parent_task_id"),
+                data.get("workspace_path"),
+                data.get("deadline_at"),
+            ],
+            conn=conn,
+        )
+        return self.get(cursor.lastrowid, conn=conn) or {}
+
+    def update(self, task_id: int, data: dict, allowed: set = None, *, conn=None) -> dict:
+        """Update a task."""
+        return super().update(task_id, data, allowed or self._ALLOWED_UPDATE_FIELDS, conn=conn)
+
+    def list_by_assignee(self, assignee_id: int, status: str = None, *, conn=None) -> list:
+        """List tasks assigned to an agent."""
+        sql = "SELECT * FROM tasks WHERE assignee_agent_id = ?"
+        params = [assignee_id]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC"
+        return self.store.query_all(sql, params, conn=conn)
+
+    def list_by_creator(self, creator_id: int, status: str = None, *, conn=None) -> list:
+        """List tasks created by an agent."""
+        sql = "SELECT * FROM tasks WHERE creator_agent_id = ?"
+        params = [creator_id]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC"
+        return self.store.query_all(sql, params, conn=conn)
+
+    def list_by_parent(self, parent_task_id: int, *, conn=None) -> list:
+        """List all subtasks of a parent task."""
+        return self.store.query_all(
+            "SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at",
+            (parent_task_id,),
+            conn=conn,
+        )
+
+
+class TaskReportRepository(BaseRepository):
+    """Repository for task report operations."""
+
+    table = "task_reports"
+
+    def create(self, data: dict, *, conn=None) -> dict:
+        """Create a new report."""
+        attachments_json = json.dumps(data.get("attachments", [])) if data.get("attachments") else None
+        cursor = self.store.execute(
+            """
+            INSERT INTO task_reports (
+                task_id, reporter_agent_id, content, attachments, report_type
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                data["task_id"],
+                data["reporter_agent_id"],
+                data["content"],
+                attachments_json,
+                data.get("report_type", "progress"),
+            ],
+            conn=conn,
+        )
+        report = self.get(cursor.lastrowid, conn=conn) or {}
+        # Parse attachments back to list
+        if report.get("attachments"):
+            try:
+                report["attachments"] = json.loads(report["attachments"])
+            except (json.JSONDecodeError, TypeError):
+                report["attachments"] = []
+        else:
+            report["attachments"] = []
+        return report
+
+    def get(self, report_id: int, *, conn=None) -> dict | None:
+        """Get a report with parsed attachments."""
+        report = super().get(report_id, conn=conn)
+        if report and report.get("attachments"):
+            try:
+                report["attachments"] = json.loads(report["attachments"])
+            except (json.JSONDecodeError, TypeError):
+                report["attachments"] = []
+        elif report:
+            report["attachments"] = []
+        return report
+
+    def list_by_task(self, task_id: int, *, conn=None) -> list:
+        """List all reports for a task with parsed attachments."""
+        reports = self.store.query_all(
+            "SELECT * FROM task_reports WHERE task_id = ? ORDER BY created_at DESC",
+            (task_id,),
+            conn=conn,
+        )
+        for report in reports:
+            if report.get("attachments"):
+                try:
+                    report["attachments"] = json.loads(report["attachments"])
+                except (json.JSONDecodeError, TypeError):
+                    report["attachments"] = []
+            else:
+                report["attachments"] = []
+        return reports
+
+
+class ApprovalRepository(BaseRepository):
+    """Repository for approval operations."""
+
+    table = "approvals"
+
+    def create(self, data: dict, *, conn=None) -> dict:
+        """Create a new approval."""
+        cursor = self.store.execute(
+            """
+            INSERT INTO approvals (
+                task_id, approver_agent_id, decision, comment
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                data["task_id"],
+                data["approver_agent_id"],
+                data["decision"],
+                data.get("comment"),
+            ],
+            conn=conn,
+        )
+        return self.get(cursor.lastrowid, conn=conn) or {}
+
+    def get_latest_for_task(self, task_id: int, *, conn=None) -> dict | None:
+        """Get the latest approval for a task."""
+        return self.store.query_one(
+            "SELECT * FROM approvals WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+            (task_id,),
+            conn=conn,
+        )
+
+
+class AgentPermissionRepository(BaseRepository):
+    """Repository for agent permission operations."""
+
+    table = "agent_permissions"
+
+    _ALLOWED_UPDATE_FIELDS = {
+        "can_assign_tasks", "can_approve_tasks",
+        "can_create_subagents", "max_subordinates",
+    }
+
+    def get_by_agent(self, agent_id: int, *, conn=None) -> dict | None:
+        """Get permissions for an agent."""
+        return self.store.query_one(
+            "SELECT * FROM agent_permissions WHERE agent_id = ?",
+            (agent_id,),
+            conn=conn,
+        )
+
+    def create_or_update(self, data: dict, *, conn=None) -> dict:
+        """Create or update permissions for an agent."""
+        existing = self.get_by_agent(data["agent_id"], conn=conn)
+        if existing:
+            return self.update(existing["id"], data, self._ALLOWED_UPDATE_FIELDS, conn=conn)
+        else:
+            cursor = self.store.execute(
+                """
+                INSERT INTO agent_permissions (
+                    agent_id, can_assign_tasks, can_approve_tasks,
+                    can_create_subagents, max_subordinates
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    data["agent_id"],
+                    1 if data.get("can_assign_tasks") else 0,
+                    1 if data.get("can_approve_tasks") else 0,
+                    1 if data.get("can_create_subagents") else 0,
+                    data.get("max_subordinates"),
+                ],
+                conn=conn,
+            )
+            return self.get(cursor.lastrowid, conn=conn) or {}

@@ -276,65 +276,12 @@ TOOL_CATEGORIES = {
         "icon": "🌐",
         "providers": [
             {
-                "name": "Nous Subscription (Browser Use cloud)",
-                "badge": "subscription",
-                "tag": "Managed Browser Use billed to your subscription",
-                "env_vars": [],
-                "browser_provider": "browser-use",
-                "requires_nous_auth": True,
-                "managed_nous_feature": "browser",
-                "override_env_vars": ["BROWSER_USE_API_KEY"],
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Local Browser",
+                "name": "Page Agent Extension Bridge",
                 "badge": "★ recommended · free",
-                "tag": "Headless Chromium, no API key needed",
+                "tag": "Use your own Chrome browser via WebSocket bridge",
                 "env_vars": [],
-                "browser_provider": "local",
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Browserbase",
-                "badge": "paid",
-                "tag": "Cloud browser with stealth and proxies",
-                "env_vars": [
-                    {"key": "BROWSERBASE_API_KEY", "prompt": "Browserbase API key", "url": "https://browserbase.com"},
-                    {"key": "BROWSERBASE_PROJECT_ID", "prompt": "Browserbase project ID"},
-                ],
-                "browser_provider": "browserbase",
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Browser Use",
-                "badge": "paid",
-                "tag": "Cloud browser with remote execution",
-                "env_vars": [
-                    {"key": "BROWSER_USE_API_KEY", "prompt": "Browser Use API key", "url": "https://browser-use.com"},
-                ],
-                "browser_provider": "browser-use",
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Firecrawl",
-                "badge": "paid",
-                "tag": "Cloud browser with remote execution",
-                "env_vars": [
-                    {"key": "FIRECRAWL_API_KEY", "prompt": "Firecrawl API key", "url": "https://firecrawl.dev"},
-                ],
-                "browser_provider": "firecrawl",
-                "post_setup": "agent_browser",
-            },
-            {
-                "name": "Camofox",
-                "badge": "free · local",
-                "tag": "Anti-detection browser (Firefox/Camoufox)",
-                "env_vars": [
-                    {"key": "CAMOFOX_URL", "prompt": "Camofox server URL", "default": "http://localhost:9377",
-                     "url": "https://github.com/jo-inc/camofox-browser"},
-                ],
-                "browser_provider": "camofox",
-                "post_setup": "camofox",
+                "browser_provider": "extension",
+                "post_setup": None,
             },
         ],
     },
@@ -382,47 +329,11 @@ TOOLSET_ENV_REQUIREMENTS = {
 
 def _run_post_setup(post_setup_key: str):
     """Run post-setup hooks for tools that need extra installation steps."""
+    if not post_setup_key:
+        return
+
     import shutil
-    if post_setup_key in ("agent_browser", "browserbase"):
-        node_modules = PROJECT_ROOT / "node_modules" / "agent-browser"
-        if not node_modules.exists() and shutil.which("npm"):
-            _print_info("    Installing Node.js dependencies for browser tools...")
-            import subprocess
-            result = subprocess.run(
-                ["npm", "install", "--silent"],
-                capture_output=True, text=True, cwd=str(PROJECT_ROOT)
-            )
-            if result.returncode == 0:
-                _print_success("    Node.js dependencies installed")
-            else:
-                from hermes_constants import display_hermes_home
-                _print_warning(f"    npm install failed - run manually: cd {display_hermes_home()}/hermes-agent && npm install")
-        elif not node_modules.exists():
-            _print_warning("    Node.js not found - browser tools require: npm install (in hermes-agent directory)")
-
-    elif post_setup_key == "camofox":
-        camofox_dir = PROJECT_ROOT / "node_modules" / "@askjo" / "camofox-browser"
-        if not camofox_dir.exists() and shutil.which("npm"):
-            _print_info("    Installing Camofox browser server...")
-            import subprocess
-            result = subprocess.run(
-                ["npm", "install", "--silent"],
-                capture_output=True, text=True, cwd=str(PROJECT_ROOT)
-            )
-            if result.returncode == 0:
-                _print_success("    Camofox installed")
-            else:
-                _print_warning("    npm install failed - run manually: npm install")
-        if camofox_dir.exists():
-            _print_info("    Start the Camofox server:")
-            _print_info("      npx @askjo/camofox-browser")
-            _print_info("    First run downloads the Camoufox engine (~300MB)")
-            _print_info("    Or use Docker: docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser")
-        elif not shutil.which("npm"):
-            _print_warning("    Node.js not found. Install Camofox via Docker:")
-            _print_info("      docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser")
-
-    elif post_setup_key == "rl_training":
+    if post_setup_key == "rl_training":
         try:
             __import__("tinker_atropos")
         except ImportError:

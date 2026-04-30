@@ -17,6 +17,7 @@ from .bootstrap import BootstrapResult, BootstrapValidator
 from .inheritance import InheritanceApplier, InheritContext, InheritanceResult
 from .whitelist import PROVIDER_ENV_KEYS, is_provider_id_valid
 from .store import (
+    AgentPermissionRepository,
     AgentRepository,
     CompanyRepository,
     DepartmentRepository,
@@ -403,6 +404,10 @@ class SoulRenderService:
         if position.get("is_management_position"):
             position_management_badge = " 👔（管理岗位）"
 
+        # 角色特定的系统提示部分
+        is_manager = bool(position.get("is_management_position")) or leadership_role in ("primary", "deputy")
+        organization_role_section = self._render_organization_role_section(is_manager, agent)
+
         # org.db 路径
         org_db_path = str(self.store.db_path)
 
@@ -423,6 +428,8 @@ class SoulRenderService:
             "position_management_badge": position_management_badge,
             "agent_goal": agent.get("service_goal") or "Support the assigned position.",
             "leadership_role_info": leadership_role_info,
+            # 组织角色特定内容
+            "organization_role_section": organization_role_section,
             # 组织架构查询信息
             "org_db_path": org_db_path,
             # 工作空间路径
@@ -448,6 +455,132 @@ class SoulRenderService:
         if not body.endswith("\n"):
             body += "\n"
         return body
+
+    def _render_organization_role_section(self, is_manager: bool, agent: dict[str, Any]) -> str:
+        """根据角色渲染组织协作相关的系统提示。
+
+        Args:
+            is_manager: 是否是管理者
+            agent: Agent 信息
+
+        Returns:
+            Markdown 格式的角色特定系统提示
+        """
+        if is_manager:
+            return self._render_manager_section(agent)
+        else:
+            return self._render_contributor_section(agent)
+
+    def _render_manager_section(self, agent: dict[str, Any]) -> str:
+        """渲染管理者角色的专属系统提示。"""
+        agent_name = agent.get("display_name") or agent.get("name", "Agent")
+        return f"""
+# 管理者工作指南
+
+👔 **你是 {agent_name}，一位管理者**
+
+作为团队管理者，你拥有以下专属工具和能力：
+
+## 1. 任务分配与拆解
+- **assign_task_to_subordinate**: 为你的直属下属分配任务
+- **list_my_subordinates**: 查看团队成员及工作负载
+- **可以将大任务拆解成子任务**，分配给不同的团队成员
+
+**任务分配原则**：
+- 先了解下属的技能和当前工作负载
+- 每个任务要有明确的验收标准和截止时间
+- 大型任务要拆解成可管理的小任务
+
+## 2. 任务审批与质量控制
+- **approve_task**: 审批下属提交的任务成果
+- **可以要求修改、拒绝或批准任务**
+- 保持高标准的产出质量
+
+**审批流程**：
+1. 审阅提交的内容和成果
+2. 检查是否符合要求和验收标准
+3. 给出具体的反馈意见
+4. 做出 approve/reject/request_changes 决定
+
+## 3. 团队协作与文件共享
+- **share_file_with_subordinate**: 将你的工作文件共享给下属
+- 可以共享参考文档、模板、数据文件等
+- 所有共享的文件存放在下属的 shared_from_manager 目录
+
+## 4. 任务跟踪与汇报
+- **list_my_tasks**: 查看所有你创建的任务及其状态
+- 定期检查任务进度
+- 及时解决团队遇到的问题和障碍
+
+## 5. 向上汇报
+- 定期向你的上级汇报团队整体工作进度
+- 汇总下属的工作成果
+- 及时汇报风险和需要协调的问题
+
+## 管理原则
+1. **清晰沟通**：任务描述要具体、明确，避免模糊不清
+2. **合理分配**：根据下属能力和负载合理分配工作
+3. **及时反馈**：定期检查进度，及时给出指导
+4. **赋能团队**：提供必要的资源和支持，帮助团队成功
+5. **责任担当**：对团队的整体产出负责
+
+**记住**：优秀的管理者通过赋能他人达成目标，而不是自己完成所有工作。
+"""
+
+    def _render_contributor_section(self, agent: dict[str, Any]) -> str:
+        """渲染普通员工角色的专属系统提示。"""
+        agent_name = agent.get("display_name") or agent.get("name", "Agent")
+        return f"""
+# 执行者工作指南
+
+👤 **你是 {agent_name}，一位团队执行者**
+
+作为贡献者，你拥有以下专属工具和能力：
+
+## 1. 任务接收与执行
+- **list_my_tasks**: 查看分配给你的所有任务
+- 任务状态说明：
+  - `pending`: 待开始的任务
+  - `in_progress`: 正在进行中的任务
+  - `review`: 已提交，等待审批
+  - `completed`: 已完成并通过审批
+  - `rejected`: 被拒绝，需要重新处理
+
+## 2. 进度与成果汇报
+- **submit_task_report**: 向你的管理者汇报任务进度
+
+**汇报类型**：
+- **progress**: 定期进度更新（建议每周 1-2 次）
+  - 说明已完成的工作
+  - 遇到的问题和障碍
+  - 下一步计划
+  - 需要的支持和资源
+
+- **final**: 最终成果提交（任务完成时）
+  - 详细说明完成情况
+  - 列出所有交付物和产出
+  - 附加上下文和使用说明
+  - 确保管理者可以快速验收
+
+## 3. 使用共享资源
+- 管理者会通过 share_file_with_subordinate 工具共享文件给你
+- 共享文件存放在你的工作区 shared_from_manager 目录
+- 可以自由读取和使用这些资源
+
+## 4. 工作区管理
+- 你的个人工作区：`{{agent_workspace}}`
+- 任务特定的工作区：每个任务在 tasks/ 目录下有独立文件夹
+- 产出文件请存放在对应任务的 outputs 目录
+
+## 执行者原则
+1. **主动沟通**：遇到问题及时向管理者反馈，不要等被问
+2. **定期汇报**：保持进度透明，让管理者了解状态
+3. **质量优先**：交付的成果要符合要求，有测试和验证
+4. **文档完整**：产出要附带清晰的使用说明和上下文
+5. **积极求助**：遇到阻碍及时寻求帮助和支持
+
+**记住**：你的目标是高质量完成分配的任务，让管理者为你感到骄傲。
+"""
 
     @staticmethod
     def _default_template() -> str:
@@ -592,6 +725,8 @@ class SoulRenderService:
             "- Skills 位于 `skills/` 目录（Python 自动发现）\n"
             "- Tools 配置见 `config.yaml` 的 `toolsets` 字段\n"
             "- 组织架构查询使用 SQLite（见上方查询示例）\n"
+            "\n"
+            "{{organization_role_section}}\n"
         )
 
 
@@ -604,8 +739,9 @@ class ProfileProvisionService:
       3. Resolve the Profile Template with precedence fallback.
       4. Collect master agent inheritable assets (visibility=public).
       5. Apply each asset according to its inherit_mode (copy/merge/inject).
-      6. Render SOUL.md from (template + snippets + organization rows).
-      7. Write organization.json metadata for runtime consumers.
+      6. Initialize agent permissions based on role (manager/contributor).
+      7. Render SOUL.md from (template + snippets + organization rows).
+      8. Write organization.json metadata for runtime consumers.
     """
 
     def __init__(
@@ -630,6 +766,7 @@ class ProfileProvisionService:
             assets=self.assets,
         )
         self.applier = applier or InheritanceApplier()
+        self.agent_permissions_repo = AgentPermissionRepository(store)
 
     # ----------------------------------------------------------------- utils
 
@@ -733,7 +870,20 @@ class ProfileProvisionService:
         )
         inheritance_result: InheritanceResult = self.applier.apply(inheritable, context)
 
-        # Step 6: render SOUL.md using template + inject_prompt snippets + workspace paths.
+        # Step 6: Initialize agent permissions based on role
+        # - If position is management position, give full management permissions
+        # - If individual contributor, give only task execution permissions
+        is_manager = bool(position.get("is_management_position")) or agent.get("leadership_role") in ("primary", "deputy")
+        permissions = {
+            "agent_id": agent_id,
+            "can_assign_tasks": is_manager,
+            "can_approve_tasks": is_manager,
+            "can_create_subagents": is_manager,
+            "max_subordinates": 10 if is_manager else None,
+        }
+        self.agent_permissions_repo.create_or_update(permissions, conn=conn)
+
+        # Step 7: render SOUL.md using template + inject_prompt snippets + workspace paths.
         workspaces = {
             "agent": str(agent_ws_path) if agent_ws_path else "",
             "position": str(position_ws_path) if position_ws_path else "",
@@ -752,7 +902,7 @@ class ProfileProvisionService:
         )
         Path(profile["soul_path"]).write_text(soul, encoding="utf-8")
 
-        # Step 7: emit organization.json for runtime consumers. We no longer
+        # Step 8: emit organization.json for runtime consumers. We no longer
         # clobber the merged config.yaml written by the inheritance applier;
         # organization metadata lives in its own file.
         organization_meta = {
@@ -777,7 +927,7 @@ class ProfileProvisionService:
             encoding="utf-8",
         )
 
-        # Step 8: 生成 Sub Agent 的 config.yaml（继承主 Agent 配置并覆盖特定设置）
+        # Step 9: 生成 Sub Agent 的 config.yaml（继承主 Agent 配置并覆盖特定设置）
         self._generate_sub_agent_config(profile_home, agent)
 
         # Step 9: 复制主 Agent 的 .env 文件到 Sub Agent profile
