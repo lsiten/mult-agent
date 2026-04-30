@@ -115,32 +115,77 @@ def create_agent(
 ### Tool 注册
 
 ```python
+from tools.registry import registry
+
+# create_department
+DEPT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "create_department",
+        "description": "创建部门。调用 AgentProvisionService.create_department()，自动初始化工作区。主 Agent 和部门管理者都可以使用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "integer", "description": "所属公司 ID"},
+                "name": {"type": "string", "description": "部门名称"},
+                "goal": {"type": "string", "description": "部门目标"},
+                "description": {"type": "string", "description": "部门描述（可选）"},
+                "parent_id": {"type": "integer", "description": "上级部门 ID（可选，支持多级部门）"},
+            },
+            "required": ["company_id", "name", "goal"],
+        },
+    },
+}
+
 registry.register(
     name="create_department",
     toolset="org_creation",
-    schema={...},
-    handler=lambda args, **kw: create_department(...),
-    check_fn=lambda: True,  # 无需特殊依赖检查
+    schema=DEPT_SCHEMA,
+    handler=lambda args, **kw: create_department(
+        company_id=args.get("company_id"),
+        name=args.get("name"),
+        goal=args.get("goal"),
+        description=args.get("description", ""),
+        parent_id=args.get("parent_id"),
+        parent_agent=kw.get("parent_agent"),
+    ),
+    check_fn=lambda: True,
 )
+
+# create_position 和 create_agent 类似注册
 ```
 
 Tool 集名称：`org_creation`，会被 `model_tools.py` 自动发现（因为 `tools/*.py` 文件都会被扫描）。
 
 ---
 
-### Service 初始化
+### Tool 内部如何实现
 
-Tool 内部通过以下方式获取 `AgentProvisionService` 实例：
+Tool 内部通过 `OrganizationService` 调用创建方法：
 
 ```python
-def _get_org_service(parent_agent):
+def _get_org_service():
+    """获取 OrganizationService 实例。"""
     from gateway.org.store import OrganizationStore
-    from gateway.org.services import AgentProvisionService
-    from gateway.org.services import WorkspaceService, ProfileService, AgentProvision
+    from gateway.org.services import OrganizationService
     
     store = OrganizationStore()
-    services = AgentProvisionService(store)
-    return services
+    service = OrganizationService(store)
+    return service
+```
+
+调用示例：
+```python
+def create_department(company_id, name, goal, description="", parent_id=None, parent_agent=None):
+    service = _get_org_service()
+    result = service.create_department({
+        "company_id": company_id,
+        "name": name,
+        "goal": goal,
+        "description": description,
+        "parent_id": parent_id,
+    })
+    return json.dumps(result)
 ```
 
 ---
