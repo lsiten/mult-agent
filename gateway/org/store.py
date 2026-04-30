@@ -236,7 +236,7 @@ CREATE INDEX IF NOT EXISTS idx_profile_templates_scope
 CREATE INDEX IF NOT EXISTS idx_master_assets_type_visibility
     ON master_agent_assets(asset_type, visibility);
 
-# --- Workflow Management Tables (v5) ---
+-- --- Workflow Management Tables (v5) ---
 
 CREATE TABLE IF NOT EXISTS workflows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
