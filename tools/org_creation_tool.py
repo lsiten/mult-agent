@@ -103,3 +103,80 @@ registry.register(
     check_fn=lambda: True,
     emoji="🏢",
 )
+
+# ============================================================
+# 2. create_position
+# ============================================================
+
+POS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "create_position",
+        "description": "Create a position in a department. Calls AgentProvisionService.create_position() with workspace auto-initialization.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "department_id": {"type": "integer", "description": "Department ID this position belongs to"},
+                "name": {"type": "string", "description": "Position name (e.g., Software Engineer)"},
+                "responsibilities": {"type": "string", "description": "Position responsibilities and duties"},
+                "is_management_position": {"type": "boolean", "description": "Whether this is a management position", "default": False},
+                "headcount": {"type": "integer", "description": "Headcount quota (optional)"},
+            },
+            "required": ["department_id", "name", "responsibilities"],
+        },
+    },
+}
+
+
+def create_position(
+    department_id: int,
+    name: str,
+    responsibilities: str,
+    is_management_position: bool = False,
+    headcount: int = None,
+    parent_agent=None,
+) -> str:
+    """
+    [创建岗位] 调用 OrganizationService.create_position()。
+
+    Args:
+        department_id: 所属部门 ID
+        name: 岗位名称
+        responsibilities: 岗位职责
+        is_management_position: 是否管理岗位（默认 False）
+        headcount: 编制人数（可选）
+        parent_agent: 调用此工具的父 Agent（自动注入）
+
+    Returns:
+        JSON 字符串包含创建的岗位详情
+    """
+    try:
+        service = _get_org_service()
+        result = service.create_position({
+            "department_id": department_id,
+            "name": name,
+            "responsibilities": responsibilities,
+            "is_management_position": is_management_position,
+            "headcount": headcount,
+        })
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        logger.exception("Error creating position")
+        return json.dumps({"error": f"Failed to create position: {e}"}, ensure_ascii=False)
+
+
+registry.register(
+    name="create_position",
+    toolset="org_creation",
+    schema=POS_SCHEMA,
+    handler=lambda args, **kw: create_position(
+        department_id=args.get("department_id"),
+        name=args.get("name"),
+        responsibilities=args.get("responsibilities"),
+        is_management_position=args.get("is_management_position", False),
+        headcount=args.get("headcount"),
+        parent_agent=kw.get("parent_agent"),
+    ),
+    check_fn=lambda: True,
+    emoji="📋",
+)
