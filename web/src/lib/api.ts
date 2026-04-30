@@ -1381,43 +1381,13 @@ export interface StreamEvent {
 }
 
 // ── Workflow API ──
-
-export interface WorkflowApiResponse {
-  workflow: Workflow | null;
-}
-
-export interface Workflow {
-  id: number;
-  company_id: number;
-  name: string;
-  description: string;
-  status: "draft" | "active" | "archived";
-  created_at: number;
-  updated_at: number;
-  edges?: WorkflowEdge[];
-}
-
-export interface WorkflowEdge {
-  id: number;
-  workflow_id: number;
-  source_department_id: number;
-  target_department_id: number;
-  action_description: string;
-  trigger_condition?: string;
-  sort_order: number;
-  created_at: number;
-}
-
-export interface WorkflowInstance {
-  id: number;
-  workflow_id: number;
-  company_id: number;
-  task_id: number;
-  current_edge_id?: number;
-  status: "running" | "completed" | "failed";
-  started_at: number;
-  completed_at?: number;
-}
+// Types are defined in pages/WorkflowsPage/types.ts and re-exported here
+export type {
+  Workflow,
+  WorkflowEdge,
+  WorkflowInstance,
+  WorkflowApiResponse,
+} from "@/pages/WorkflowsPage/types";
 
 export async function getWorkflow(companyId: number): Promise<Workflow | null> {
   const base = await getRequestBase();

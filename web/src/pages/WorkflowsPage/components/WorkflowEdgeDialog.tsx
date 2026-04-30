@@ -18,16 +18,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-interface OrgDepartment {
-  id: number;
-  name: string;
-}
+import type { WorkflowDepartment } from "../types";
 
 interface WorkflowEdgeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  departments: OrgDepartment[];
+  departments: WorkflowDepartment[];
   edge?: {
     source_department_id: number;
     target_department_id: number;

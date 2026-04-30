@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
+import { api } from "@/lib/api";
 import {
   getWorkflow,
   generateWorkflow,
   updateWorkflow,
   deleteWorkflow,
-  getOrgCompanyTree,
-  type Workflow,
-  type WorkflowEdge,
-  type OrgDepartment,
 } from "@/lib/api";
+import type { Workflow, WorkflowEdge, WorkflowDepartment } from "./types";
 
 export function useWorkflowController(companyId: number | null) {
   const { t } = useI18n();
   const { toast, showToast } = useToast();
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [departments, setDepartments] = useState<OrgDepartment[]>([]);
+  const [departments, setDepartments] = useState<WorkflowDepartment[]>([]);
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -41,10 +39,19 @@ export function useWorkflowController(companyId: number | null) {
         setLoading(true);
         const [workflowData, companyData] = await Promise.all([
           getWorkflow(id),
-          getOrgCompanyTree(id),
+          api.getOrgCompanyTree(id),
         ]);
         setWorkflow(workflowData);
-        setDepartments(companyData.company.departments ?? []);
+        setDepartments(
+          (companyData.company.departments ?? []).map((d) => ({
+            id: d.id,
+            code: d.code,
+            name: d.name,
+            goal: d.goal,
+            accent_color: d.accent_color ?? undefined,
+            sort_order: d.sort_order,
+          }))
+        );
         if (workflowData) {
           setPendingEdges(
             (workflowData.edges ?? []).map((e) => ({

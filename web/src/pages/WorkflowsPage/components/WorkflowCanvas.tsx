@@ -14,7 +14,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { cn } from "@/lib/utils";
-import type { Workflow, WorkflowEdge as WorkflowEdgeType, OrgDepartment } from "@/lib/api";
+import type { Workflow, WorkflowEdge as WorkflowEdgeType, WorkflowDepartment } from "../types";
 import type { WorkflowNodeData, WorkflowEdgeData, WorkflowMode } from "../types";
 import { WorkflowNode } from "./WorkflowNode";
 import { WorkflowEdge } from "./WorkflowEdge";
@@ -24,7 +24,7 @@ const edgeTypes = { workflowEdge: WorkflowEdge };
 
 interface WorkflowCanvasProps {
   workflow: Workflow | null;
-  departments: OrgDepartment[];
+  departments: WorkflowDepartment[];
   mode: WorkflowMode;
   onEdgesChange?: (changes: any[]) => void;
   onConnect?: (connection: any) => void;
@@ -35,7 +35,7 @@ interface WorkflowCanvasProps {
 
 /** Layout nodes left-to-right based on edge connections, fallback to sort_order. */
 function layoutNodes(
-  departments: OrgDepartment[],
+  departments: WorkflowDepartment[],
   edges: WorkflowEdgeType[]
 ): Node<WorkflowNodeData>[] {
   const HORIZONTAL_GAP = 250;
