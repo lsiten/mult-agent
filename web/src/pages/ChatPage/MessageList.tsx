@@ -14,6 +14,7 @@ interface MessageListProps {
   skillUseMessages: SessionMessage[];
   authRequestMessages: SessionMessage[];
   textSegments: SessionMessage[];
+  currentCompanyId?: number;
 }
 
 type ListItem =
@@ -191,7 +192,7 @@ export function MessageList({ messages, streamingContent, isStreaming, toolUseMe
         if (item.type === "message") {
           return (
             <div className="py-2">
-              <MessageBubble message={item.message} />
+              <MessageBubble message={item.message} currentCompanyId={currentCompanyId} />
             </div>
           );
         }

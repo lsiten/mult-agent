@@ -356,3 +356,20 @@ class OrganizationAPIHandlers:
             lambda: self._service.init_director_office(company_id, agent_count),
             success_status=200,
         )
+
+    # ------------------------------ Confirm Architecture ------------------------------
+
+    async def handle_confirm_architecture(self, request: web.Request) -> web.Response:
+        """POST /api/org/companies/{id}/confirm-architecture
+        
+        Confirm and create organization structure from architecture diagram.
+        """
+        company_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        architecture = data.get("architecture", {})
+        
+        return await self._handle(
+            request,
+            lambda: self._service.confirm_architecture(company_id, architecture),
+            success_status=200,
+        )

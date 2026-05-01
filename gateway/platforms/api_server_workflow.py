@@ -83,8 +83,12 @@ class WorkflowAPIHandlers:
     def _generate_workflow(self, company_id: int):
         """
         AI-generate workflow based on company structure.
-        Placeholder: uses rule-based generation for now.
+        If workflow exists, return it; otherwise create one.
         """
+        existing = self._store.get_workflow_by_company(company_id)
+        if existing is not None:
+            return existing
+
         conn = self._store._conn
         depts = conn.execute(
             "SELECT id, name FROM departments WHERE company_id = ? AND status = 'active' ORDER BY sort_order",

@@ -2754,6 +2754,12 @@ class APIServerAdapter(BasePlatformAdapter):
             org_h.handle_init_director_office,
         )
 
+        # Confirm architecture and create organization
+        self._app.router.add_post(
+            "/api/org/companies/{id}/confirm-architecture",
+            org_h.handle_confirm_architecture,
+        )
+
         # Workflow Instance API
         self._app.router.add_get(
             "/api/org/workflows/instances/{id}",

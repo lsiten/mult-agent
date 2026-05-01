@@ -23,15 +23,9 @@ export function useWorkflowController(companyId: number | null) {
   const [edgeDialog, setEdgeDialog] = useState<{
     open: boolean;
     editingEdge?: WorkflowEdge;
+    newConnection?: { source: number; target: number };
   } | null>(null);
-  const [pendingEdges, setPendingEdges] = useState<
-    Array<{
-      source_department_id: number;
-      target_department_id: number;
-      action_description: string;
-      trigger_condition?: string;
-    }>
-  >([]);
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
 
   const loadWorkflow = useCallback(
     async (id: number) => {
@@ -55,6 +49,7 @@ export function useWorkflowController(companyId: number | null) {
         if (workflowData) {
           setPendingEdges(
             (workflowData.edges ?? []).map((e) => ({
+              id: e.id,
               source_department_id: e.source_department_id,
               target_department_id: e.target_department_id,
               action_description: e.action_description,
@@ -65,7 +60,7 @@ export function useWorkflowController(companyId: number | null) {
           setPendingEdges([]);
         }
       } catch {
-        showToast("Failed to load workflow", "error");
+        showToast(t.workflows.loadFailed, "error");
       } finally {
         setLoading(false);
       }
@@ -92,6 +87,7 @@ export function useWorkflowController(companyId: number | null) {
       setWorkflow(newWorkflow);
       setPendingEdges(
         (newWorkflow.edges ?? []).map((e) => ({
+          id: e.id,
           source_department_id: e.source_department_id,
           target_department_id: e.target_department_id,
           action_description: e.action_description,
@@ -99,9 +95,9 @@ export function useWorkflowController(companyId: number | null) {
         })),
       );
       setMode("edit");
-      showToast("Workflow generated", "success");
+      showToast(t.workflows.workflowGenerated, "success");
     } catch {
-      showToast("Failed to generate workflow", "error");
+      showToast(t.workflows.generateFailed, "error");
     } finally {
       setGenerating(false);
     }
@@ -112,12 +108,27 @@ export function useWorkflowController(companyId: number | null) {
     try {
       setSaving(true);
       const updated = await updateWorkflow(workflow.id, {
-        edges: pendingEdges,
+        edges: pendingEdges.map((edge, idx) => ({
+          source_department_id: edge.source_department_id,
+          target_department_id: edge.target_department_id,
+          action_description: edge.action_description,
+          trigger_condition: edge.trigger_condition,
+          sort_order: idx,
+        })),
       });
       setWorkflow(updated);
-      showToast("Workflow saved", "success");
+      setPendingEdges(
+        (updated.edges ?? []).map((e) => ({
+          id: e.id,
+          source_department_id: e.source_department_id,
+          target_department_id: e.target_department_id,
+          action_description: e.action_description,
+          trigger_condition: e.trigger_condition,
+        })),
+      );
+      showToast(t.workflows.workflowSaved, "success");
     } catch {
-      showToast("Failed to save workflow", "error");
+      showToast(t.workflows.saveFailed, "error");
     } finally {
       setSaving(false);
     }
@@ -125,7 +136,7 @@ export function useWorkflowController(companyId: number | null) {
 
   const handleDelete = useCallback(async () => {
     if (!workflow) return;
-    const confirmed = window.confirm("Delete this workflow?");
+    const confirmed = window.confirm(t.workflows.deleteConfirm);
     if (!confirmed) return;
     try {
       setSaving(true);
@@ -133,9 +144,9 @@ export function useWorkflowController(companyId: number | null) {
       setWorkflow(null);
       setPendingEdges([]);
       setMode("view");
-      showToast("Workflow deleted", "success");
+      showToast(t.workflows.workflowDeleted, "success");
     } catch {
-      showToast("Failed to delete workflow", "error");
+      showToast(t.workflows.deleteFailed, "error");
     } finally {
       setSaving(false);
     }
@@ -146,10 +157,14 @@ export function useWorkflowController(companyId: number | null) {
   }, []);
 
   const handleConnect = useCallback(
-    (sourceId: number, targetId: number) => {
+    (connection: { source: string; target: string }) => {
       setEdgeDialog({
         open: true,
-        editingEdge: undefined,
+        newConnection: {
+          id: `new-${Date.now()}`,
+          source: parseInt(connection.source),
+          target: parseInt(connection.target),
+        },
       });
     },
     [],
@@ -157,27 +172,33 @@ export function useWorkflowController(companyId: number | null) {
 
   const handleEdgeSave = useCallback(
     (edge: {
+      id?: number | string;
       source_department_id: number;
       target_department_id: number;
       action_description: string;
       trigger_condition?: string;
     }) => {
-      setPendingEdges((prev) => [...prev, edge]);
+      setPendingEdges((prev) => {
+        const edgeId = edge.id;
+        if (edgeId !== undefined) {
+          const idx = prev.findIndex((e) => String(e.id) === String(edgeId));
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { id: edgeId, ...edge };
+            return next;
+          }
+        }
+        return [...prev, { id: edgeId ?? `new-${Date.now()}`, ...edge }];
+      });
       setEdgeDialog(null);
     },
     [],
   );
 
   const handleEdgeDelete = useCallback(
-    (sourceId: number, targetId: number) => {
+    (edgeId: string) => {
       setPendingEdges((prev) =>
-        prev.filter(
-          (e) =>
-            !(
-              e.source_department_id === sourceId &&
-              e.target_department_id === targetId
-            ),
-        ),
+        prev.filter((e) => `edge-${e.id}` !== edgeId),
       );
     },
     [],

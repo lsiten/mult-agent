@@ -180,8 +180,18 @@ function HermesApp() {
   const isSubAgent = activeAgentId != null;
 
   const navItems = useMemo(
-    () => buildNavItems(BUILTIN_NAV, plugins).filter((item) => !(isSubAgent && item.masterOnly)),
-    [plugins, isSubAgent],
+    () => buildNavItems(BUILTIN_NAV, plugins).filter((item) => {
+      // Hide master-only items for sub-agents (non-company context)
+      if (isSubAgent && item.masterOnly) {
+        // But allow /workflows when a company is selected
+        if (item.path === "/workflows" && scope.type === "company") {
+          return true;
+        }
+        return false;
+      }
+      return true;
+    }),
+    [plugins, isSubAgent, scope.type],
   );
 
   // Route guard: sub-agents are confined to their Profile workspace, so any
@@ -191,12 +201,14 @@ function HermesApp() {
   const location = useLocation();
   useEffect(() => {
     if (!isSubAgent) return;
+    // Allow /workflows when a company is selected
+    if (location.pathname === "/workflows" && scope.type === "company") return;
     if (MASTER_ONLY_PATHS.has(location.pathname)) {
       const params = new URLSearchParams(location.search);
       params.set("agentId", String(activeAgentId));
       navigate(`/?${params.toString()}`, { replace: true });
     }
-  }, [isSubAgent, activeAgentId, location.pathname, location.search, navigate]);
+  }, [isSubAgent, activeAgentId, location.pathname, location.search, navigate, scope.type]);
 
   // Global keyboard shortcut: Cmd+Shift+D to open DevTools
   useEffect(() => {

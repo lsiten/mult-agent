@@ -16,6 +16,7 @@ import { formatDateTime } from "@/lib/date";
 interface MessageBubbleProps {
   message: SessionMessage;
   isStreaming?: boolean;
+  currentCompanyId?: number;
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
@@ -93,6 +94,16 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
             senderName={message.sender_agent_name}
             content={message.content || ""}
             version={message.architecture_version}
+            onConfirm={() => {
+              if (message.metadata?.architecture) {
+                api.confirmArchitecture(
+                  parseInt(new URLSearchParams(window.location.search).get("companyId") || "0"),
+                  message.metadata.architecture
+                ).then(() => {
+                  window.location.href = "/organization";
+                });
+              }
+            }}
           />
         ) : (
           <>

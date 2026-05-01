@@ -5,12 +5,14 @@ import { WorkflowCanvas } from "./components/WorkflowCanvas";
 import { WorkflowEmptyState } from "./components/WorkflowEmptyState";
 import { WorkflowEdgeDialog } from "./components/WorkflowEdgeDialog";
 import type { WorkScope } from "@/hooks/useWorkSelector";
+import { useI18n } from "@/i18n";
 
 interface WorkflowsPageProps {
   scope: WorkScope;
 }
 
 export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
+  const { t } = useI18n();
   const companyId = scope.type === "company" ? scope.company.id : null;
 
   const {
@@ -19,6 +21,7 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
     mode,
     loading,
     generating,
+    pendingEdges,
     edgeDialog,
     toast,
     handleGenerate,
@@ -30,6 +33,7 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
     handleEdgeDelete,
     handleEdgeDoubleClick,
     handleEdgeDialogOpenChange,
+    handleNodePositionsChange,
   } = useWorkflowController(companyId);
 
   if (companyId === null) {
@@ -38,9 +42,9 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
         <div className="mb-6 p-6 bg-muted rounded-full">
           <Loader2 className="h-12 w-12 text-muted-foreground" />
         </div>
-        <h3 className="text-2xl font-semibold mb-2">Please Select a Company</h3>
+        <h3 className="text-2xl font-semibold mb-2">{t.workflows.selectCompanyTitle}</h3>
         <p className="text-muted-foreground mb-6 max-w-md">
-          Please select a company from the dropdown above to view or edit its workflow.
+          {t.workflows.selectCompanyDescription}
         </p>
       </div>
     );
@@ -48,15 +52,16 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <WorkflowToolbar
-        mode={mode}
-        workflowName={workflow?.name}
-        onToggleMode={handleToggleMode}
-        onSave={handleSave}
-        onGenerate={!workflow ? handleGenerate : undefined}
-        onDelete={workflow ? handleDelete : undefined}
-        saving={generating}
-      />
+      {workflow && (
+        <WorkflowToolbar
+          mode={mode}
+          workflowName={workflow.name}
+          onToggleMode={handleToggleMode}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          saving={generating}
+        />
+      )}
 
       <div className="flex-1 relative">
         {loading && (
@@ -70,7 +75,6 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
             companyHasDepartments={departments.length > 0}
             onGenerate={handleGenerate}
             onCreate={() => {
-              // Navigate to organization page to create departments
               window.location.href = "/organization";
             }}
             loading={generating}
@@ -82,6 +86,7 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
             workflow={workflow}
             departments={departments}
             mode={mode}
+            pendingEdges={pendingEdges}
             onConnect={handleConnect}
             onEdgeDoubleClick={handleEdgeDoubleClick}
             onEdgeDelete={handleEdgeDelete}
@@ -95,11 +100,24 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
           onOpenChange={handleEdgeDialogOpenChange}
           departments={departments}
           edge={edgeDialog.editingEdge}
+          newConnection={edgeDialog.newConnection}
           onSave={handleEdgeSave}
         />
       )}
 
-      {toast && <div className="fixed bottom-4 right-4 z-50">{toast}</div>}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <div
+            className={`px-4 py-2 rounded-md text-sm font-medium shadow-lg ${
+              toast.type === "error"
+                ? "bg-destructive text-destructive-foreground"
+                : "bg-primary text-primary-foreground"
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

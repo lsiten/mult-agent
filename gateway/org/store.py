@@ -547,9 +547,9 @@ class DepartmentRepository(BaseRepository):
             """
             INSERT INTO departments(
                 company_id, parent_id, code, name, goal, description, icon, accent_color, leader_agent_id,
-                workspace_path, sort_order, status, created_at, updated_at
+                is_management_department, workspace_path, sort_order, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["company_id"],
@@ -561,6 +561,7 @@ class DepartmentRepository(BaseRepository):
                 data.get("icon"),
                 data.get("accent_color"),
                 data.get("leader_agent_id"),
+                1 if data.get("is_management_department") else 0,
                 data.get("workspace_path"),
                 data.get("sort_order") or 0,
                 data.get("status") or "active",
@@ -1342,3 +1343,52 @@ class AgentPermissionRepository(BaseRepository):
                 conn=conn,
             )
             return self.get(cursor.lastrowid, conn=conn) or {}
+
+
+class DirectorOfficeRepository(BaseRepository):
+    """Repository for director office operations."""
+    table = "director_offices"
+
+    _ALLOWED_UPDATE_FIELDS = {
+        "department_id", "director_agent_id", "office_name",
+        "responsibilities", "status"
+    }
+
+    def create(self, data: dict, *, conn=None) -> dict:
+        """Create a new director office."""
+        ts = now_ts()
+        cursor = self.store.execute(
+            """
+            INSERT INTO director_offices(
+                company_id, department_id, director_agent_id,
+                office_name, responsibilities, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["company_id"],
+                data["department_id"],
+                data.get("director_agent_id"),
+                data["office_name"],
+                data.get("responsibilities"),
+                data.get("status", "active"),
+                ts, ts
+            ),
+            conn=conn,
+        )
+        return self.get(cursor.lastrowid, conn=conn) or {}
+
+    def list_by_company(self, company_id: int, *, conn=None) -> list:
+        """List all director offices for a company."""
+        return self.store.query_all(
+            "SELECT * FROM director_offices WHERE company_id = ? ORDER BY created_at",
+            (company_id,),
+            conn=conn
+        )
+
+    def update(self, office_id: int, data: dict, *, conn=None) -> dict:
+        """Update a director office."""
+        return super().update(office_id, data, self._ALLOWED_UPDATE_FIELDS, conn=conn)
+
+    def delete(self, office_id: int, *, conn=None) -> int:
+        """Delete a director office."""
+        return super().delete(office_id, conn=conn)

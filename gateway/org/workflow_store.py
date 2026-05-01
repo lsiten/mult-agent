@@ -76,7 +76,9 @@ class WorkflowStore:
                     "UPDATE workflows SET " + ", ".join(fields) + " WHERE id = ?",
                     values,
                 )
-            return self._get_workflow(workflow_id)
+            result = self._get_workflow(workflow_id)
+            result["edges"] = self._get_edges(workflow_id)
+            return result
 
     def delete_workflow(self, workflow_id: int) -> None:
         """Delete workflow (edges cascade)."""

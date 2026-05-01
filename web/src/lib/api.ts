@@ -767,6 +767,21 @@ export const api = {
         method: "POST",
       }
     ),
+
+  confirmArchitecture: (companyId: number, architecture: {
+    departments: Array<{name: string; goal?: string; parent_name?: string}>;
+    positions: Array<{department_name: string; name: string; responsibilities?: string}>;
+    agents: Array<{department_name: string; position_name?: string; name: string; role_summary?: string}>;
+  }) => fetchJSON<{
+    created: {
+      departments: Array<any>;
+      positions: Array<any>;
+      agents: Array<any>;
+    };
+  }>(`/api/org/companies/${companyId}/confirm-architecture`, {
+    method: "POST",
+    body: JSON.stringify({ architecture }),
+  }),
 };
 
 /** Row from ``master_agent_assets`` exposed by ``GET /api/org/assets``. */

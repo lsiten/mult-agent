@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   type Node,
@@ -26,94 +25,48 @@ interface WorkflowCanvasProps {
   workflow: Workflow | null;
   departments: WorkflowDepartment[];
   mode: WorkflowMode;
+  pendingEdges?: Array<{
+    id: number | string;
+    source_department_id: number;
+    target_department_id: number;
+    action_description: string;
+    trigger_condition?: string;
+  }>;
   onEdgesChange?: (changes: any[]) => void;
   onConnect?: (connection: any) => void;
   onEdgeDoubleClick?: (edge: any) => void;
   onEdgeDelete?: (edgeId: string) => void;
   onLoad?: (rf: any) => void;
+  onNodePositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
 }
 
-/** Layout nodes left-to-right based on edge connections, fallback to sort_order. */
+/** Layout nodes horizontally by sort_order. */
 function layoutNodes(
   departments: WorkflowDepartment[],
-  edges: WorkflowEdgeType[]
+  _edges: WorkflowEdgeType[],
+  existingPositions?: Record<string, { x: number; y: number }>
 ): Node<WorkflowNodeData>[] {
-  const HORIZONTAL_GAP = 250;
-  const VERTICAL_GAP = 150;
-  const START_X = 50;
-  const START_Y = 50;
+  const HORIZONTAL_GAP = 320;
+  const START_X = 100;
+  const START_Y = 200;
 
-  // Build adjacency to determine order
-  const outgoing = new Map<number, number[]>();
-  const incoming = new Map<number, number[]>();
-  departments.forEach((d) => {
-    outgoing.set(d.id, []);
-    incoming.set(d.id, []);
+  const sorted = [...departments].sort((a, b) => a.sort_order - b.sort_order);
+
+  return sorted.map((department, index) => {
+    const pos = existingPositions?.[String(department.id)];
+    return {
+      id: String(department.id),
+      type: "workflowNode",
+      position: pos
+        ? { x: pos.x, y: pos.y }
+        : { x: START_X + index * HORIZONTAL_GAP, y: START_Y },
+      data: {
+        department,
+        taskCount: department.agent_count || 0,
+        isActive: false,
+      },
+    };
   });
-  edges.forEach((e) => {
-    outgoing.get(e.source_department_id)?.push(e.target_department_id);
-    incoming.get(e.target_department_id)?.push(e.source_department_id);
-  });
-
-  // Topological sort (Kahn's algorithm) for ordering
-  const inDegree = new Map<number, number>();
-  departments.forEach((d) => inDegree.set(d.id, incoming.get(d.id)?.length || 0));
-
-  const queue: number[] = [];
-  const order: number[] = [];
-  departments.forEach((d) => {
-    if ((inDegree.get(d.id) || 0) === 0) queue.push(d.id);
-  });
-
-  while (queue.length > 0) {
-    const curr = queue.shift()!;
-    order.push(curr);
-    (outgoing.get(curr) || []).forEach((next) => {
-      const newDeg = (inDegree.get(next) || 0) - 1;
-      inDegree.set(next, newDeg);
-      if (newDeg === 0) queue.push(next);
-    });
-  }
-
-  // Add any remaining (disconnected) departments sorted by sort_order
-  const orderedIds = new Set(order);
-  departments
-    .filter((d) => !orderedIds.has(d.id))
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .forEach((d) => order.push(d.id));
-
-  // Position nodes
-  const nodesByRow = new Map<number, number[]>(); // column -> dept ids
-  order.forEach((deptId, index) => {
-    const col = index;
-    if (!nodesByRow.has(col)) nodesByRow.set(col, []);
-    nodesByRow.get(col)!.push(deptId);
-  });
-
-  const nodes: Node<WorkflowNodeData>[] = [];
-  const deptMap = new Map(departments.map((d) => [d.id, d]));
-
-  Array.from(nodesByRow.entries()).forEach(([col, deptIds]) => {
-    deptIds.forEach((deptId, row) => {
-      const department = deptMap.get(deptId);
-      if (!department) return;
-      nodes.push({
-        id: String(deptId),
-        type: "workflowNode",
-        position: {
-          x: START_X + col * HORIZONTAL_GAP,
-          y: START_Y + row * VERTICAL_GAP,
-        },
-        data: {
-          department,
-          taskCount: department.agent_count || 0,
-          isActive: false,
-        },
-      });
-    });
-  });
-
-  return nodes;
 }
 
 /** Convert workflow edges to ReactFlow edges. */
@@ -141,37 +94,76 @@ export function WorkflowCanvas({
   workflow,
   departments,
   mode,
+  pendingEdges,
   onEdgesChange,
   onConnect,
   onEdgeDoubleClick,
   onEdgeDelete,
   onLoad,
+  onNodePositionsChange,
 }: WorkflowCanvasProps) {
   const [rfInstance, setRfInstance] = useState<any>(null);
 
+  const allEdges = useMemo(() => {
+    const saved = workflow?.edges || [];
+    if (!pendingEdges?.length) return saved;
+    const savedIds = new Set(saved.map((e) => e.id));
+    const merged = [...saved];
+    for (const pe of pendingEdges) {
+      if (!savedIds.has(pe.id)) {
+        merged.push({
+          id: pe.id as number,
+          workflow_id: workflow?.id || 0,
+          source_department_id: pe.source_department_id,
+          target_department_id: pe.target_department_id,
+          action_description: pe.action_description,
+          trigger_condition: pe.trigger_condition,
+          sort_order: 0,
+          created_at: Date.now(),
+        });
+      }
+    }
+    return merged;
+  }, [workflow?.edges, workflow?.id, pendingEdges]);
+
   const initialNodes = useMemo(
-    () => layoutNodes(departments, workflow?.edges || []),
-    [departments, workflow?.edges]
+    () => layoutNodes(departments, allEdges),
+    [departments, allEdges]
   );
 
   const initialEdges = useMemo(
-    () => buildEdges(workflow, onEdgeDelete),
-    [workflow, onEdgeDelete]
+    () => buildEdges(workflow ? { ...workflow, edges: allEdges } : null, onEdgeDelete),
+    [workflow, allEdges, onEdgeDelete]
   );
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initialEdges);
 
-  // Sync external changes
+  const layoutVersionRef = useRef(0);
+
   useEffect(() => {
     setEdges(initialEdges);
   }, [initialEdges, setEdges]);
 
   useEffect(() => {
-    onNodesChange(initialNodes);
-  }, [initialNodes, onNodesChange]);
+    const newVersion = departments.length * 1000 + (allEdges.length || 0);
+    if (layoutVersionRef.current !== newVersion) {
+      layoutVersionRef.current = newVersion;
+      setNodes((nds) => {
+        const existingIds = new Set(nds.map((n) => n.id));
+        const newNodes = initialNodes.filter((n) => !existingIds.has(n.id));
+        const updated = nds.map((existing) => {
+          const updated = initialNodes.find((n) => n.id === existing.id);
+          if (updated) {
+            return { ...existing, position: updated.position, data: updated.data };
+          }
+          return existing;
+        });
+        return [...updated, ...newNodes];
+      });
+    }
+  }, [initialNodes, setNodes, departments.length, allEdges.length]);
 
-  // Auto-fit view
   useEffect(() => {
     if (rfInstance) {
       setTimeout(() => rfInstance.fitView({ padding: 0.2 }), 50);
@@ -185,6 +177,24 @@ export function WorkflowCanvas({
       setTimeout(() => instance.fitView({ padding: 0.2 }), 50);
     },
     [onLoad]
+  );
+
+  const handleNodePositionsChange = useCallback(
+    (changes: any[]) => {
+      const positions: Record<string, { x: number; y: number }> = {};
+      for (const change of changes) {
+        if (change.type === "position" && change.position) {
+          positions[change.id] = {
+            x: change.position.x,
+            y: change.position.y,
+          };
+        }
+      }
+      if (Object.keys(positions).length > 0) {
+        onNodePositionsChange?.(positions);
+      }
+    },
+    [onNodePositionsChange]
   );
 
   const handleEdgesChange: OnEdgesChange = useCallback(
@@ -209,33 +219,56 @@ export function WorkflowCanvas({
     [onEdgeDoubleClick]
   );
 
+  const handleNodesChange = useCallback(
+    (changes: any[]) => {
+      handleNodePositionsChange(changes);
+      onNodesChangeInternal(changes);
+    },
+    [handleNodePositionsChange, onNodesChangeInternal]
+  );
+
   return (
     <div className={cn("h-full w-full", mode === "view" && "cursor-default")}>
+      <style>{`
+        .workflow-controls .react-flow__controls-button {
+          background: #f5f5f5;
+          border-color: #e2e8f0;
+          border-bottom: none;
+        }
+        .workflow-controls .react-flow__controls-button:last-child {
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .workflow-controls .react-flow__controls-button:hover {
+          background: #e2e8f0;
+        }
+        .workflow-controls .react-flow__controls-button svg {
+          fill: #334155;
+        }
+        .react-flow__attribution { display: none !important; }
+      `}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onInit={handleInit}
-        onNodesChange={mode === "edit" ? undefined : () => {}}
+        onNodesChange={mode === "edit" ? handleNodesChange : undefined}
         onEdgesChange={mode === "edit" ? handleEdgesChange : undefined}
         onConnect={mode === "edit" ? handleConnect : undefined}
         onEdgeDoubleClick={handleEdgeDoubleClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        defaultZoom={0.8}
         nodesDraggable={mode === "edit"}
         nodesConnectable={mode === "edit"}
         elementsSelectable={mode === "edit"}
         className="bg-background"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        <Controls showInteractive={mode === "edit"} />
-        <MiniMap
-          nodeColor={(node: Node) => {
-            const data = node.data as WorkflowNodeData;
-            return data?.department?.accent_color || "#6366f1";
-          }}
-          className="bg-background border border-border"
+        <Controls
+          showZoom={true}
+          showFitView={true}
+          showLock={true}
+          showInteractive={false}
+          className="workflow-controls"
         />
       </ReactFlow>
     </div>

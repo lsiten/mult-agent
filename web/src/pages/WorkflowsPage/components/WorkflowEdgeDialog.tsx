@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { WorkflowDepartment } from "../types";
+import { useI18n } from "@/i18n";
 
 interface WorkflowEdgeDialogProps {
   open: boolean;
@@ -29,6 +30,10 @@ interface WorkflowEdgeDialogProps {
     target_department_id: number;
     action_description: string;
     trigger_condition?: string;
+  };
+  newConnection?: {
+    source: number;
+    target: number;
   };
   onSave: (data: {
     source_department_id: number;
@@ -43,8 +48,10 @@ export function WorkflowEdgeDialog({
   onOpenChange,
   departments,
   edge,
+  newConnection,
   onSave,
 }: WorkflowEdgeDialogProps) {
+  const { t } = useI18n();
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
   const [actionDescription, setActionDescription] = useState("");
@@ -56,13 +63,18 @@ export function WorkflowEdgeDialog({
       setTarget(edge.target_department_id.toString());
       setActionDescription(edge.action_description);
       setTriggerCondition(edge.trigger_condition || "");
+    } else if (newConnection) {
+      setSource(newConnection.source.toString());
+      setTarget(newConnection.target.toString());
+      setActionDescription("");
+      setTriggerCondition("");
     } else {
       setSource("");
       setTarget("");
       setActionDescription("");
       setTriggerCondition("");
     }
-  }, [edge, open]);
+  }, [edge, newConnection, open]);
 
   const isValid = () => {
     const sourceId = parseInt(source);
@@ -89,19 +101,19 @@ export function WorkflowEdgeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{edge ? "Edit Edge" : "Add Edge"}</DialogTitle>
+          <DialogTitle>{edge ? t.workflows.editEdge : t.workflows.addEdge}</DialogTitle>
           <DialogDescription>
             {edge
-              ? "Update the workflow edge details."
-              : "Create a new workflow edge between departments."}
+              ? t.workflows.updateEdgeDescription
+              : t.workflows.createEdgeDescription}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="source">Source Department</Label>
+            <Label htmlFor="source">{t.workflows.sourceDepartment}</Label>
             <Select value={source} onValueChange={setSource}>
               <SelectTrigger id="source">
-                <SelectValue placeholder="Select source department" />
+                <SelectValue placeholder={t.workflows.selectSource} />
               </SelectTrigger>
               <SelectContent>
                 {departments.map((dept) => (
@@ -113,10 +125,10 @@ export function WorkflowEdgeDialog({
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="target">Target Department</Label>
+            <Label htmlFor="target">{t.workflows.targetDepartment}</Label>
             <Select value={target} onValueChange={setTarget}>
               <SelectTrigger id="target">
-                <SelectValue placeholder="Select target department" />
+                <SelectValue placeholder={t.workflows.selectTarget} />
               </SelectTrigger>
               <SelectContent>
                 {departments.map((dept) => (
@@ -128,30 +140,30 @@ export function WorkflowEdgeDialog({
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="action">Action Description</Label>
+            <Label htmlFor="action">{t.workflows.actionDescription}</Label>
             <Textarea
               id="action"
               value={actionDescription}
               onChange={(e) => setActionDescription(e.target.value)}
-              placeholder="Describe the action performed"
+              placeholder={t.workflows.actionPlaceholder}
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="trigger">Trigger Condition (Optional)</Label>
+            <Label htmlFor="trigger">{t.workflows.triggerCondition}</Label>
             <Input
               id="trigger"
               value={triggerCondition}
               onChange={(e) => setTriggerCondition(e.target.value)}
-              placeholder="e.g., When task is completed"
+              placeholder={t.workflows.triggerPlaceholder}
             />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t.workflows.cancel}
           </Button>
           <Button onClick={handleSubmit} disabled={!isValid()}>
-            {edge ? "Update" : "Create"}
+            {edge ? t.workflows.update : t.workflows.create}
           </Button>
         </DialogFooter>
       </DialogContent>

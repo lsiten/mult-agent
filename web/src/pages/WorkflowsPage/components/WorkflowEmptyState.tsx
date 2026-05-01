@@ -1,5 +1,6 @@
 import { Sparkles, Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n";
 
 interface WorkflowEmptyStateProps {
   companyHasDepartments: boolean;
@@ -14,6 +15,8 @@ export function WorkflowEmptyState({
   onCreate,
   loading,
 }: WorkflowEmptyStateProps) {
+  const { t } = useI18n();
+
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 text-center">
       {companyHasDepartments ? (
@@ -21,10 +24,9 @@ export function WorkflowEmptyState({
           <div className="mb-6 p-6 bg-muted rounded-full">
             <Sparkles className="h-12 w-12 text-muted-foreground" />
           </div>
-          <h3 className="text-2xl font-semibold mb-2">No Workflow Yet</h3>
+          <h3 className="text-2xl font-semibold mb-2">{t.workflows.noWorkflowYet}</h3>
           <p className="text-muted-foreground mb-6 max-w-md">
-            Generate a workflow automatically using AI based on your company's
-            departments.
+            {t.workflows.noWorkflowPageDescription}
           </p>
           <div className="flex gap-4">
             <Button onClick={onGenerate} disabled={loading}>
@@ -33,10 +35,10 @@ export function WorkflowEmptyState({
               ) : (
                 <Sparkles className="h-4 w-4 mr-2" />
               )}
-              AI Generate Workflow
+              {t.workflows.aiGenerateWorkflow}
             </Button>
             <Button variant="outline" onClick={onCreate}>
-              Create Manually
+              {t.workflows.createManually}
             </Button>
           </div>
         </>
@@ -45,14 +47,13 @@ export function WorkflowEmptyState({
           <div className="mb-6 p-6 bg-muted rounded-full">
             <Building2 className="h-12 w-12 text-muted-foreground" />
           </div>
-          <h3 className="text-2xl font-semibold mb-2">No Departments Found</h3>
+          <h3 className="text-2xl font-semibold mb-2">{t.workflows.noDepartmentsFound}</h3>
           <p className="text-muted-foreground mb-6 max-w-md">
-            You need to create departments first. Please go to the Organization
-            page to add departments.
+            {t.workflows.noDepartmentsDescription}
           </p>
           <Button variant="outline" onClick={onCreate}>
             <Building2 className="h-4 w-4 mr-2" />
-            Go to Organization
+            {t.workflows.goToOrganization}
           </Button>
         </>
       )}

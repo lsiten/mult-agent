@@ -1169,6 +1169,98 @@ class OrganizationService:
 
         return self.store.transaction(tx)
 
+    def confirm_architecture(self, company_id: int, architecture: dict) -> dict[str, Any]:
+        """Confirm and create organization structure from architecture diagram.
+
+        Args:
+            company_id: Company ID
+            architecture: Dict with departments, positions, agents to create
+                {
+                    "departments": [
+                        {"name": "技术部", "goal": "...", "parent_name": None},
+                        ...
+                    ],
+                    "positions": [
+                        {"department_name": "技术部", "name": "Frontend工程师", ...},
+                        ...
+                    ],
+                    "agents": [
+                        {"department_name": "技术部", "position_name": "Frontend工程师", "name": "..."},
+                        ...
+                    ]
+                }
+
+        Returns:
+            {"created": {"departments": [...], "positions": [...], "agents": [...]}}
+        """
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            created_depts = []
+            created_positions = []
+            created_agents = []
+
+            # 1. Create departments
+            dept_map = {}  # name -> id
+            for dept_data in architecture.get("departments", []):
+                # Find parent_id if parent_name provided
+                parent_id = None
+                if dept_data.get("parent_name"):
+                    parent = self.store.query_one(
+                        "SELECT id FROM departments WHERE company_id = ? AND name = ?",
+                        (company_id, dept_data["parent_name"]),
+                        conn=conn
+                    )
+                    if parent:
+                        parent_id = parent["id"]
+
+                data = {
+                    "company_id": company_id,
+                    "name": dept_data["name"],
+                    "goal": dept_data.get("goal", ""),
+                    "parent_id": parent_id
+                }
+                dept = self.departments.create(data, conn=conn)
+                created_depts.append(dept)
+                dept_map[dept["name"]] = dept["id"]
+
+            # 2. Create positions
+            for pos_data in architecture.get("positions", []):
+                dept_id = dept_map.get(pos_data.get("department_name", ""))
+                if not dept_id:
+                    continue
+
+                data = {
+                    "department_id": dept_id,
+                    "name": pos_data["name"],
+                    "responsibilities": pos_data.get("responsibilities", ""),
+                }
+                position = self.positions.create(data, conn=conn)
+                created_positions.append(position)
+
+            # 3. Create agents
+            for agent_data in architecture.get("agents", []):
+                dept_id = dept_map.get(agent_data.get("department_name", ""))
+                if not dept_id:
+                    continue
+
+                data = {
+                    "company_id": company_id,
+                    "department_id": dept_id,
+                    "name": agent_data["name"],
+                    "role_summary": agent_data.get("role_summary", ""),
+                }
+                agent = self.agents.create(data, conn=conn)
+                created_agents.append(agent)
+
+            return {
+                "created": {
+                    "departments": created_depts,
+                    "positions": created_positions,
+                    "agents": created_agents
+                }
+            }
+
+        return self.store.transaction(tx)
+
     def _get_director_prompt(self, role: str) -> str:
         """Get system prompt for director agent."""
         prompts = {

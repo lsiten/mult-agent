@@ -1,19 +1,19 @@
 import { memo } from "react";
 import {
   BaseEdge,
-  EdgeLabelRenderer,
   getBezierPath,
   type EdgeProps,
 } from "@xyflow/react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { WorkflowEdgeData } from "../types";
+import { useI18n } from "@/i18n";
 
 interface WorkflowEdgeProps extends EdgeProps {
-  data?: WorkflowEdgeData & { onDelete?: () => void };
+  data?: { onDelete?: () => void };
 }
 
 export const WorkflowEdge = memo((props: WorkflowEdgeProps) => {
+  const { t } = useI18n();
   const {
     id,
     sourceX,
@@ -35,8 +35,6 @@ export const WorkflowEdge = memo((props: WorkflowEdgeProps) => {
     targetPosition,
   });
 
-  const actionDescription = data?.action_description || "";
-  const triggerCondition = data?.trigger_condition;
   const onDelete = data?.onDelete;
 
   return (
@@ -44,40 +42,26 @@ export const WorkflowEdge = memo((props: WorkflowEdgeProps) => {
       <BaseEdge
         id={id}
         path={edgePath}
-        className={cn("stroke-2", selected && "stroke-primary")}
-        style={{ stroke: selected ? undefined : "#6366f1" }}
+        className={cn("stroke-[2.5]", selected && "stroke-primary")}
+        style={{ stroke: selected ? undefined : "#94a3b8" }}
       />
-      <EdgeLabelRenderer>
-        <div
-          className="nodrag nopan pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
-          style={{
-            transform: `translate(${labelX}px, ${labelY}px) translate(-50%, -50%)`,
-          }}
-        >
-          <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 shadow-sm">
-            <span className="text-xs font-medium text-foreground whitespace-nowrap">
-              {actionDescription}
-            </span>
-            {onDelete && (
-              <button
-                className="ml-1 rounded-sm opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-100 focus:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }}
-                title="Delete edge"
-              >
-                <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-              </button>
-            )}
-          </div>
-          {triggerCondition && (
-            <span className="mt-0.5 text-[10px] text-muted-foreground">
-              {triggerCondition}
-            </span>
-          )}
-        </div>
-      </EdgeLabelRenderer>
+      {onDelete && (
+        <g transform={`translate(${labelX}, ${labelY}) translate(-12, -12)`}>
+          <foreignObject width={24} height={24}>
+            <button
+              xmlns="http://www.w3.org/1999/xhtml"
+              className="rounded-full bg-background border border-border shadow-sm opacity-0 hover:opacity-100 transition-opacity p-0.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              title={t.workflows.deleteEdge}
+            >
+              <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+            </button>
+          </foreignObject>
+        </g>
+      )}
     </>
   );
 });

@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Loader2, Edit, Save, Trash2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface WorkflowToolbarProps {
   mode: "view" | "edit";
@@ -21,6 +22,7 @@ export function WorkflowToolbar({
   onDelete,
   saving,
 }: WorkflowToolbarProps) {
+  const { t } = useI18n();
   const isEditMode = mode === "edit";
 
   return (
@@ -33,12 +35,12 @@ export function WorkflowToolbar({
         {!isEditMode ? (
           <Button variant="outline" onClick={onToggleMode}>
             <Edit className="h-4 w-4 mr-2" />
-            Edit
+            {t.workflows.edit}
           </Button>
         ) : (
           <>
             <Button variant="outline" onClick={onToggleMode}>
-              Cancel
+              {t.workflows.cancel}
             </Button>
             <Button onClick={onSave} disabled={saving}>
               {saving ? (
@@ -46,18 +48,18 @@ export function WorkflowToolbar({
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              Save
+              {t.workflows.save}
             </Button>
             {onGenerate && (
               <Button variant="secondary" onClick={onGenerate}>
                 <Sparkles className="h-4 w-4 mr-2" />
-                Generate
+                {t.workflows.generateWorkflow}
               </Button>
             )}
             {onDelete && (
               <Button variant="destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete
+                {t.workflows.delete}
               </Button>
             )}
           </>

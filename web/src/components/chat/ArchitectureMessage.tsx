@@ -11,6 +11,7 @@ interface ArchitectureMessageProps {
   content: string;
   version?: number;
   onAdjust?: (mermaidCode: string) => void;
+  onConfirm?: (data: { mermaidCode: string; content: string; senderRole: string }) => void;
 }
 
 // Initialize mermaid once
@@ -58,6 +59,12 @@ export function ArchitectureMessage({
     }
   };
 
+  const handleConfirm = () => {
+    if (onConfirm) {
+      onConfirm({ mermaidCode, content, senderRole });
+    }
+  };
+
   return (
     <Card className="p-4 max-w-[600px]">
       <div className="flex items-start gap-3 mb-3">
@@ -79,6 +86,11 @@ export function ArchitectureMessage({
         {onAdjust && !editing && (
           <Button variant="outline" size="sm" onClick={handleAdjust}>
             调整
+          </Button>
+        )}
+        {onConfirm && !editing && (
+          <Button variant="default" size="sm" onClick={handleConfirm}>
+            确认创建
           </Button>
         )}
       </div>
