@@ -748,6 +748,25 @@ export const api = {
         body: JSON.stringify({ visibility }),
       }
     ),
+
+  // ── Director Office APIs ─────────────────────────────────────
+  initDirectorOffice: (data: { companyId: number; agentCount?: number }) =>
+    fetchJSON<{ department_id: number; office_id: number; agents: any[] }>(
+      `/api/org/companies/${data.companyId}/init-director-office`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_count: data.agentCount || 3 }),
+      }
+    ),
+
+  startDirectorDiscussion: (companyId: number) =>
+    fetchJSON<{ session_id: string; messages: any[] }>(
+      `/api/org/companies/${companyId}/start-discussion`,
+      {
+        method: "POST",
+      }
+    ),
 };
 
 /** Row from ``master_agent_assets`` exposed by ``GET /api/org/assets``. */
@@ -1390,13 +1409,12 @@ export type {
 } from "@/pages/WorkflowsPage/types";
 
 export async function getWorkflow(companyId: number): Promise<Workflow | null> {
-  const base = await getRequestBase();
   const token = await getGatewayAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(
-    `${base}/api/org/companies/${companyId}/workflow`,
+    `${GATEWAY_BASE}/api/org/companies/${companyId}/workflow`,
     { headers }
   );
   if (!res.ok) {
@@ -1408,13 +1426,12 @@ export async function getWorkflow(companyId: number): Promise<Workflow | null> {
 }
 
 export async function generateWorkflow(companyId: number): Promise<Workflow> {
-  const base = await getRequestBase();
   const token = await getGatewayAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(
-    `${base}/api/org/companies/${companyId}/workflow/generate`,
+    `${GATEWAY_BASE}/api/org/companies/${companyId}/workflow/generate`,
     { method: "POST", headers }
   );
   if (!res.ok) throw new Error(`Failed to generate workflow: ${res.statusText}`);
@@ -1427,12 +1444,11 @@ export async function createWorkflow(data: {
   name: string;
   description?: string;
 }): Promise<Workflow> {
-  const base = await getRequestBase();
   const token = await getGatewayAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${base}/api/org/workflows`, {
+  const res = await fetch(`${GATEWAY_BASE}/api/org/workflows`, {
     method: "POST",
     headers,
     body: JSON.stringify(data),
@@ -1456,12 +1472,11 @@ export async function updateWorkflow(
     }>;
   }
 ): Promise<Workflow> {
-  const base = await getRequestBase();
   const token = await getGatewayAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${base}/api/org/workflows/${id}`, {
+  const res = await fetch(`${GATEWAY_BASE}/api/org/workflows/${id}`, {
     method: "PUT",
     headers,
     body: JSON.stringify(data),
@@ -1471,14 +1486,35 @@ export async function updateWorkflow(
 }
 
 export async function deleteWorkflow(id: number): Promise<void> {
-  const base = await getRequestBase();
   const token = await getGatewayAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${base}/api/org/workflows/${id}`, {
+  const res = await fetch(`${GATEWAY_BASE}/api/org/workflows/${id}`, {
     method: "DELETE",
     headers,
   });
   if (!res.ok) throw new Error(`Failed to delete workflow: ${res.statusText}`);
+}
+
+export interface DirectorOffice {
+  id: number;
+  company_id: number;
+  department_id: number;
+  director_agent_id: number | null;
+  office_name: string;
+  responsibilities: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ArchitectureMessage {
+  type: 'architecture';
+  mermaid_code: string;
+  sender_agent_role: string;
+  architecture_version: number;
+  role: string;
+  content: string;
+  timestamp: number;
 }
