@@ -55,7 +55,7 @@ export interface Translations {
   };
 
   // ── App shell ──
-  app: {
+    app: {
     brand: string;
     brandShort: string;
     webUi: string;
@@ -76,6 +76,7 @@ export interface Translations {
       performance: string;
       settings: string;
       organization: string;
+      workflows: string;
     };
   };
 
@@ -940,6 +941,20 @@ export interface Translations {
     agentCount: string;
     selectedCompany: string;
     noCompanies: string;
+    directorOffice: {
+      title: string;
+      subtitle: string;
+      initDirectorOffice: string;
+      createDirectorOffice: string;
+      editDirectorOffice: string;
+      agentCount: string;
+      initializing: string;
+      directorOfficeCreated: string;
+      startDiscussion: string;
+      architecture: string;
+      confirmArchitecture: string;
+      continueDiscussion: string;
+    };
   };
 
   // ── Workflows page ──
