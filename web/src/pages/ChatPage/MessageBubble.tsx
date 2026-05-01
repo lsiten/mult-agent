@@ -6,6 +6,8 @@ import { ToolCallDisplay } from "./ToolCallDisplay";
 import { ToolInvocationGroup } from "@/components/chat/ToolInvocationMessage";
 import { SkillInvocationMessage } from "@/components/chat/SkillInvocationMessage";
 import { AuthorizationRequestMessage } from "@/components/chat/AuthorizationRequestMessage";
+import { ArchitectureMessage } from "@/components/chat/ArchitectureMessage";
+import { Badge } from "@/components/ui/badge";
 import { useChatSettingsStore } from "@/stores/useChatSettingsStore";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
   const isToolUse = message.role === "tool_use";
   const isSkillUse = message.role === "skill_use";
   const isAuthRequest = message.role === "authorization_request";
+  const isAgentMessage = !!message.sender_agent_role;
 
   const timestamp = message.timestamp ? formatDateTime(message.timestamp, locale) : null;
 
@@ -59,25 +62,48 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
     );
   }
 
+  const isArchitecture = message.type === "architecture";
+
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex gap-2", isAgentMessage ? "justify-start" : "justify-end")}>
+      {isAgentMessage && (
+        <div className="flex flex-col items-center gap-1 mt-1">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">
+            {message.sender_agent_role?.[0] || "A"}
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {message.sender_agent_role}
+          </Badge>
+        </div>
+      )}
       <div
         className={cn(
           "max-w-[80%] rounded-lg px-4 py-3 break-words overflow-wrap-anywhere min-w-0",
           isUser && "bg-primary/10 text-primary",
           isSystem && "bg-muted/30 text-muted-foreground",
-          isAssistant && "bg-success/10 text-success"
+          isAssistant && !isAgentMessage && "bg-success/10 text-success",
+          isAgentMessage && "bg-muted"
         )}
         style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}
       >
-        <div className="text-xs opacity-60 mb-1 flex items-center justify-between gap-2">
-          <span>{t.chat.roles[message.role]}</span>
-          {timestamp && <span className="text-[10px]">{timestamp}</span>}
-        </div>
-        {message.content && (
-          <div className={cn(isStreaming && "animate-pulse")}>
-            <Markdown content={message.content} />
-          </div>
+        {isArchitecture ? (
+          <ArchitectureMessage
+            mermaidCode={message.mermaid_code || ""}
+            senderRole={message.sender_agent_role || ""}
+            content={message.content || ""}
+          />
+        ) : (
+          <>
+            <div className="text-xs opacity-60 mb-1 flex items-center justify-between gap-2">
+              <span>{isAgentMessage ? message.sender_agent_role : t.chat.roles[message.role]}</span>
+              {timestamp && <span className="text-[10px]">{timestamp}</span>}
+            </div>
+            {message.content && (
+              <div className={cn(isStreaming && "animate-pulse")}>
+                <Markdown content={message.content} />
+              </div>
+            )}
+          </>
         )}
         {message.attachments && message.attachments.length > 0 && (
           <AttachmentDisplay attachments={message.attachments} />
