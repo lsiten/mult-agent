@@ -355,6 +355,23 @@ export function ChatPage({ scope }: { scope?: WorkScope }) {
 
   const currentCompanyId = scope?.type === "company" ? scope.company.id : undefined;
 
+  // Auto-start director discussion when scope is director-office
+  const [discussionStarted, setDiscussionStarted] = useState(false);
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const companyId = queryParams.get("companyId");
+    if (scope?.type === "director-office" && companyId && !discussionStarted) {
+      api.startDirectorDiscussion(Number(companyId))
+        .then(() => {
+          console.log("[ChatPage] Director discussion started");
+          setDiscussionStarted(true);
+        })
+        .catch(error => {
+          console.error("[ChatPage] Failed to start director discussion:", error);
+        });
+    }
+  }, [scope, location.search, discussionStarted]);
+
   return (
     <div className="flex h-full">
       <Sidebar
