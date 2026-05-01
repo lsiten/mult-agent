@@ -1130,9 +1130,11 @@ export interface SessionMessage {
   role: "user" | "assistant" | "system" | "tool" | "tool_use" | "skill_use" | "authorization_request";
   content: string | null;
   sender_agent_role?: string;
+  sender_agent_name?: string;
   sender_agent_id?: number;
   type?: string;
   mermaid_code?: string;
+  architecture_version?: number;
   tool_calls?: Array<{
     id: string;
     function: { name: string; arguments: string };

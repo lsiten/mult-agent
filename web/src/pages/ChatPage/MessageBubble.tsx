@@ -90,7 +90,9 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
           <ArchitectureMessage
             mermaidCode={message.mermaid_code || ""}
             senderRole={message.sender_agent_role || ""}
+            senderName={message.sender_agent_name}
             content={message.content || ""}
+            version={message.architecture_version}
           />
         ) : (
           <>
