@@ -41,8 +41,17 @@ class WorkflowAPIHandlers:
 
     async def handle_get_workflow(self, request: web.Request) -> web.Response:
         """GET /api/org/companies/{companyId}/workflow"""
+        if not self._check_auth(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
         company_id = int(request.match_info["companyId"])
-        return await self._handle(request, lambda: self._get_workflow_by_company(company_id))
+        workflow = self._store.get_workflow_by_company(company_id)
+        if workflow is None:
+            return web.json_response({"error": "Workflow not found"}, status=404)
+        try:
+            return web.json_response({"workflow": workflow})
+        except Exception as exc:
+            logger.exception("Workflow API request failed")
+            return web.json_response({"error": str(exc)}, status=500)
 
     async def handle_generate_workflow(self, request: web.Request) -> web.Response:
         """POST /api/org/companies/{companyId}/workflow/generate"""
@@ -68,7 +77,7 @@ class WorkflowAPIHandlers:
     def _get_workflow_by_company(self, company_id: int):
         workflow = self._store.get_workflow_by_company(company_id)
         if workflow is None:
-            return {"workflow": None}
+            raise web.HTTPNotFound(text='{"error": "Workflow not found"}')
         return {"workflow": workflow}
 
     def _generate_workflow(self, company_id: int):
