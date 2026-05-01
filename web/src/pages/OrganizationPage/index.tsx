@@ -7,6 +7,10 @@ import { useOrganizationPageController } from "./useOrganizationPageController";
 export default function OrganizationPage() {
   const page = useOrganizationPageController();
 
+  const handleInitialized = (result: { department_id: number; office_id: number; agents: any[] }) => {
+    window.location.href = `/chat?scope=director-office&companyId=${page.selectedCompany?.id}`;
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4">
       <OrganizationHeader
@@ -25,6 +29,7 @@ export default function OrganizationPage() {
         onEdit={page.openEdit}
         onMoveCompany={page.moveCompany}
         onRefresh={page.refreshSelectedCompany}
+        onInitialized={page.selectedCompany ? handleInitialized : undefined}
       />
 
       {page.dialog ? (

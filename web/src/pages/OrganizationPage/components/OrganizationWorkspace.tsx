@@ -1,6 +1,6 @@
 import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
-import type { OrgCreateHandler, OrgDeleteHandler, OrgEditHandler } from "../types";
+import type { OrgCreateHandler, OrgDeleteHandler } from "../types";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { OrganizationEmptyState } from "./OrganizationEmptyState";
 import { OrganizationLoadingState } from "./OrganizationLoadingState";
@@ -16,6 +16,7 @@ interface OrganizationWorkspaceProps {
   onEdit: OrgEditHandler;
   onMoveCompany: (direction: -1 | 1) => void;
   onRefresh: () => void;
+  onInitialized?: (result: { department_id: number; office_id: number; agents: any[] }) => void;
 }
 
 export function OrganizationWorkspace({
@@ -28,6 +29,7 @@ export function OrganizationWorkspace({
   onEdit,
   onMoveCompany,
   onRefresh,
+  onInitialized,
 }: OrganizationWorkspaceProps) {
   return (
     <main className="min-h-[620px] overflow-hidden border border-border bg-card/35">
@@ -40,6 +42,7 @@ export function OrganizationWorkspace({
             multipleCompanies={multipleCompanies}
             t={t}
             onMoveCompany={onMoveCompany}
+            onInitialized={onInitialized}
           />
           <div className="flex-1 overflow-auto px-5 py-8">
             <CompanyChart

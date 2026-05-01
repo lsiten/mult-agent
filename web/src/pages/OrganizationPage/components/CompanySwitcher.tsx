@@ -4,15 +4,17 @@ import type { Translations } from "@/i18n/types";
 import type { OrgCompany } from "@/lib/api";
 import { nodeColor } from "../utils";
 import { NodeMark } from "./NodeMark";
+import { InitCompanyButton } from "./InitCompanyButton";
 
 interface CompanySwitcherProps {
   company: OrgCompany;
   multipleCompanies: boolean;
   t: Translations;
   onMoveCompany: (direction: -1 | 1) => void;
+  onInitialized?: (result: { department_id: number; office_id: number; agents: any[] }) => void;
 }
 
-export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany }: CompanySwitcherProps) {
+export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany, onInitialized }: CompanySwitcherProps) {
   const color = nodeColor(company.accent_color);
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border bg-background/60 px-4 py-3">
@@ -36,6 +38,12 @@ export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany }
           </h1>
           <p className="truncate text-sm text-muted-foreground">{company.goal}</p>
         </div>
+        {onInitialized ? (
+          <InitCompanyButton
+            companyId={company.id}
+            onInitialized={onInitialized}
+          />
+        ) : null}
       </div>
     </div>
   );
