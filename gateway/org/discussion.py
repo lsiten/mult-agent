@@ -58,9 +58,11 @@ class DiscussionOrchestrator:
         
         return {
             "sender_agent_id": agent["id"],
+            "sender_agent_name": agent.get("name", f"{role} Agent"),
             "sender_agent_role": role,
             "content": f"{role} Agent: Discussing org structure for {company_info['name']}",
             "mermaid_code": mermaid,
+            "architecture_version": 1,
             "timestamp": now_ts()
         }
     
