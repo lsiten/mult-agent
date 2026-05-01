@@ -21,12 +21,14 @@ from .store import (
     AgentRepository,
     CompanyRepository,
     DepartmentRepository,
+    DirectorOfficeRepository,
     MasterAgentAssetRepository,
     OrganizationStore,
     PositionRepository,
     ProfileAgentRepository,
     ProfileTemplateRepository,
     SubagentBootstrapRequirementRepository,
+    TaskRepository,
     WorkspaceRepository,
     now_ts,
     slugify,
@@ -1110,6 +1112,103 @@ class OrganizationService:
             applier=self.inheritance,
         )
         self.agent_provision = AgentProvisionService(self.profile_service)
+        self.director_offices = DirectorOfficeRepository(self.store)
+
+    def init_director_office(self, company_id: int, agent_count: int = 3) -> dict[str, Any]:
+        """Initialize director office with specified number of director agents."""
+        from .models import DirectorOffice
+
+        def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            # 1. Create director office department
+            dept_data = {
+                "company_id": company_id,
+                "name": "董事办",
+                "goal": "公司战略决策与组织架构设计",
+                "is_management_department": True
+            }
+            department = self.departments.create(dept_data, conn=conn)
+
+            # 2. Define director roles (max agent_count)
+            roles = ["CEO", "CTO", "CFO", "COO", "CMO"][:agent_count]
+
+            # 3. Create positions and agents
+            agents = []
+            for i, role in enumerate(roles):
+                position_data = {
+                    "department_id": department["id"],
+                    "name": f"{role} Position",
+                    "responsibilities": f"{role} responsibilities",
+                    "sort_order": i,
+                }
+                position = self.positions.create(position_data, conn=conn)
+
+                agent_data = {
+                    "company_id": company_id,
+                    "department_id": department["id"],
+                    "position_id": position["id"],
+                    "name": f"{role} Agent",
+                    "role_summary": f"{role} director",
+                }
+                agent = self.agents.create(agent_data, conn=conn)
+                agents.append(agent)
+
+            # 4. Create director office record
+            office_data = {
+                "company_id": company_id,
+                "department_id": department["id"],
+                "office_name": "董事办",
+                "responsibilities": "Strategic planning and org design"
+            }
+            office = self.director_offices.create(office_data, conn=conn)
+
+            return {
+                "department_id": department["id"],
+                "office_id": office["id"],
+                "agents": agents
+            }
+
+        return self.store.transaction(tx)
+
+    def _get_director_prompt(self, role: str) -> str:
+        """Get system prompt for director agent."""
+        prompts = {
+            "CEO": """You are the CEO Agent. Given company info, design a PRACTICAL org structure.
+
+Step 1: Ask 3 clarifying questions:
+1. "What are the TOP 3 problems your current team faces?"
+2. "How many people will the company have in the next 6 months?"
+3. "Which function is MOST critical right now: tech, sales, or operations?"
+
+Step 2: Propose 2-3 department options with reasoning.
+
+Step 3: Output Mermaid diagram:
+```mermaid
+graph TD
+    CEO[CEO] --> Dept1[Dept Name]
+    CEO --> Dept2[Dept Name]
+```
+
+Step 4: Ask: "Does this solve your problems? What to adjust?"
+""",
+            "CTO": """You are the CTO Agent. Focus on technical departments.
+
+After CEO's proposal, add technical dept recommendations:
+- Frontend/Backend split?
+- DevOps needs?
+- How many engineers per team?
+
+Update Mermaid diagram to include tech reporting structure.
+""",
+            "CFO": """You are the CFO Agent. Focus on financial structure.
+
+After CEO/CTO's proposal, add financial dept recommendations:
+- Finance Dept (budget tracking)
+- HR Dept (hiring, payroll)
+
+Update Mermaid to show budget flow.
+""",
+        }
+        return prompts.get(role, "You are a director agent.")
 
     def get_tree(self) -> dict[str, Any]:
         companies = self.store.query_all("SELECT * FROM companies ORDER BY created_at, id")
@@ -1799,6 +1898,13 @@ class OrganizationService:
         resources = self._collect_delete_resources("company", company_id, conn)
         self.store.execute(
             """
+            DELETE FROM director_offices WHERE company_id = ?
+            """,
+            (company_id,),
+            conn,
+        )
+        self.store.execute(
+            """
             DELETE FROM workspaces
             WHERE (owner_type = 'company' AND owner_id = ?)
                OR (owner_type = 'department' AND owner_id IN (
@@ -1828,6 +1934,13 @@ class OrganizationService:
         if not self.departments.get(department_id, conn):
             raise OrganizationError("Department not found", 404)
         resources = self._collect_delete_resources("department", department_id, conn)
+        self.store.execute(
+            """
+            DELETE FROM director_offices WHERE department_id = ?
+            """,
+            (department_id,),
+            conn,
+        )
         self.store.execute(
             """
             DELETE FROM workspaces
