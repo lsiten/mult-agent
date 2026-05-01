@@ -1318,7 +1318,38 @@ Update Mermaid to show budget flow.
         item["agent_count"] = sum(d["agent_count"] for d in item["departments"])
         
         return {"company": item}
-
+    
+    def get_company(self, company_id: int) -> dict[str, Any] | None:
+        """Get company by ID."""
+        return self.companies.get(company_id)
+    
+    def get_agents_by_department_name(self, company_id: int, department_name: str) -> list[dict[str, Any]]:
+        """Get agents by department name within a company."""
+        # First find the department by name and company_id
+        department = self.store.query_one(
+            "SELECT * FROM departments WHERE company_id = ? AND name = ?",
+            (company_id, department_name)
+        )
+        if not department:
+            return []
+        
+        # Get positions for this department
+        positions = self.store.query_all(
+            "SELECT id FROM positions WHERE department_id = ?",
+            (department["id"],)
+        )
+        position_ids = [p["id"] for p in positions]
+        
+        if not position_ids:
+            return []
+        
+        placeholders = ",".join("?" for _ in position_ids)
+        agents = self.store.query_all(
+            f"SELECT * FROM agents WHERE position_id IN ({placeholders}) ORDER BY sort_order, id",
+            position_ids
+        )
+        return agents
+    
     def create_company(self, data: dict[str, Any]) -> dict[str, Any]:
         _require(data, "name", "goal")
 
