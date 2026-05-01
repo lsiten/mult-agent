@@ -339,3 +339,20 @@ class OrganizationAPIHandlers:
         if row is None:
             raise ValueError(f"Workflow instance {instance_id} not found")
         return dict(row)
+
+    # ------------------------------ Director Office Initialization ------------------------------
+
+    async def handle_init_director_office(self, request: web.Request) -> web.Response:
+        """POST /api/org/companies/{id}/init-director-office
+        
+        Initialize director office with specified number of director agents.
+        """
+        company_id = int(request.match_info["id"])
+        data = await self._json_body(request)
+        agent_count = data.get("agent_count", 3)
+        
+        return await self._handle(
+            request,
+            lambda: self._service.init_director_office(company_id, agent_count),
+            success_status=200,
+        )

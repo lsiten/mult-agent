@@ -2748,6 +2748,12 @@ class APIServerAdapter(BasePlatformAdapter):
         self._app.router.add_put("/api/org/tasks/{id}", org_h.handle_update_task)
         self._app.router.add_delete("/api/org/tasks/{id}", org_h.handle_delete_task)
 
+        # Director Office Initialization
+        self._app.router.add_post(
+            "/api/org/companies/{id}/init-director-office",
+            org_h.handle_init_director_office,
+        )
+
         # Workflow Instance API
         self._app.router.add_get(
             "/api/org/workflows/instances/{id}",
