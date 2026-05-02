@@ -450,6 +450,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  addMessage: (sessionId: string, data: {
+    role: string;
+    content: string;
+    sender_agent_id?: number;
+    sender_agent_role?: string;
+    sender_agent_name?: string;
+  }) =>
+    fetchJSON<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(sessionId)}/add-message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Hermes-Force-Master": "true",
+      },
+      body: JSON.stringify(data),
+    }),
   getStreamUrl: async (
     sessionId: string,
     message: string,
@@ -751,7 +766,7 @@ export const api = {
 
   // ── Director Office APIs ─────────────────────────────────────
   initDirectorOffice: (data: { companyId: number; agentCount?: number }) =>
-    fetchJSON<{ department_id: number; office_id: number; agents: any[] }>(
+    fetchJSON<{ department_id: number; office_id: number; agents: any[]; introductions: { agent_id: number; role: string; introduction: string }[] }>(
       `/api/org/companies/${data.companyId}/init-director-office`,
       {
         method: "POST",
@@ -1173,6 +1188,7 @@ export interface SessionMessage {
       message?: string;
       action?: string;
     };
+    architecture?: any;
     tool_invocations?: Array<{
       id: string;
       tool: string;

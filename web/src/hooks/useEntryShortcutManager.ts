@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 export type EntryUiMode = "hermes" | "recruit";
 
@@ -16,8 +17,27 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export function useEntryShortcutManager() {
-  const [mode, setMode] = useState<EntryUiMode>("recruit");
+  const location = useLocation();
+  // Default to "hermes" when related to organization features (agentId, companyId, or on /organization path)
+  // Otherwise default to "recruit"
+  const getDefaultMode = (): EntryUiMode => {
+    const params = new URLSearchParams(location.search);
+    if (params.has("agentId") || params.has("companyId") || location.pathname === "/organization") {
+      return "hermes";
+    }
+    return "recruit";
+  };
+
+  const [mode, setMode] = useState<EntryUiMode>(getDefaultMode());
   const [lastDPressAt, setLastDPressAt] = useState(0);
+
+  // Switch to hermes mode for organization related pages
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.has("agentId") || params.has("companyId") || location.pathname === "/organization") {
+      setMode("hermes");
+    }
+  }, [location.search, location.pathname]);
 
   const toggleMode = useCallback(() => {
     setMode((currentMode) => (currentMode === "hermes" ? "recruit" : "hermes"));

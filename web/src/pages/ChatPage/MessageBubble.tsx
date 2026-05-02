@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { type SessionMessage } from "@/lib/api";
+import { api, type SessionMessage } from "@/lib/api";
 import { Markdown } from "@/components/Markdown";
 import { AttachmentDisplay } from "./AttachmentDisplay";
 import { ToolCallDisplay } from "./ToolCallDisplay";
@@ -96,12 +96,32 @@ export const MessageBubble = memo(function MessageBubble({ message, isStreaming 
             version={message.architecture_version}
             onConfirm={() => {
               if (message.metadata?.architecture) {
-                api.confirmArchitecture(
-                  parseInt(new URLSearchParams(window.location.search).get("companyId") || "0"),
-                  message.metadata.architecture
-                ).then(() => {
-                  window.location.href = "/organization";
-                });
+                const companyId = parseInt(new URLSearchParams(window.location.search).get("companyId") || "0");
+                api.confirmArchitecture(companyId, message.metadata.architecture)
+                  .then(() => api.initDirectorOffice({ companyId, agentCount: 3 }))
+                  .then(async (result) => {
+                    // Create a new session for the director office discussion
+                    const session = await api.createSession({
+                      source: "director-office",
+                      user_id: "user",
+                      title: "董事办公室",
+                      agent_id: result.agents[0]?.id,
+                    });
+                    // Add each director's introduction as initial messages
+                    // addMessage already has X-Hermes-Force-Master to force send to main Gateway (not sub-agent port)
+                    for (const intro of result.introductions) {
+                      await api.addMessage(session.session_id, {
+                        role: "assistant",
+                        content: intro.introduction,
+                        sender_agent_id: intro.agent_id,
+                        sender_agent_role: intro.role,
+                        sender_agent_name: intro.role,
+                      });
+                    }
+                    // Navigate to chat with the CEO agent by default
+                    // Chat page is at root path "/" not "/chat"
+                    window.location.href = `/?id=${session.session_id}&agentId=${result.agents[0]?.id}&companyId=${companyId}`;
+                  });
               }
             }}
           />

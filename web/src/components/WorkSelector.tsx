@@ -6,7 +6,8 @@ import type { OrgCompany, OrgAgent } from "@/lib/api";
 
 export type WorkScope =
   | { type: "master" }
-  | { type: "company"; company: OrgCompany };
+  | { type: "company"; company: OrgCompany }
+  | { type: "director-office"; companyId: number };
 
 interface WorkSelectorProps {
   scope: WorkScope;
@@ -32,10 +33,14 @@ export function WorkSelector({
 
   const displayName = scope.type === "master"
     ? t.workSelector.masterAgent
-    : scope.company.name;
+    : scope.type === "company"
+      ? scope.company.name
+      : "Director Office";
   const accent = scope.type === "master"
     ? MASTER_ACCENT
-    : (scope.company.accent_color || MASTER_ACCENT);
+    : scope.type === "company"
+      ? (scope.company.accent_color || MASTER_ACCENT)
+      : MASTER_ACCENT;
   const icon = scope.type === "master"
     ? <UserCircle2 className="h-5 w-5" />
     : <Building2 className="h-5 w-5" />;
@@ -76,7 +81,7 @@ export function WorkSelector({
             hint={t.workSelector.masterAgentHint}
             accent={MASTER_ACCENT}
             icon={<UserCircle2 className="h-3.5 w-3.5" />}
-            agentCount={agentsForScope.__master?.length ?? 0}
+            agentCount={(agentsForScope as Record<string | number, OrgAgent[]>).__master?.length ?? 0}
             onClick={() => onSelectScope({ type: "master" })}
           />
 

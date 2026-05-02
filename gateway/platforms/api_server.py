@@ -2610,6 +2610,7 @@ class APIServerAdapter(BasePlatformAdapter):
         # NOTE: /api/sessions/{session_id}/messages is handled by Chat API below
         self._app.router.add_put("/api/sessions/{session_id}", sessions_h.handle_update_session)
         self._app.router.add_delete("/api/sessions/{session_id}", sessions_h.handle_delete_session)
+        self._app.router.add_post("/api/sessions/{session_id}/add-message", sessions_h.handle_add_message)
 
         # Logs API
         self._app.router.add_get("/api/logs", logs_h.handle_get_logs)

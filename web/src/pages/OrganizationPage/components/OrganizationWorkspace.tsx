@@ -16,7 +16,13 @@ interface OrganizationWorkspaceProps {
   onEdit: OrgEditHandler;
   onMoveCompany: (direction: -1 | 1) => void;
   onRefresh: () => void;
-  onInitialized?: (result: { department_id: number; office_id: number; agents: any[] }) => void;
+  onInitialized?: (result: {
+    department_id: number;
+    office_id: number;
+    agents: any[];
+    roles: string[];
+    introductions: { agent_id: number; role: string; introduction: string }[];
+  }) => void;
 }
 
 export function OrganizationWorkspace({

@@ -1192,8 +1192,10 @@ class OrganizationService:
             roles = ["CEO", "CTO", "CFO", "COO", "CMO"][:agent_count]
 
             # 3. Create positions and agents with proper introductions
+            # 使用完整的 create_agent 流程，确保工作空间、profile 等全部初始化
             agents = []
             for i, role in enumerate(roles):
+                # 先创建 position
                 position_data = {
                     "department_id": department["id"],
                     "name": f"{role}",
@@ -1201,7 +1203,18 @@ class OrganizationService:
                     "sort_order": i,
                 }
                 position = self.positions.create(position_data, conn=conn)
+                # 确保 position 有工作空间
+                pos_workspace = self.workspace_service.ensure_workspace(
+                    "position", position["id"], position["name"], "company", conn
+                )
+                self.positions.update(
+                    position["id"],
+                    {"workspace_path": pos_workspace["root_path"]},
+                    {"workspace_path"},
+                    conn,
+                )
 
+                # 使用完整的 create_agent 内部逻辑创建 agent（直接调用内部逻辑确保工作空间完整）
                 agent_data = {
                     "company_id": company_id,
                     "department_id": department["id"],
@@ -1212,6 +1225,20 @@ class OrganizationService:
                     "service_goal": director_intros[role],
                 }
                 agent = self.agents.create(agent_data, conn=conn)
+                # 创建 agent 工作空间
+                agent_workspace = self.workspace_service.ensure_workspace(
+                    "agent", agent["id"], agent["name"], "company", conn
+                )
+                agent = self.agents.update(
+                    agent["id"],
+                    {"workspace_path": agent_workspace["root_path"]},
+                    {"workspace_path"},
+                    conn,
+                ) or agent
+                # 创建 profile metadata
+                self.profile_service.create_metadata(agent, position, conn)
+                # 完整 provision profile
+                self.agent_provision.provision_profile(agent["id"], conn=conn)
                 agents.append(agent)
 
             # 4. Create director office record
@@ -1223,15 +1250,18 @@ class OrganizationService:
             }
             office = self.director_offices.create(office_data, conn=conn)
 
-            # 5. Provision profiles for all director agents so they can chat
-            for agent in agents:
-                self.agent_provision.provision_profile(agent["id"], conn=conn)
+            # Collect introductions for each director agent
+            introductions = [
+                {"agent_id": agent["id"], "role": role, "introduction": director_intros[role]}
+                for agent, role in zip(agents, roles)
+            ]
 
             return {
                 "department_id": department["id"],
                 "office_id": office["id"],
                 "agents": agents,
-                "roles": roles
+                "roles": roles,
+                "introductions": introductions
             }
 
         return self.store.transaction(tx)
@@ -2100,13 +2130,14 @@ Update Mermaid to show budget flow.
         if not self.companies.get(company_id, conn):
             raise OrganizationError("Company not found", 404)
         resources = self._collect_delete_resources("company", company_id, conn)
-        self.store.execute(
-            """
-            DELETE FROM director_offices WHERE company_id = ?
-            """,
-            (company_id,),
-            conn,
-        )
+        # 先获取 company 下的所有 agent_id，用于后续删除关联数据
+        agent_ids = [
+            row["id"]
+            for row in self.store.query_all(
+                "SELECT id FROM agents WHERE company_id = ?", (company_id,), conn
+            )
+        ]
+        # 1. 删除 workspaces（没有外键约束，需要手动删除）
         self.store.execute(
             """
             DELETE FROM workspaces
@@ -2127,6 +2158,30 @@ Update Mermaid to show budget flow.
             (company_id, company_id, company_id, company_id),
             conn,
         )
+        # 2. 删除 tasks/task_reports/approvals/agent_permissions（外键没有 ON DELETE CASCADE）
+        if agent_ids:
+            placeholders = ", ".join("?" * len(agent_ids))
+            self.store.execute(
+                f"DELETE FROM task_reports WHERE reporter_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM approvals WHERE approver_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM tasks WHERE creator_agent_id IN ({placeholders}) OR assignee_agent_id IN ({placeholders})",
+                agent_ids + agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM agent_permissions WHERE agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+        # 3. 利用 ON DELETE CASCADE 删除 company 及其所有关联数据
         self.companies.delete(company_id, conn)
         return resources
 
@@ -2138,13 +2193,14 @@ Update Mermaid to show budget flow.
         if not self.departments.get(department_id, conn):
             raise OrganizationError("Department not found", 404)
         resources = self._collect_delete_resources("department", department_id, conn)
-        self.store.execute(
-            """
-            DELETE FROM director_offices WHERE department_id = ?
-            """,
-            (department_id,),
-            conn,
-        )
+        # 先获取 department 下的所有 agent_id，用于后续删除关联数据
+        agent_ids = [
+            row["id"]
+            for row in self.store.query_all(
+                "SELECT id FROM agents WHERE department_id = ?", (department_id,), conn
+            )
+        ]
+        # 1. 删除 workspaces（没有外键约束，需要手动删除）
         self.store.execute(
             """
             DELETE FROM workspaces
@@ -2159,6 +2215,30 @@ Update Mermaid to show budget flow.
             (department_id, department_id, department_id),
             conn,
         )
+        # 2. 删除 tasks/task_reports/approvals/agent_permissions（外键没有 ON DELETE CASCADE）
+        if agent_ids:
+            placeholders = ", ".join("?" * len(agent_ids))
+            self.store.execute(
+                f"DELETE FROM task_reports WHERE reporter_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM approvals WHERE approver_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM tasks WHERE creator_agent_id IN ({placeholders}) OR assignee_agent_id IN ({placeholders})",
+                agent_ids + agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM agent_permissions WHERE agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+        # 3. 利用 ON DELETE CASCADE 删除 department 及其所有关联数据
         self.departments.delete(department_id, conn)
         return resources
 
@@ -2170,6 +2250,14 @@ Update Mermaid to show budget flow.
         if not self.positions.get(position_id, conn):
             raise OrganizationError("Position not found", 404)
         resources = self._collect_delete_resources("position", position_id, conn)
+        # 先获取 position 下的所有 agent_id，用于后续删除关联数据
+        agent_ids = [
+            row["id"]
+            for row in self.store.query_all(
+                "SELECT id FROM agents WHERE position_id = ?", (position_id,), conn
+            )
+        ]
+        # 1. 删除 workspaces（没有外键约束，需要手动删除）
         self.store.execute(
             """
             DELETE FROM workspaces
@@ -2181,6 +2269,30 @@ Update Mermaid to show budget flow.
             (position_id, position_id),
             conn,
         )
+        # 2. 删除 tasks/task_reports/approvals/agent_permissions（外键没有 ON DELETE CASCADE）
+        if agent_ids:
+            placeholders = ", ".join("?" * len(agent_ids))
+            self.store.execute(
+                f"DELETE FROM task_reports WHERE reporter_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM approvals WHERE approver_agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM tasks WHERE creator_agent_id IN ({placeholders}) OR assignee_agent_id IN ({placeholders})",
+                agent_ids + agent_ids,
+                conn,
+            )
+            self.store.execute(
+                f"DELETE FROM agent_permissions WHERE agent_id IN ({placeholders})",
+                agent_ids,
+                conn,
+            )
+        # 3. 利用 ON DELETE CASCADE 删除 position 及其所有关联数据
         self.positions.delete(position_id, conn)
         return resources
 
@@ -2192,11 +2304,34 @@ Update Mermaid to show budget flow.
         if not self.agents.get(agent_id, conn):
             raise OrganizationError("Agent not found", 404)
         resources = self._collect_delete_resources("agent", agent_id, conn)
+        # 1. 删除 workspaces（没有外键约束，需要手动删除）
         self.store.execute(
             "DELETE FROM workspaces WHERE owner_type = 'agent' AND owner_id = ?",
             (agent_id,),
             conn,
         )
+        # 2. 删除 tasks/task_reports/approvals/agent_permissions（外键没有 ON DELETE CASCADE）
+        self.store.execute(
+            "DELETE FROM task_reports WHERE reporter_agent_id = ?",
+            (agent_id,),
+            conn,
+        )
+        self.store.execute(
+            "DELETE FROM approvals WHERE approver_agent_id = ?",
+            (agent_id,),
+            conn,
+        )
+        self.store.execute(
+            "DELETE FROM tasks WHERE creator_agent_id = ? OR assignee_agent_id = ?",
+            (agent_id, agent_id),
+            conn,
+        )
+        self.store.execute(
+            "DELETE FROM agent_permissions WHERE agent_id = ?",
+            (agent_id,),
+            conn,
+        )
+        # 3. 利用 ON DELETE CASCADE 删除 agent 及其所有关联数据
         self.agents.delete(agent_id, conn)
         return resources
 

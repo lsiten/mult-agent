@@ -15,7 +15,13 @@ import { useI18n } from "@/i18n";
 
 interface InitCompanyButtonProps {
   companyId: number;
-  onInitialized: (result: { department_id: number; office_id: number; agents: any[] }) => void;
+  onInitialized: (result: {
+    department_id: number;
+    office_id: number;
+    agents: any[];
+    roles: string[];
+    introductions: { agent_id: number; role: string; introduction: string }[];
+  }) => void;
 }
 
 export function InitCompanyButton({ companyId, onInitialized }: InitCompanyButtonProps) {

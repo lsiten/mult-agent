@@ -8,6 +8,7 @@ import { useAttachments } from "@/hooks/useAttachments";
 import { useSkillSelectionStore } from "@/stores/useSkillSelectionStore";
 import { useToast } from "@/hooks/useToast";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useAgent } from "@/contexts/AgentContext";
 import type { WorkScope } from "@/components/WorkSelector";
 import { api, type SessionMessage } from "@/lib/api";
 
@@ -17,6 +18,7 @@ export function ChatPage({ scope }: { scope?: WorkScope }) {
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const attemptedResumeSessionsRef = useRef<Set<string>>(new Set());
   const { selectedSkills, clearSelection: clearSkills } = useSkillSelectionStore();
+  const { isReady } = useAgent();
 
   const location = useLocation();
 
@@ -80,6 +82,23 @@ export function ChatPage({ scope }: { scope?: WorkScope }) {
       attemptedResumeSessionsRef.current.delete(currentSessionId);
     }
   }, [currentSessionId]);
+
+  // Handle ?id=... query parameter to switch to a specific session on page load
+  useEffect(() => {
+    if (!sessions.length || !isReady) return;
+
+    const urlSessionId = new URLSearchParams(location.search).get("id");
+    if (!urlSessionId) return;
+
+    // Only switch if we're not already in this session
+    if (urlSessionId !== currentSessionId) {
+      // Check if the session exists in our list
+      const sessionExists = sessions.some(s => s.id === urlSessionId);
+      if (sessionExists) {
+        switchSession(urlSessionId);
+      }
+    }
+  }, [sessions, currentSessionId, location.search, switchSession, isReady]);
 
   // Compute grouped sessions
   const groupedSessions = groupSessions(sessions);

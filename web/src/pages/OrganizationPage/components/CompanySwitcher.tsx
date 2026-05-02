@@ -11,7 +11,13 @@ interface CompanySwitcherProps {
   multipleCompanies: boolean;
   t: Translations;
   onMoveCompany: (direction: -1 | 1) => void;
-  onInitialized?: (result: { department_id: number; office_id: number; agents: any[] }) => void;
+  onInitialized?: (result: {
+    department_id: number;
+    office_id: number;
+    agents: any[];
+    roles: string[];
+    introductions: { agent_id: number; role: string; introduction: string }[];
+  }) => void;
 }
 
 export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany, onInitialized }: CompanySwitcherProps) {

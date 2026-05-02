@@ -181,3 +181,34 @@ class SessionsAPIHandlers:
         except Exception as e:
             logger.error(f"Failed to delete session: {e}")
             return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_add_message(self, request: web.Request) -> web.Response:
+        """POST /api/sessions/{session_id}/add-message - Add a message to the session (for system/agent initialization)."""
+        if not self._check_auth(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
+        try:
+            session_id = request.match_info["session_id"]
+            data = await request.json()
+
+            from hermes_state import SessionDB
+            from hermes_state import now_ts
+            db = SessionDB()
+
+            # Add message with provided metadata
+            message = {
+                "role": data.get("role", "assistant"),
+                "content": data.get("content", ""),
+                "sender_agent_id": data.get("sender_agent_id"),
+                "sender_agent_role": data.get("sender_agent_role"),
+                "sender_agent_name": data.get("sender_agent_name"),
+                "timestamp": now_ts(),
+            }
+
+            db.add_message(session_id, message)
+
+            return web.json_response({"ok": True})
+
+        except Exception as e:
+            logger.error(f"Failed to add message: {e}")
+            return web.json_response({"error": str(e)}, status=500)
