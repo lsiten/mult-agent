@@ -26,7 +26,7 @@ type ListItem =
 const INITIAL_MESSAGE_COUNT = 30;
 const LOAD_MORE_COUNT = 20;
 
-export function MessageList({ messages, streamingContent, isStreaming, toolUseMessages, skillUseMessages, authRequestMessages, textSegments }: MessageListProps) {
+export function MessageList({ messages, streamingContent, isStreaming, toolUseMessages, skillUseMessages, authRequestMessages, textSegments, currentCompanyId }: MessageListProps) {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [displayedMessageCount, setDisplayedMessageCount] = useState(INITIAL_MESSAGE_COUNT);
