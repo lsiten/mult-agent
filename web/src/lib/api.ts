@@ -931,6 +931,7 @@ export interface OrgCompany {
   department_count?: number;
   position_count?: number;
   agent_count?: number;
+  has_director_office?: boolean;
 }
 
 export interface OrganizationTreeResponse {

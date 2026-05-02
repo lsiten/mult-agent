@@ -16,6 +16,7 @@ interface CompanySwitcherProps {
 
 export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany, onInitialized }: CompanySwitcherProps) {
   const color = nodeColor(company.accent_color);
+  const shouldShowInitButton = onInitialized && !company.has_director_office;
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border bg-background/60 px-4 py-3">
       <div className="flex items-center">
@@ -38,7 +39,7 @@ export function CompanySwitcher({ company, multipleCompanies, t, onMoveCompany, 
           </h1>
           <p className="truncate text-sm text-muted-foreground">{company.goal}</p>
         </div>
-        {onInitialized ? (
+        {shouldShowInitButton ? (
           <InitCompanyButton
             companyId={company.id}
             onInitialized={onInitialized}

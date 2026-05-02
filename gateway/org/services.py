@@ -1119,6 +1119,18 @@ class OrganizationService:
         from .models import DirectorOffice
 
         def tx(conn: sqlite3.Connection) -> dict[str, Any]:
+            # Check if already initialized
+            existing = self.director_offices.query_one(
+                "SELECT id FROM director_offices WHERE company_id = ?",
+                (company_id,),
+                conn=conn
+            )
+            if existing:
+                raise OrganizationError(
+                    f"Company {company_id} already has a director office initialized",
+                    409
+                )
+
             # 1. Create director office department
             dept_data = {
                 "company_id": company_id,
@@ -1331,6 +1343,12 @@ Update Mermaid to show budget flow.
             item["agent_count"] = sum(p["agent_count"] for p in item["positions"])
             departments_by_company.setdefault(department["company_id"], []).append(item)
 
+        # Check which companies have director office already
+        company_has_director_office: dict[int, bool] = {}
+        director_offices = self.store.query_all("SELECT DISTINCT company_id FROM director_offices")
+        for office in director_offices:
+            company_has_director_office[office["company_id"]] = True
+
         result = []
         for company in companies:
             item = dict(company)
@@ -1338,12 +1356,13 @@ Update Mermaid to show budget flow.
             item["department_count"] = len(item["departments"])
             item["position_count"] = sum(d["position_count"] for d in item["departments"])
             item["agent_count"] = sum(d["agent_count"] for d in item["departments"])
+            item["has_director_office"] = company_has_director_office.get(company["id"], False)
             result.append(item)
         return {"companies": result}
 
     def get_company_tree(self, company_id: int) -> dict[str, Any]:
         """Get full organization tree for a specific company only.
-        
+
         Data isolation: only returns data that belongs to this company,
         no other companies' data is exposed.
         """
@@ -1351,10 +1370,10 @@ Update Mermaid to show budget flow.
         company = self.store.query_one("SELECT * FROM companies WHERE id = ?", (company_id,))
         if not company:
             raise OrganizationError(f"Company {company_id} not found", 404)
-        
+
         # Get ONLY departments that belong to this company (data isolation)
         departments = self.store.query_all(
-            "SELECT * FROM departments WHERE company_id = ? ORDER BY sort_order, id", 
+            "SELECT * FROM departments WHERE company_id = ? ORDER BY sort_order, id",
             (company_id,)
         )
         # Get ONLY positions that belong to departments of this company
@@ -1379,7 +1398,7 @@ Update Mermaid to show budget flow.
         else:
             agents = []
             profiles = []
-        
+
         profile_by_agent = {p["agent_id"]: p for p in profiles}
 
         agents_by_position: dict[int, list[dict[str, Any]]] = {}
@@ -1395,6 +1414,12 @@ Update Mermaid to show budget flow.
             item["agent_count"] = len(item["agents"])
             positions_by_department.setdefault(position["department_id"], []).append(item)
 
+        # Check if company already has director office
+        has_director_office = self.store.query_one(
+            "SELECT id FROM director_offices WHERE company_id = ?",
+            (company_id,)
+        ) is not None
+
         # Build the company item with full tree
         item = dict(company)
         item["departments"] = []
@@ -1404,11 +1429,12 @@ Update Mermaid to show budget flow.
             dept_item["position_count"] = len(dept_item["positions"])
             dept_item["agent_count"] = sum(p["agent_count"] for p in dept_item["positions"])
             item["departments"].append(dept_item)
-        
+
         item["department_count"] = len(item["departments"])
         item["position_count"] = sum(d["position_count"] for d in item["departments"])
         item["agent_count"] = sum(d["agent_count"] for d in item["departments"])
-        
+        item["has_director_office"] = has_director_office
+
         return {"company": item}
     
     def get_company(self, company_id: int) -> dict[str, Any] | None:
