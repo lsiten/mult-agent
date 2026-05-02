@@ -3,12 +3,23 @@ import { OrgNodeDialog } from "./components/OrgNodeDialog";
 import { OrganizationHeader } from "./components/OrganizationHeader";
 import { OrganizationWorkspace } from "./components/OrganizationWorkspace";
 import { useOrganizationPageController } from "./useOrganizationPageController";
+import { api } from "@/lib/api";
 
 export default function OrganizationPage() {
   const page = useOrganizationPageController();
 
-  const handleInitialized = (result: { department_id: number; office_id: number; agents: any[] }) => {
-    window.location.href = `/chat?scope=director-office&companyId=${page.selectedCompany?.id}`;
+  const handleInitialized = async (result: { department_id: number; office_id: number; agents: any[]; roles: string[] }) => {
+    // Create a new session for the director office discussion
+    const session = await api.createSession({
+      source: "director-office",
+      user_id: "user",
+      title: `${page.selectedCompany?.name || "公司"} - 董事办公室`,
+      agent_id: result.agents[0]?.id,
+    });
+
+    // Navigate to the chat session using the CEO agent by default
+    // Users can switch to other director agents via the agent switcher in the header
+    window.location.href = `/chat?id=${session.session.id}&agentId=${result.agents[0]?.id}`;
   };
 
   return (

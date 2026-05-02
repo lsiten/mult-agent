@@ -1118,6 +1118,55 @@ class OrganizationService:
         """Initialize director office with specified number of director agents."""
         from .models import DirectorOffice
 
+        # Director introductions based on role
+        director_intros = {
+            "CEO": """大家好，我是公司的 CEO（首席执行官）。
+
+我的职责是：
+- 制定公司的长期战略方向和愿景
+- 负责整体业务决策和资源分配
+- 协调各部门之间的协作
+- 对公司的最终经营成果负责
+
+我将带领团队确保公司战略目标的实现，并为大家提供必要的支持和资源保障。期待与大家共同打造一个高效、创新的组织！""",
+            "CTO": """大家好，我是公司的 CTO（首席技术官）。
+
+我的职责是：
+- 负责技术战略规划和技术路线图制定
+- 领导技术团队进行产品研发和技术创新
+- 确保技术架构的可扩展性和安全性
+- 管理技术债务和技术风险
+
+我将为公司提供技术领导力，确保技术决策支持业务战略，并建立高效的研发流程和技术标准。期待与大家一起打造优秀的技术团队！""",
+            "CFO": """大家好，我是公司的 CFO（首席财务官）。
+
+我的职责是：
+- 负责公司财务管理和财务战略制定
+- 预算规划、成本控制和投资决策
+- 财务风险评估和现金流管理
+- 为战略决策提供财务分析支持
+
+我将确保公司财务健康，为各部门提供必要的财务资源支持，并建立透明、高效的财务管理体系。期待与大家共同实现公司的财务目标！""",
+            "COO": """大家好，我是公司的 COO（首席运营官）。
+
+我的职责是：
+- 负责公司日常运营管理和流程优化
+- 建立高效的运营体系和管理制度
+- 协调各部门执行公司战略
+- 监控运营指标并持续改进
+
+我将确保公司运营高效顺畅，建立标准化的工作流程，并协助各部门提升执行效率。期待与大家一起打造卓越的运营体系！""",
+            "CMO": """大家好，我是公司的 CMO（首席营销官）。
+
+我的职责是：
+- 负责市场战略和品牌建设
+- 制定营销策略和营销计划
+- 管理营销团队和营销资源分配
+- 监控市场动态和竞争环境
+
+我将帮助公司建立强大的市场影响力，制定有效的营销策略，并确保营销投入带来良好的投资回报。期待与大家共同打造成功的品牌！"""
+        }
+
         def tx(conn: sqlite3.Connection) -> dict[str, Any]:
             # Check if already initialized
             existing = conn.execute(
@@ -1142,13 +1191,13 @@ class OrganizationService:
             # 2. Define director roles (max agent_count)
             roles = ["CEO", "CTO", "CFO", "COO", "CMO"][:agent_count]
 
-            # 3. Create positions and agents
+            # 3. Create positions and agents with proper introductions
             agents = []
             for i, role in enumerate(roles):
                 position_data = {
                     "department_id": department["id"],
-                    "name": f"{role} Position",
-                    "responsibilities": f"{role} responsibilities",
+                    "name": f"{role}",
+                    "responsibilities": director_intros[role],
                     "sort_order": i,
                 }
                 position = self.positions.create(position_data, conn=conn)
@@ -1157,8 +1206,10 @@ class OrganizationService:
                     "company_id": company_id,
                     "department_id": department["id"],
                     "position_id": position["id"],
-                    "name": f"{role} Agent",
-                    "role_summary": f"{role} director",
+                    "name": role,
+                    "display_name": role,
+                    "role_summary": f"{role} 董事",
+                    "service_goal": director_intros[role],
                 }
                 agent = self.agents.create(agent_data, conn=conn)
                 agents.append(agent)
@@ -1168,14 +1219,19 @@ class OrganizationService:
                 "company_id": company_id,
                 "department_id": department["id"],
                 "office_name": "董事办",
-                "responsibilities": "Strategic planning and org design"
+                "responsibilities": "公司战略决策与组织架构设计"
             }
             office = self.director_offices.create(office_data, conn=conn)
+
+            # 5. Provision profiles for all director agents so they can chat
+            for agent in agents:
+                self.agent_provision.provision_profile(agent["id"], conn=conn)
 
             return {
                 "department_id": department["id"],
                 "office_id": office["id"],
-                "agents": agents
+                "agents": agents,
+                "roles": roles
             }
 
         return self.store.transaction(tx)
