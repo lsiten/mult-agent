@@ -90,6 +90,7 @@ export default function WorkflowsPage({ scope }: WorkflowsPageProps) {
             onConnect={handleConnect}
             onEdgeDoubleClick={handleEdgeDoubleClick}
             onEdgeDelete={handleEdgeDelete}
+            onNodePositionsChange={handleNodePositionsChange}
           />
         )}
       </div>

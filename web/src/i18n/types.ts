@@ -6,6 +6,7 @@ export interface Translations {
     save: string;
     saving: string;
     cancel: string;
+    confirm: string;
     close: string;
     delete: string;
     refresh: string;
@@ -993,6 +994,34 @@ export interface Translations {
     noWorkflow: string;
     noWorkflowDescription: string;
     edgeDeleteConfirm: string;
+    selectCompanyTitle: string;
+    selectCompanyDescription: string;
+    edit: string;
+    view: string;
+    aiGenerateWorkflow: string;
+    createManually: string;
+    noWorkflowYet: string;
+    noWorkflowPageDescription: string;
+    noDepartmentsFound: string;
+    noDepartmentsDescription: string;
+    goToOrganization: string;
+    addEdge: string;
+    editEdge: string;
+    selectSource: string;
+    selectTarget: string;
+    actionPlaceholder: string;
+    triggerPlaceholder: string;
+    deleteEdge: string;
+    updateEdgeDescription: string;
+    createEdgeDescription: string;
+    update: string;
+    create: string;
+    selectCompany: string;
+    workflowSaved: string;
+    workflowDeleted: string;
+    workflowGenerated: string;
+    action: string;
+    trigger: string;
   };
 
   // ── Language switcher ──

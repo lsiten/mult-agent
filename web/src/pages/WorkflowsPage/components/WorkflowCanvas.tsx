@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
   useNodesState,
   useEdgesState,
   type Node,
@@ -104,31 +105,48 @@ export function WorkflowCanvas({
 }: WorkflowCanvasProps) {
   const [rfInstance, setRfInstance] = useState<any>(null);
 
-  const allEdges = useMemo(() => {
-    const saved = workflow?.edges || [];
-    if (!pendingEdges?.length) return saved;
-    const savedIds = new Set(saved.map((e) => e.id));
-    const merged = [...saved];
-    for (const pe of pendingEdges) {
-      if (!savedIds.has(pe.id)) {
-        merged.push({
-          id: pe.id as number,
-          workflow_id: workflow?.id || 0,
-          source_department_id: pe.source_department_id,
-          target_department_id: pe.target_department_id,
-          action_description: pe.action_description,
-          trigger_condition: pe.trigger_condition,
-          sort_order: 0,
-          created_at: Date.now(),
-        });
-      }
+  // Load persisted positions from localStorage
+  const loadPersistedPositions = useCallback((): Record<string, { x: number; y: number }> => {
+    if (!workflow) return {};
+    try {
+      const stored = localStorage.getItem(`workflow-positions-${workflow.id}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
     }
-    return merged;
-  }, [workflow?.edges, workflow?.id, pendingEdges]);
+  }, [workflow]);
+
+  // Persist positions to localStorage
+  const persistPositions = useCallback(
+    (positions: Record<string, { x: number; y: number }>) => {
+      if (!workflow) return;
+      try {
+        localStorage.setItem(`workflow-positions-${workflow.id}`, JSON.stringify(positions));
+      } catch {
+        // Storage full or unavailable - ignore
+      }
+    },
+    [workflow],
+  );
+
+  const allEdges = useMemo(() => {
+    // After save, pendingEdges = updated.edges from backend
+    // Just use pendingEdges directly since it contains all edges after editing
+    return pendingEdges.map((pe) => ({
+      id: typeof pe.id === 'number' ? pe.id : Number(pe.id),
+      workflow_id: workflow?.id || 0,
+      source_department_id: pe.source_department_id,
+      target_department_id: pe.target_department_id,
+      action_description: pe.action_description,
+      trigger_condition: pe.trigger_condition,
+      sort_order: 0,
+      created_at: Date.now(),
+    }));
+  }, [workflow?.id, pendingEdges]);
 
   const initialNodes = useMemo(
-    () => layoutNodes(departments, allEdges),
-    [departments, allEdges]
+    () => layoutNodes(departments, allEdges, loadPersistedPositions()),
+    [departments, allEdges, loadPersistedPositions],
   );
 
   const initialEdges = useMemo(
@@ -141,11 +159,9 @@ export function WorkflowCanvas({
 
   const layoutVersionRef = useRef(0);
 
+  // Update both nodes and edges when dependencies change
   useEffect(() => {
     setEdges(initialEdges);
-  }, [initialEdges, setEdges]);
-
-  useEffect(() => {
     const newVersion = departments.length * 1000 + (allEdges.length || 0);
     if (layoutVersionRef.current !== newVersion) {
       layoutVersionRef.current = newVersion;
@@ -153,16 +169,25 @@ export function WorkflowCanvas({
         const existingIds = new Set(nds.map((n) => n.id));
         const newNodes = initialNodes.filter((n) => !existingIds.has(n.id));
         const updated = nds.map((existing) => {
-          const updated = initialNodes.find((n) => n.id === existing.id);
-          if (updated) {
-            return { ...existing, position: updated.position, data: updated.data };
+          const initial = initialNodes.find((n) => n.id === existing.id);
+          if (initial) {
+            return {
+              ...existing,
+              position: existing.position || initial.position,
+              data: {
+                ...existing.data,
+                ...initial.data,
+              },
+              width: existing.measured?.width ?? 180,
+              height: existing.measured?.height ?? 88,
+            };
           }
           return existing;
         });
         return [...updated, ...newNodes];
       });
     }
-  }, [initialNodes, setNodes, departments.length, allEdges.length]);
+  }, [initialNodes, initialEdges, allEdges.length, setNodes, setEdges, departments.length]);
 
   useEffect(() => {
     if (rfInstance) {
@@ -191,10 +216,11 @@ export function WorkflowCanvas({
         }
       }
       if (Object.keys(positions).length > 0) {
+        persistPositions({ ...loadPersistedPositions(), ...positions });
         onNodePositionsChange?.(positions);
       }
     },
-    [onNodePositionsChange]
+    [onNodePositionsChange, persistPositions, loadPersistedPositions],
   );
 
   const handleEdgesChange: OnEdgesChange = useCallback(
@@ -269,6 +295,16 @@ export function WorkflowCanvas({
           showLock={true}
           showInteractive={false}
           className="workflow-controls"
+        />
+        <MiniMap
+          nodeColor={(node) => {
+            const color = node.data?.department?.accent_color;
+            return color || "#4a90d9";
+          }}
+          maskColor="rgba(0, 0, 0, 0.05)"
+          nodeBorderRadius={8}
+          pannable
+          zoomable
         />
       </ReactFlow>
     </div>

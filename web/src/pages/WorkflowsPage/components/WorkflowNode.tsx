@@ -1,8 +1,10 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkflowNodeData } from "../types";
+
+export type WorkflowNodeType = Node<WorkflowNodeData>;
 
 export const WorkflowNode = memo((props: NodeProps<WorkflowNodeData>) => {
   const { data, selected } = props;
@@ -52,13 +54,13 @@ export const WorkflowNode = memo((props: NodeProps<WorkflowNodeData>) => {
         type="target"
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !bg-background"
-        style={{ borderColor: accent }}
+        style={{ borderColor: accent, left: -6, top: "50%", transform: "translateY(-50%)" }}
       />
       <Handle
         type="source"
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !bg-background"
-        style={{ borderColor: accent }}
+        style={{ borderColor: accent, right: -6, top: "50%", transform: "translateY(-50%)" }}
       />
     </div>
   );

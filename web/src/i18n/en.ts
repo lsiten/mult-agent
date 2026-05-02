@@ -5,6 +5,7 @@ export const en: Translations = {
     save: "Save",
     saving: "Saving...",
     cancel: "Cancel",
+    confirm: "Confirm",
     close: "Close",
     delete: "Delete",
     refresh: "Refresh",

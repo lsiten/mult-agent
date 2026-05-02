@@ -45,6 +45,7 @@ export interface WorkflowDepartment {
 }
 
 export interface WorkflowNodeData {
+  [key: string]: unknown;
   department: WorkflowDepartment;
   taskCount?: number;
   isActive?: boolean;

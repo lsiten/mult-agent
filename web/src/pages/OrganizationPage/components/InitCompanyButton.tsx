@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { useI18n } from "@/i18n";
 
@@ -43,21 +43,21 @@ export function InitCompanyButton({ companyId, onInitialized }: InitCompanyButto
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        title={t.organization.initDirectorOffice || "Initialize company"}
+        title={t.organization.directorOffice?.initDirectorOffice || "Initialize company"}
       >
-        <span className="text-lg">⚡</span>
+        <Zap className="h-4 w-4" />
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t.organization.initDirectorOffice || "Initialize Company"}</DialogTitle>
+            <DialogTitle>{t.organization.directorOffice?.initDirectorOffice || "Initialize Company"}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="agentCount">
-                {t.organization.agentCount || "Number of director agents (default 3)"}
+                {t.organization.directorOffice?.agentCount || "Number of director agents (default 3)"}
               </Label>
               <Input
                 id="agentCount"

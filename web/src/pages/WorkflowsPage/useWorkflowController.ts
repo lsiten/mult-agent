@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/useToast";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -9,6 +9,14 @@ import {
   deleteWorkflow,
 } from "@/lib/api";
 import type { Workflow, WorkflowEdge, WorkflowDepartment } from "./types";
+
+interface PendingEdge {
+  id: number | string;
+  source_department_id: number;
+  target_department_id: number;
+  action_description: string;
+  trigger_condition?: string;
+}
 
 export function useWorkflowController(companyId: number | null) {
   const { t } = useI18n();
@@ -25,7 +33,8 @@ export function useWorkflowController(companyId: number | null) {
     editingEdge?: WorkflowEdge;
     newConnection?: { source: number; target: number };
   } | null>(null);
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [pendingEdges, setPendingEdges] = useState<PendingEdge[]>([]);
+  const savedPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
 
   const loadWorkflow = useCallback(
     async (id: number) => {
@@ -111,8 +120,8 @@ export function useWorkflowController(companyId: number | null) {
         edges: pendingEdges.map((edge, idx) => ({
           source_department_id: edge.source_department_id,
           target_department_id: edge.target_department_id,
-          action_description: edge.action_description,
-          trigger_condition: edge.trigger_condition,
+          action_description: edge.action_description || "",
+          trigger_condition: edge.trigger_condition || undefined,
           sort_order: idx,
         })),
       });
@@ -126,6 +135,7 @@ export function useWorkflowController(companyId: number | null) {
           trigger_condition: e.trigger_condition,
         })),
       );
+      setMode("view");
       showToast(t.workflows.workflowSaved, "success");
     } catch {
       showToast(t.workflows.saveFailed, "error");
@@ -218,6 +228,13 @@ export function useWorkflowController(companyId: number | null) {
     if (!open) setEdgeDialog(null);
   }, []);
 
+  const handleNodePositionsChange = useCallback(
+    (positions: Record<string, { x: number; y: number }>) => {
+      savedPositionsRef.current = { ...savedPositionsRef.current, ...positions };
+    },
+    [],
+  );
+
   return {
     workflow,
     departments,
@@ -237,5 +254,6 @@ export function useWorkflowController(companyId: number | null) {
     handleEdgeDelete,
     handleEdgeDoubleClick,
     handleEdgeDialogOpenChange,
+    handleNodePositionsChange,
   };
 }
