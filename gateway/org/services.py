@@ -1120,11 +1120,10 @@ class OrganizationService:
 
         def tx(conn: sqlite3.Connection) -> dict[str, Any]:
             # Check if already initialized
-            existing = self.director_offices.query_one(
+            existing = conn.execute(
                 "SELECT id FROM director_offices WHERE company_id = ?",
                 (company_id,),
-                conn=conn
-            )
+            ).fetchone()
             if existing:
                 raise OrganizationError(
                     f"Company {company_id} already has a director office initialized",
